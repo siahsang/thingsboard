@@ -1,12 +1,12 @@
 /**
  * Copyright © 2016-2021 The Thingsboard Authors
- *
+ * <p>
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
+ * <p>
+ * http://www.apache.org/licenses/LICENSE-2.0
+ * <p>
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -29,17 +29,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 import org.springframework.web.socket.CloseStatus;
 import org.thingsboard.server.common.data.DataConstants;
-import org.thingsboard.server.common.data.id.CustomerId;
-import org.thingsboard.server.common.data.id.EntityId;
-import org.thingsboard.server.common.data.id.EntityIdFactory;
-import org.thingsboard.server.common.data.id.TenantId;
-import org.thingsboard.server.common.data.id.UserId;
-import org.thingsboard.server.common.data.kv.Aggregation;
-import org.thingsboard.server.common.data.kv.AttributeKvEntry;
-import org.thingsboard.server.common.data.kv.BaseReadTsKvQuery;
-import org.thingsboard.server.common.data.kv.BasicTsKvEntry;
-import org.thingsboard.server.common.data.kv.ReadTsKvQuery;
-import org.thingsboard.server.common.data.kv.TsKvEntry;
+import org.thingsboard.server.common.data.id.*;
+import org.thingsboard.server.common.data.kv.*;
 import org.thingsboard.server.dao.attributes.AttributesService;
 import org.thingsboard.server.dao.timeseries.TimeseriesService;
 import org.thingsboard.server.dao.util.TenantRateLimitException;
@@ -51,23 +42,10 @@ import org.thingsboard.server.service.security.ValidationResult;
 import org.thingsboard.server.service.security.ValidationResultCode;
 import org.thingsboard.server.service.security.model.UserPrincipal;
 import org.thingsboard.server.service.security.permission.Operation;
-import org.thingsboard.server.service.subscription.TbAttributeSubscription;
-import org.thingsboard.server.service.subscription.TbAttributeSubscriptionScope;
-import org.thingsboard.server.service.subscription.TbEntityDataSubscriptionService;
-import org.thingsboard.server.service.subscription.TbLocalSubscriptionService;
-import org.thingsboard.server.service.subscription.TbTimeseriesSubscription;
+import org.thingsboard.server.service.subscription.*;
 import org.thingsboard.server.service.telemetry.cmd.TelemetryPluginCmdsWrapper;
-import org.thingsboard.server.service.telemetry.cmd.v1.AttributesSubscriptionCmd;
-import org.thingsboard.server.service.telemetry.cmd.v1.GetHistoryCmd;
-import org.thingsboard.server.service.telemetry.cmd.v1.SubscriptionCmd;
-import org.thingsboard.server.service.telemetry.cmd.v1.TelemetryPluginCmd;
-import org.thingsboard.server.service.telemetry.cmd.v1.TimeseriesSubscriptionCmd;
-import org.thingsboard.server.service.telemetry.cmd.v2.AlarmDataCmd;
-import org.thingsboard.server.service.telemetry.cmd.v2.CmdUpdate;
-import org.thingsboard.server.service.telemetry.cmd.v2.EntityCountCmd;
-import org.thingsboard.server.service.telemetry.cmd.v2.EntityDataCmd;
-import org.thingsboard.server.service.telemetry.cmd.v2.EntityDataUpdate;
-import org.thingsboard.server.service.telemetry.cmd.v2.UnsubscribeCmd;
+import org.thingsboard.server.service.telemetry.cmd.v1.*;
+import org.thingsboard.server.service.telemetry.cmd.v2.*;
 import org.thingsboard.server.service.telemetry.exception.UnauthorizedException;
 import org.thingsboard.server.service.telemetry.sub.SubscriptionErrorCode;
 import org.thingsboard.server.service.telemetry.sub.TelemetrySubscriptionUpdate;
@@ -76,20 +54,8 @@ import javax.annotation.Nullable;
 import javax.annotation.PostConstruct;
 import javax.annotation.PreDestroy;
 import java.io.IOException;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Map;
-import java.util.Optional;
-import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentMap;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.TimeUnit;
+import java.util.*;
+import java.util.concurrent.*;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
 

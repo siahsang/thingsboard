@@ -53,31 +53,31 @@
 
     <build>
         <plugins>
-            <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-dependency-plugin</artifactId>
-                <executions>
-                    <execution>
-                        <id>copy-tb-deb</id>
-                        <phase>package</phase>
-                        <goals>
-                            <goal>copy</goal>
-                        </goals>
-                        <configuration>
-                            <artifactItems>
-                                <artifactItem>
-                                    <groupId>org.thingsboard</groupId>
-                                    <artifactId>application</artifactId>
-                                    <classifier>deb</classifier>
-                                    <type>deb</type>
-                                    <destFileName>${pkg.name}.deb</destFileName>
-                                    <outputDirectory>${project.build.directory}</outputDirectory>
-                                </artifactItem>
-                            </artifactItems>
-                        </configuration>
-                    </execution>
-                </executions>
-            </plugin>
+<!--            <plugin>-->
+<!--                <groupId>org.apache.maven.plugins</groupId>-->
+<!--                <artifactId>maven-dependency-plugin</artifactId>-->
+<!--                <executions>-->
+<!--                    <execution>-->
+<!--                        <id>copy-tb-deb</id>-->
+<!--                        <phase>package</phase>-->
+<!--                        <goals>-->
+<!--                            <goal>copy</goal>-->
+<!--                        </goals>-->
+<!--                        <configuration>-->
+<!--                            <artifactItems>-->
+<!--                                <artifactItem>-->
+<!--                                    <groupId>org.thingsboard</groupId>-->
+<!--                                    <artifactId>application</artifactId>-->
+<!--                                    <classifier>deb</classifier>-->
+<!--                                    <type>deb</type>-->
+<!--                                    <destFileName>${pkg.name}.deb</destFileName>-->
+<!--                                    <outputDirectory>${project.build.directory}</outputDirectory>-->
+<!--                                </artifactItem>-->
+<!--                            </artifactItems>-->
+<!--                        </configuration>-->
+<!--                    </execution>-->
+<!--                </executions>-->
+<!--            </plugin>-->
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-resources-plugin</artifactId>
@@ -177,13 +177,13 @@
         </profile>
     </profiles>
     <repositories>
-        <repository>
-            <id>jenkins</id>
-            <name>Jenkins Repository</name>
-            <url>https://repo.jenkins-ci.org/releases</url>
-            <snapshots>
-                <enabled>false</enabled>
-            </snapshots>
-        </repository>
+<!--        <repository>-->
+<!--            <id>jenkins</id>-->
+<!--            <name>Jenkins Repository</name>-->
+<!--            <url>https://repo.jenkins-ci.org/releases</url>-->
+<!--            <snapshots>-->
+<!--                <enabled>false</enabled>-->
+<!--            </snapshots>-->
+<!--        </repository>-->
     </repositories>
 </project>

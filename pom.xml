@@ -74,7 +74,7 @@
         <zookeeper.version>3.5.5</zookeeper.version>
         <protobuf.version>3.11.4</protobuf.version>
         <grpc.version>1.22.1</grpc.version>
-        <lombok.version>1.18.18</lombok.version>
+        <lombok.version>1.18.20</lombok.version>
         <paho.client.version>1.2.4</paho.client.version>
         <netty.version>4.1.60.Final</netty.version>
         <os-maven-plugin.version>1.5.0</os-maven-plugin.version>
@@ -148,7 +148,7 @@
         <profile>
             <id>packaging</id>
             <activation>
-                <activeByDefault>true</activeByDefault>
+                <activeByDefault>false</activeByDefault>
             </activation>
             <build>
                 <pluginManagement>
@@ -386,31 +386,31 @@
                                 </execution>
                             </executions>
                         </plugin>
-                        <plugin>
-                            <groupId>org.apache.maven.plugins</groupId>
-                            <artifactId>maven-dependency-plugin</artifactId>
-                            <executions>
-                                <execution>
-                                    <id>copy-winsw-service</id>
-                                    <phase>${pkg.package.phase}</phase>
-                                    <goals>
-                                        <goal>copy</goal>
-                                    </goals>
-                                    <configuration>
-                                        <artifactItems>
-                                            <artifactItem>
-                                                <groupId>com.sun.winsw</groupId>
-                                                <artifactId>winsw</artifactId>
-                                                <classifier>bin</classifier>
-                                                <type>exe</type>
-                                                <destFileName>service.exe</destFileName>
-                                            </artifactItem>
-                                        </artifactItems>
-                                        <outputDirectory>${pkg.win.dist}</outputDirectory>
-                                    </configuration>
-                                </execution>
-                            </executions>
-                        </plugin>
+<!--                        <plugin>-->
+<!--                            <groupId>org.apache.maven.plugins</groupId>-->
+<!--                            <artifactId>maven-dependency-plugin</artifactId>-->
+<!--                            <executions>-->
+<!--                                <execution>-->
+<!--                                    <id>copy-winsw-service</id>-->
+<!--                                    <phase>${pkg.package.phase}</phase>-->
+<!--                                    <goals>-->
+<!--                                        <goal>copy</goal>-->
+<!--                                    </goals>-->
+<!--                                    <configuration>-->
+<!--                                        <artifactItems>-->
+<!--                                            <artifactItem>-->
+<!--                                                <groupId>com.sun.winsw</groupId>-->
+<!--                                                <artifactId>winsw</artifactId>-->
+<!--                                                <classifier>bin</classifier>-->
+<!--                                                <type>exe</type>-->
+<!--                                                <destFileName>service.exe</destFileName>-->
+<!--                                            </artifactItem>-->
+<!--                                        </artifactItems>-->
+<!--                                        <outputDirectory>${pkg.win.dist}</outputDirectory>-->
+<!--                                    </configuration>-->
+<!--                                </execution>-->
+<!--                            </executions>-->
+<!--                        </plugin>-->
                         <plugin>
                             <groupId>org.apache.maven.plugins</groupId>
                             <artifactId>maven-jar-plugin</artifactId>
@@ -715,76 +715,76 @@
                         </lifecycleMappingMetadata>
                     </configuration>
                 </plugin>
-                <plugin>
-                    <groupId>com.mycila</groupId>
-                    <artifactId>license-maven-plugin</artifactId>
-                    <version>3.0</version>
-                    <configuration>
-                        <header>${main.dir}/license-header-template.txt</header>
-                        <properties>
-                            <owner>The Thingsboard Authors</owner>
-                        </properties>
-                        <excludes>
-                            <exclude>**/.env</exclude>
-                            <exclude>**/*.env</exclude>
-                            <exclude>**/.eslintrc</exclude>
-                            <exclude>**/.babelrc</exclude>
-                            <exclude>**/.jshintrc</exclude>
-                            <exclude>**/.gradle/**</exclude>
-                            <exclude>**/nightwatch</exclude>
-                            <exclude>**/README</exclude>
-                            <exclude>**/LICENSE</exclude>
-                            <exclude>**/banner.txt</exclude>
-                            <exclude>node_modules/**</exclude>
-                            <exclude>**/*.properties</exclude>
-                            <exclude>src/test/resources/**</exclude>
-                            <exclude>src/vendor/**</exclude>
-                            <exclude>src/font/**</exclude>
-                            <exclude>src/sh/**</exclude>
-                            <exclude>packaging/*/scripts/control/**</exclude>
-                            <exclude>packaging/*/scripts/windows/**</exclude>
-                            <exclude>packaging/*/scripts/init/**</exclude>
-                            <exclude>**/*.log</exclude>
-                            <exclude>**/*.current</exclude>
-                            <exclude>.instance_id</exclude>
-                            <exclude>src/main/scripts/control/**</exclude>
-                            <exclude>src/main/scripts/windows/**</exclude>
-                            <exclude>src/main/resources/public/static/rulenode/**</exclude>
-                            <exclude>**/*.proto.js</exclude>
-                            <exclude>docker/haproxy/**</exclude>
-                            <exclude>docker/tb-node/**</exclude>
-                            <exclude>ui/**</exclude>
-                            <exclude>src/.browserslistrc</exclude>
-                            <exclude>**/yarn.lock</exclude>
-                            <exclude>**/*.raw</exclude>
-                            <exclude>**/apache/cassandra/io/**</exclude>
-                            <exclude>.run/**</exclude>
-                        </excludes>
-                        <mapping>
-                            <proto>JAVADOC_STYLE</proto>
-                            <cql>DOUBLEDASHES_STYLE</cql>
-                            <scss>JAVADOC_STYLE</scss>
-                            <jsx>SLASHSTAR_STYLE</jsx>
-                            <tsx>SLASHSTAR_STYLE</tsx>
-                            <conf>SCRIPT_STYLE</conf>
-                            <gradle>JAVADOC_STYLE</gradle>
-                        </mapping>
-                    </configuration>
-                    <executions>
-                        <execution>
-                            <goals>
-                                <goal>check</goal>
-                            </goals>
-                        </execution>
-                    </executions>
-                </plugin>
+<!--                <plugin>-->
+<!--                    <groupId>com.mycila</groupId>-->
+<!--                    <artifactId>license-maven-plugin</artifactId>-->
+<!--                    <version>3.0</version>-->
+<!--                    <configuration>-->
+<!--                        <header>${main.dir}/license-header-template.txt</header>-->
+<!--                        <properties>-->
+<!--                            <owner>The Thingsboard Authors</owner>-->
+<!--                        </properties>-->
+<!--                        <excludes>-->
+<!--                            <exclude>**/.env</exclude>-->
+<!--                            <exclude>**/*.env</exclude>-->
+<!--                            <exclude>**/.eslintrc</exclude>-->
+<!--                            <exclude>**/.babelrc</exclude>-->
+<!--                            <exclude>**/.jshintrc</exclude>-->
+<!--                            <exclude>**/.gradle/**</exclude>-->
+<!--                            <exclude>**/nightwatch</exclude>-->
+<!--                            <exclude>**/README</exclude>-->
+<!--                            <exclude>**/LICENSE</exclude>-->
+<!--                            <exclude>**/banner.txt</exclude>-->
+<!--                            <exclude>node_modules/**</exclude>-->
+<!--                            <exclude>**/*.properties</exclude>-->
+<!--                            <exclude>src/test/resources/**</exclude>-->
+<!--                            <exclude>src/vendor/**</exclude>-->
+<!--                            <exclude>src/font/**</exclude>-->
+<!--                            <exclude>src/sh/**</exclude>-->
+<!--                            <exclude>packaging/*/scripts/control/**</exclude>-->
+<!--                            <exclude>packaging/*/scripts/windows/**</exclude>-->
+<!--                            <exclude>packaging/*/scripts/init/**</exclude>-->
+<!--                            <exclude>**/*.log</exclude>-->
+<!--                            <exclude>**/*.current</exclude>-->
+<!--                            <exclude>.instance_id</exclude>-->
+<!--                            <exclude>src/main/scripts/control/**</exclude>-->
+<!--                            <exclude>src/main/scripts/windows/**</exclude>-->
+<!--                            <exclude>src/main/resources/public/static/rulenode/**</exclude>-->
+<!--                            <exclude>**/*.proto.js</exclude>-->
+<!--                            <exclude>docker/haproxy/**</exclude>-->
+<!--                            <exclude>docker/tb-node/**</exclude>-->
+<!--                            <exclude>ui/**</exclude>-->
+<!--                            <exclude>src/.browserslistrc</exclude>-->
+<!--                            <exclude>**/yarn.lock</exclude>-->
+<!--                            <exclude>**/*.raw</exclude>-->
+<!--                            <exclude>**/apache/cassandra/io/**</exclude>-->
+<!--                            <exclude>.run/**</exclude>-->
+<!--                        </excludes>-->
+<!--                        <mapping>-->
+<!--                            <proto>JAVADOC_STYLE</proto>-->
+<!--                            <cql>DOUBLEDASHES_STYLE</cql>-->
+<!--                            <scss>JAVADOC_STYLE</scss>-->
+<!--                            <jsx>SLASHSTAR_STYLE</jsx>-->
+<!--                            <tsx>SLASHSTAR_STYLE</tsx>-->
+<!--                            <conf>SCRIPT_STYLE</conf>-->
+<!--                            <gradle>JAVADOC_STYLE</gradle>-->
+<!--                        </mapping>-->
+<!--                    </configuration>-->
+<!--                    <executions>-->
+<!--                        <execution>-->
+<!--                            <goals>-->
+<!--                                <goal>check</goal>-->
+<!--                            </goals>-->
+<!--                        </execution>-->
+<!--                    </executions>-->
+<!--                </plugin>-->
             </plugins>
         </pluginManagement>
         <plugins>
-            <plugin>
-                <groupId>com.mycila</groupId>
-                <artifactId>license-maven-plugin</artifactId>
-            </plugin>
+<!--            <plugin>-->
+<!--                <groupId>com.mycila</groupId>-->
+<!--                <artifactId>license-maven-plugin</artifactId>-->
+<!--            </plugin>-->
         </plugins>
     </build>
 
@@ -1314,14 +1314,14 @@
                 <artifactId>jedis</artifactId>
                 <version>${jedis.version}</version>
             </dependency>
-            <dependency>
-                <groupId>com.sun.winsw</groupId>
-                <artifactId>winsw</artifactId>
-                <version>${winsw.version}</version>
-                <classifier>bin</classifier>
-                <type>exe</type>
-                <scope>provided</scope>
-            </dependency>
+<!--            <dependency>-->
+<!--                <groupId>com.sun.winsw</groupId>-->
+<!--                <artifactId>winsw</artifactId>-->
+<!--                <version>${winsw.version}</version>-->
+<!--                <classifier>bin</classifier>-->
+<!--                <type>exe</type>-->
+<!--                <scope>provided</scope>-->
+<!--            </dependency>-->
             <dependency>
                 <groupId>org.elasticsearch.client</groupId>
                 <artifactId>rest</artifactId>
@@ -1469,22 +1469,22 @@
             <id>central</id>
             <url>https://repo1.maven.org/maven2/</url>
         </repository>
-        <repository>
-            <id>spring-snapshots</id>
-            <name>Spring Snapshots</name>
-            <url>https://repo.spring.io/snapshot</url>
-            <snapshots>
-                <enabled>true</enabled>
-            </snapshots>
-        </repository>
-        <repository>
-            <id>spring-milestones</id>
-            <name>Spring Milestones</name>
-            <url>https://repo.spring.io/milestone</url>
-            <snapshots>
-                <enabled>false</enabled>
-            </snapshots>
-        </repository>
+<!--        <repository>-->
+<!--            <id>spring-snapshots</id>-->
+<!--            <name>Spring Snapshots</name>-->
+<!--            <url>https://repo.spring.io/snapshot</url>-->
+<!--            <snapshots>-->
+<!--                <enabled>true</enabled>-->
+<!--            </snapshots>-->
+<!--        </repository>-->
+<!--        <repository>-->
+<!--            <id>spring-milestones</id>-->
+<!--            <name>Spring Milestones</name>-->
+<!--            <url>https://repo.spring.io/milestone</url>-->
+<!--            <snapshots>-->
+<!--                <enabled>true</enabled>-->
+<!--            </snapshots>-->
+<!--        </repository>-->
         <repository>
             <id>typesafe</id>
             <name>Typesafe Repository</name>

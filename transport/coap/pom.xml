@@ -57,13 +57,13 @@
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-web</artifactId>
         </dependency>
-        <dependency>
-            <groupId>com.sun.winsw</groupId>
-            <artifactId>winsw</artifactId>
-            <classifier>bin</classifier>
-            <type>exe</type>
-            <scope>provided</scope>
-        </dependency>
+<!--        <dependency>-->
+<!--            <groupId>com.sun.winsw</groupId>-->
+<!--            <artifactId>winsw</artifactId>-->
+<!--            <classifier>bin</classifier>-->
+<!--            <type>exe</type>-->
+<!--            <scope>provided</scope>-->
+<!--        </dependency>-->
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-test</artifactId>
@@ -120,13 +120,13 @@
         </plugins>
     </build>
     <repositories>
-        <repository>
-            <id>jenkins</id>
-            <name>Jenkins Repository</name>
-            <url>https://repo.jenkins-ci.org/releases</url>
-            <snapshots>
-                <enabled>false</enabled>
-            </snapshots>
-        </repository>
+<!--        <repository>-->
+<!--            <id>jenkins</id>-->
+<!--            <name>Jenkins Repository</name>-->
+<!--            <url>https://repo.jenkins-ci.org/releases</url>-->
+<!--            <snapshots>-->
+<!--                <enabled>false</enabled>-->
+<!--            </snapshots>-->
+<!--        </repository>-->
     </repositories>
 </project>

@@ -1,5 +1,5 @@
 /**
- * Copyright © 2016-2020 The Thingsboard Authors
+ * Copyright © 2016-2021 The Thingsboard Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -126,12 +126,13 @@
           .mat-expansion-panel-header-title {
             line-height: 48px;
             height: 48px;
+            overflow: hidden;
             .mat-icon {
               min-width: 24px;
-              margin: auto 8px auto auto;
+              margin: auto 8px auto 0;
             }
             .tb-panel-title {
-              min-width: 140px;
+              min-width: 130px;
               user-select: none;
             }
           }

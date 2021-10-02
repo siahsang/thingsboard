@@ -1,5 +1,5 @@
 /**
- * Copyright © 2016-2020 The Thingsboard Authors
+ * Copyright © 2016-2021 The Thingsboard Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -35,9 +35,11 @@ public final class RuleEngineDeviceRpcRequest {
     private final UUID requestUUID;
     private final String originServiceId;
     private final boolean oneway;
+    private final boolean persisted;
     private final String method;
     private final String body;
     private final long expirationTime;
     private final boolean restApiCall;
-
+    private final String additionalInfo;
+    private final Integer retries;
 }

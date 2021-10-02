@@ -1,5 +1,5 @@
 ///
-/// Copyright © 2016-2020 The Thingsboard Authors
+/// Copyright © 2016-2021 The Thingsboard Authors
 ///
 /// Licensed under the Apache License, Version 2.0 (the "License");
 /// you may not use this file except in compliance with the License.
@@ -46,7 +46,7 @@ export interface EntityAliasesDialogData {
   widgets: Array<Widget>;
   isSingleEntityAlias?: boolean;
   isSingleWidget?: boolean;
-  allowedEntityTypes?: Array<AliasEntityType>;
+  allowedEntityTypes?: Array<EntityType | AliasEntityType>;
   disableAdd?: boolean;
   singleEntityAlias?: EntityAlias;
   customTitle?: string;
@@ -98,24 +98,17 @@ export class EntityAliasesDialogComponent extends DialogComponent<EntityAliasesD
         this.data.widgets.forEach((widget) => {
           if (widget.type === widgetType.rpc) {
             if (widget.config.targetDeviceAliasIds && widget.config.targetDeviceAliasIds.length > 0) {
-              const targetDeviceAliasId = widget.config.targetDeviceAliasIds[0];
-              widgetsTitleList = this.aliasToWidgetsMap[targetDeviceAliasId];
-              if (!widgetsTitleList) {
-                widgetsTitleList = [];
-                this.aliasToWidgetsMap[targetDeviceAliasId] = widgetsTitleList;
-              }
-              widgetsTitleList.push(widget.config.title);
+              this.addWidgetTitleToWidgetsMap(widget.config.targetDeviceAliasIds[0], widget.config.title);
+            }
+          } else if (widget.type === widgetType.alarm) {
+            if (widget.config.alarmSource) {
+              this.addWidgetTitleToWidgetsMap(widget.config.alarmSource.entityAliasId, widget.config.title);
             }
           } else {
             const datasources = this.utils.validateDatasources(widget.config.datasources);
             datasources.forEach((datasource) => {
               if (datasource.type === DatasourceType.entity && datasource.entityAliasId) {
-                widgetsTitleList = this.aliasToWidgetsMap[datasource.entityAliasId];
-                if (!widgetsTitleList) {
-                  widgetsTitleList = [];
-                  this.aliasToWidgetsMap[datasource.entityAliasId] = widgetsTitleList;
-                }
-                widgetsTitleList.push(widget.config.title);
+                this.addWidgetTitleToWidgetsMap(datasource.entityAliasId, widget.config.title);
               }
             });
           }
@@ -139,6 +132,15 @@ export class EntityAliasesDialogComponent extends DialogComponent<EntityAliasesD
     this.entityAliasesFormGroup = this.fb.group({
       entityAliases: this.fb.array(entityAliasControls)
     });
+  }
+
+  private addWidgetTitleToWidgetsMap(aliasId: string, widgetTitle: string) {
+    let widgetsTitleList: Array<string> = this.aliasToWidgetsMap[aliasId];
+    if (!widgetsTitleList) {
+      widgetsTitleList = [];
+      this.aliasToWidgetsMap[aliasId] = widgetsTitleList;
+    }
+    widgetsTitleList.push(widgetTitle);
   }
 
   private createEntityAliasFormControl(aliasId: string, entityAlias: EntityAlias): AbstractControl {

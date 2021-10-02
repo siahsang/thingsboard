@@ -1,5 +1,5 @@
 /**
- * Copyright © 2016-2020 The Thingsboard Authors
+ * Copyright © 2016-2021 The Thingsboard Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,12 +15,20 @@
  */
 package org.thingsboard.server.common.transport;
 
+import org.thingsboard.server.common.data.Device;
 import org.thingsboard.server.common.data.DeviceProfile;
-import org.thingsboard.server.gen.transport.TransportProtos.ToServerRpcResponseMsg;
+import org.thingsboard.server.common.data.id.DeviceId;
+import org.thingsboard.server.gen.transport.TransportProtos;
 import org.thingsboard.server.gen.transport.TransportProtos.AttributeUpdateNotificationMsg;
 import org.thingsboard.server.gen.transport.TransportProtos.GetAttributeResponseMsg;
 import org.thingsboard.server.gen.transport.TransportProtos.SessionCloseNotificationProto;
 import org.thingsboard.server.gen.transport.TransportProtos.ToDeviceRpcRequestMsg;
+import org.thingsboard.server.gen.transport.TransportProtos.ToServerRpcResponseMsg;
+import org.thingsboard.server.gen.transport.TransportProtos.ToTransportUpdateCredentialsProto;
+import org.thingsboard.server.gen.transport.TransportProtos.UplinkNotificationMsg;
+
+import java.util.Optional;
+import java.util.UUID;
 
 /**
  * Created by ashvayka on 04.10.18.
@@ -29,15 +37,26 @@ public interface SessionMsgListener {
 
     void onGetAttributesResponse(GetAttributeResponseMsg getAttributesResponse);
 
-    void onAttributeUpdate(AttributeUpdateNotificationMsg attributeUpdateNotification);
+    void onAttributeUpdate(UUID sessionId, AttributeUpdateNotificationMsg attributeUpdateNotification);
 
-    void onRemoteSessionCloseCommand(SessionCloseNotificationProto sessionCloseNotification);
+    void onRemoteSessionCloseCommand(UUID sessionId, SessionCloseNotificationProto sessionCloseNotification);
 
-    void onToDeviceRpcRequest(ToDeviceRpcRequestMsg toDeviceRequest);
+    void onToDeviceRpcRequest(UUID sessionId, ToDeviceRpcRequestMsg toDeviceRequest);
 
     void onToServerRpcResponse(ToServerRpcResponseMsg toServerResponse);
 
-    default void onProfileUpdate(DeviceProfile deviceProfile) {
-    }
+    default void onUplinkNotification(UplinkNotificationMsg notificationMsg){};
 
+    default void onToTransportUpdateCredentials(ToTransportUpdateCredentialsProto toTransportUpdateCredentials){}
+
+    default void onDeviceProfileUpdate(TransportProtos.SessionInfoProto newSessionInfo, DeviceProfile deviceProfile) {}
+
+    default void onDeviceUpdate(TransportProtos.SessionInfoProto sessionInfo, Device device,
+                                Optional<DeviceProfile> deviceProfileOpt) {}
+
+    default void onDeviceDeleted(DeviceId deviceId) {}
+
+    default void onResourceUpdate(Optional<TransportProtos.ResourceUpdateMsg> resourceUpdateMsgOpt) {}
+
+    default void onResourceDelete(Optional<TransportProtos.ResourceDeleteMsg> resourceUpdateMsgOpt) {}
 }

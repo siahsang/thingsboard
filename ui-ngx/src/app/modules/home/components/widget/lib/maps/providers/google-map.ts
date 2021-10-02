@@ -1,5 +1,5 @@
 ///
-/// Copyright © 2016-2020 The Thingsboard Authors
+/// Copyright © 2016-2021 The Thingsboard Authors
 ///
 /// Licensed under the Apache License, Version 2.0 (the "License");
 /// you may not use this file except in compliance with the License.
@@ -38,7 +38,8 @@ export class GoogleMap extends LeafletMap {
     this.loadGoogle(() => {
       const map = L.map($container, {
         attributionControl: false,
-        editable: !!options.editablePolygon
+        editable: !!options.editablePolygon,
+        tap: L.Browser.safari && L.Browser.mobile
       }).setView(options?.defaultCenterPosition, options?.defaultZoomLevel || DEFAULT_ZOOM_LEVEL);
       (L.gridLayer as any).googleMutant({
         type: options?.gmDefaultMapType || 'roadmap'

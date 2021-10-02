@@ -1,5 +1,5 @@
 /**
- * Copyright © 2016-2020 The Thingsboard Authors
+ * Copyright © 2016-2021 The Thingsboard Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -52,6 +52,11 @@ public class JpaHsqlTimeseriesDao extends AbstractChunkedAggregationTimeseriesDa
         entity.setJsonValue(tsKvEntry.getJsonValue().orElse(null));
         log.trace("Saving entity: {}", entity);
         return Futures.transform(tsQueue.add(entity), v -> dataPointDays, MoreExecutors.directExecutor());
+    }
+
+    @Override
+    public void cleanup(long systemTtl) {
+
     }
 
 }

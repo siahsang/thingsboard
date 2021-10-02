@@ -1,5 +1,5 @@
 /**
- * Copyright © 2016-2020 The Thingsboard Authors
+ * Copyright © 2016-2021 The Thingsboard Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,8 +19,10 @@ import com.google.common.util.concurrent.Futures;
 import com.google.common.util.concurrent.ListenableFuture;
 import com.google.common.util.concurrent.MoreExecutors;
 import lombok.extern.slf4j.Slf4j;
+import org.hibernate.exception.ConstraintViolationException;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Component;
 import org.thingsboard.server.common.data.id.EntityId;
 import org.thingsboard.server.common.data.id.TenantId;
@@ -33,6 +35,10 @@ import org.thingsboard.server.dao.timeseries.SqlTsPartitionDate;
 import org.thingsboard.server.dao.util.PsqlDao;
 import org.thingsboard.server.dao.util.SqlTsDao;
 
+import java.sql.Connection;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
+import java.sql.SQLException;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
@@ -59,6 +65,7 @@ public class JpaPsqlTimeseriesDao extends AbstractChunkedAggregationTimeseriesDa
 
     @Value("${sql.postgres.ts_key_value_partitioning:MONTHS}")
     private String partitioning;
+
 
     @Override
     protected void init() {
@@ -91,6 +98,30 @@ public class JpaPsqlTimeseriesDao extends AbstractChunkedAggregationTimeseriesDa
         return Futures.transform(tsQueue.add(entity), v -> dataPointDays, MoreExecutors.directExecutor());
     }
 
+    @Override
+    public void cleanup(long systemTtl) {
+        cleanupPartitions(systemTtl);
+        super.cleanup(systemTtl);
+    }
+
+    private void cleanupPartitions(long systemTtl) {
+        log.info("Going to cleanup old timeseries data partitions using partition type: {} and ttl: {}s", partitioning, systemTtl);
+        try (Connection connection = dataSource.getConnection();
+             PreparedStatement stmt = connection.prepareStatement("call drop_partitions_by_max_ttl(?,?,?)")) {
+            stmt.setString(1, partitioning);
+            stmt.setLong(2, systemTtl);
+            stmt.setLong(3, 0);
+            stmt.execute();
+            printWarnings(stmt);
+            try (ResultSet resultSet = stmt.getResultSet()) {
+                resultSet.next();
+                log.info("Total partitions removed by TTL: [{}]", resultSet.getLong(1));
+            }
+        } catch (SQLException e) {
+            log.error("SQLException occurred during TTL task execution ", e);
+        }
+    }
+
     private void savePartitionIfNotExist(long ts) {
         if (!tsFormat.equals(SqlTsPartitionDate.INDEFINITE) && ts >= 0) {
             LocalDateTime time = LocalDateTime.ofInstant(Instant.ofEpochMilli(ts), ZoneOffset.UTC);
@@ -114,6 +145,14 @@ public class JpaPsqlTimeseriesDao extends AbstractChunkedAggregationTimeseriesDa
                 partitioningRepository.save(psqlPartition);
                 log.trace("Adding partition to Set: {}", psqlPartition);
                 partitions.put(psqlPartition.getStart(), psqlPartition);
+            } catch (DataIntegrityViolationException ex) {
+                log.trace("Error occurred during partition save:", ex);
+                if (ex.getCause() instanceof ConstraintViolationException) {
+                    log.warn("Saving partition [{}] rejected. Timeseries data will save to the ts_kv_indefinite (DEFAULT) partition.", psqlPartition.getPartitionDate());
+                    partitions.put(psqlPartition.getStart(), psqlPartition);
+                } else {
+                    throw new RuntimeException(ex);
+                }
             } finally {
                 partitionCreationLock.unlock();
             }

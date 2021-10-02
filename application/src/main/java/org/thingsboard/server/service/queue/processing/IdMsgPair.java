@@ -1,5 +1,5 @@
 /**
- * Copyright © 2016-2020 The Thingsboard Authors
+ * Copyright © 2016-2021 The Thingsboard Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,16 +15,18 @@
  */
 package org.thingsboard.server.service.queue.processing;
 
-import org.thingsboard.server.gen.transport.TransportProtos.ToRuleEngineMsg;
+import lombok.Getter;
 import org.thingsboard.server.queue.common.TbProtoQueueMsg;
 
 import java.util.UUID;
 
-public class IdMsgPair {
+public class IdMsgPair<T extends com.google.protobuf.GeneratedMessageV3> {
+    @Getter
     final UUID uuid;
-    final TbProtoQueueMsg<ToRuleEngineMsg> msg;
+    @Getter
+    final TbProtoQueueMsg<T> msg;
 
-    public IdMsgPair(UUID uuid, TbProtoQueueMsg<ToRuleEngineMsg> msg) {
+    public IdMsgPair(UUID uuid, TbProtoQueueMsg<T> msg) {
         this.uuid = uuid;
         this.msg = msg;
     }

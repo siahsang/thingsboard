@@ -1,5 +1,5 @@
 /**
- * Copyright © 2016-2020 The Thingsboard Authors
+ * Copyright © 2016-2021 The Thingsboard Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,13 +18,13 @@ package org.thingsboard.server.service.device;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
-import com.google.common.util.concurrent.Futures;
 import com.google.common.util.concurrent.ListenableFuture;
-import com.google.common.util.concurrent.MoreExecutors;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.lang3.RandomStringUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
+import org.thingsboard.server.cluster.TbClusterService;
 import org.thingsboard.server.common.data.DataConstants;
 import org.thingsboard.server.common.data.Device;
 import org.thingsboard.server.common.data.DeviceProfile;
@@ -51,7 +51,7 @@ import org.thingsboard.server.dao.device.provision.ProvisionFailedException;
 import org.thingsboard.server.dao.device.provision.ProvisionRequest;
 import org.thingsboard.server.dao.device.provision.ProvisionResponse;
 import org.thingsboard.server.dao.device.provision.ProvisionResponseStatus;
-import org.thingsboard.server.dao.util.mapping.JacksonUtil;
+import org.thingsboard.common.util.JacksonUtil;
 import org.thingsboard.server.gen.transport.TransportProtos;
 import org.thingsboard.server.gen.transport.TransportProtos.ToRuleEngineMsg;
 import org.thingsboard.server.queue.TbQueueCallback;
@@ -66,7 +66,6 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.ExecutionException;
-import java.util.concurrent.locks.ReentrantLock;
 
 
 @Service
@@ -79,7 +78,8 @@ public class DeviceProvisionServiceImpl implements DeviceProvisionService {
     private static final String DEVICE_PROVISION_STATE = "provisionState";
     private static final String PROVISIONED_STATE = "provisioned";
 
-    private final ReentrantLock deviceCreationLock = new ReentrantLock();
+    @Autowired
+    TbClusterService clusterService;
 
     @Autowired
     DeviceDao deviceDao;
@@ -113,6 +113,13 @@ public class DeviceProvisionServiceImpl implements DeviceProvisionService {
     public ProvisionResponse provisionDevice(ProvisionRequest provisionRequest) {
         String provisionRequestKey = provisionRequest.getCredentials().getProvisionDeviceKey();
         String provisionRequestSecret = provisionRequest.getCredentials().getProvisionDeviceSecret();
+        if (!StringUtils.isEmpty(provisionRequest.getDeviceName())) {
+            provisionRequest.setDeviceName(provisionRequest.getDeviceName().trim());
+            if (StringUtils.isEmpty(provisionRequest.getDeviceName())) {
+                log.warn("Provision request contains empty device name!");
+                throw new ProvisionFailedException(ProvisionResponseStatus.FAILURE.name());
+            }
+        }
 
         if (StringUtils.isEmpty(provisionRequestKey) || StringUtils.isEmpty(provisionRequestSecret)) {
             throw new ProvisionFailedException(ProvisionResponseStatus.NOT_FOUND.name());
@@ -171,12 +178,7 @@ public class DeviceProvisionServiceImpl implements DeviceProvisionService {
     }
 
     private ProvisionResponse createDevice(ProvisionRequest provisionRequest, DeviceProfile profile) {
-        deviceCreationLock.lock();
-        try {
-            return processCreateDevice(provisionRequest, profile);
-        } finally {
-            deviceCreationLock.unlock();
-        }
+        return processCreateDevice(provisionRequest, profile);
     }
 
     private void notify(Device device, ProvisionRequest provisionRequest, String type, boolean success) {
@@ -185,23 +187,25 @@ public class DeviceProvisionServiceImpl implements DeviceProvisionService {
     }
 
     private ProvisionResponse processCreateDevice(ProvisionRequest provisionRequest, DeviceProfile profile) {
-        Device device = deviceService.findDeviceByTenantIdAndName(profile.getTenantId(), provisionRequest.getDeviceName());
         try {
-            if (device == null) {
-                Device savedDevice = deviceService.saveDevice(provisionRequest, profile);
-
-                deviceStateService.onDeviceAdded(savedDevice);
-                saveProvisionStateAttribute(savedDevice).get();
-                pushDeviceCreatedEventToRuleEngine(savedDevice);
-                notify(savedDevice, provisionRequest, DataConstants.PROVISION_SUCCESS, true);
-
-                return new ProvisionResponse(getDeviceCredentials(savedDevice), ProvisionResponseStatus.SUCCESS);
-            } else {
-                log.warn("[{}] The device is already provisioned!", device.getName());
-                notify(device, provisionRequest, DataConstants.PROVISION_FAILURE, false);
-                throw new ProvisionFailedException(ProvisionResponseStatus.FAILURE.name());
+            if (StringUtils.isEmpty(provisionRequest.getDeviceName())) {
+                String newDeviceName = RandomStringUtils.randomAlphanumeric(20);
+                log.info("Device name not found in provision request. Generated name is: {}", newDeviceName);
+                provisionRequest.setDeviceName(newDeviceName);
             }
-        } catch (InterruptedException | ExecutionException e) {
+            Device savedDevice = deviceService.saveDevice(provisionRequest, profile);
+            clusterService.onDeviceUpdated(savedDevice, null);
+            saveProvisionStateAttribute(savedDevice).get();
+            pushDeviceCreatedEventToRuleEngine(savedDevice);
+            notify(savedDevice, provisionRequest, DataConstants.PROVISION_SUCCESS, true);
+
+            return new ProvisionResponse(getDeviceCredentials(savedDevice), ProvisionResponseStatus.SUCCESS);
+        } catch (Exception e) {
+            log.warn("[{}] Error during device creation from provision request: [{}]", provisionRequest.getDeviceName(), provisionRequest, e);
+            Device device = deviceService.findDeviceByTenantIdAndName(profile.getTenantId(), provisionRequest.getDeviceName());
+            if (device != null) {
+                notify(device, provisionRequest, DataConstants.PROVISION_FAILURE, false);
+            }
             throw new ProvisionFailedException(ProvisionResponseStatus.FAILURE.name());
         }
     }
@@ -219,7 +223,7 @@ public class DeviceProvisionServiceImpl implements DeviceProvisionService {
     private void pushProvisionEventToRuleEngine(ProvisionRequest request, Device device, String type) {
         try {
             JsonNode entityNode = JacksonUtil.valueToTree(request);
-            TbMsg msg = TbMsg.newMsg(type, device.getId(), createTbMsgMetaData(device), JacksonUtil.toString(entityNode));
+            TbMsg msg = TbMsg.newMsg(type, device.getId(), device.getCustomerId(), createTbMsgMetaData(device), JacksonUtil.toString(entityNode));
             sendToRuleEngine(device.getTenantId(), msg, null);
         } catch (IllegalArgumentException e) {
             log.warn("[{}] Failed to push device action to rule engine: {}", device.getId(), type, e);
@@ -229,7 +233,7 @@ public class DeviceProvisionServiceImpl implements DeviceProvisionService {
     private void pushDeviceCreatedEventToRuleEngine(Device device) {
         try {
             ObjectNode entityNode = JacksonUtil.OBJECT_MAPPER.valueToTree(device);
-            TbMsg msg = TbMsg.newMsg(DataConstants.ENTITY_CREATED, device.getId(), createTbMsgMetaData(device), JacksonUtil.OBJECT_MAPPER.writeValueAsString(entityNode));
+            TbMsg msg = TbMsg.newMsg(DataConstants.ENTITY_CREATED, device.getId(), device.getCustomerId(), createTbMsgMetaData(device), JacksonUtil.OBJECT_MAPPER.writeValueAsString(entityNode));
             sendToRuleEngine(device.getTenantId(), msg, null);
         } catch (JsonProcessingException | IllegalArgumentException e) {
             log.warn("[{}] Failed to push device action to rule engine: {}", device.getId(), DataConstants.ENTITY_CREATED, e);

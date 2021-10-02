@@ -1,5 +1,5 @@
 ///
-/// Copyright © 2016-2020 The Thingsboard Authors
+/// Copyright © 2016-2021 The Thingsboard Authors
 ///
 /// Licensed under the Apache License, Version 2.0 (the "License");
 /// you may not use this file except in compliance with the License.
@@ -30,6 +30,8 @@ import {
 } from '@app/shared/models/device.models';
 import { EntitySubtype } from '@app/shared/models/entity-type.models';
 import { AuthService } from '@core/auth/auth.service';
+import { BulkImportRequest, BulkImportResult } from '@home/components/import-export/import-export.models';
+import { PersistentRpc } from '@shared/models/rpc.models';
 
 @Injectable({
   providedIn: 'root'
@@ -130,11 +132,15 @@ export class DeviceService {
   }
 
   public sendOneWayRpcCommand(deviceId: string, requestBody: any, config?: RequestConfig): Observable<any> {
-    return this.http.post<Device>(`/api/plugins/rpc/oneway/${deviceId}`, requestBody, defaultHttpOptionsFromConfig(config));
+    return this.http.post<Device>(`/api/rpc/oneway/${deviceId}`, requestBody, defaultHttpOptionsFromConfig(config));
   }
 
   public sendTwoWayRpcCommand(deviceId: string, requestBody: any, config?: RequestConfig): Observable<any> {
-    return this.http.post<Device>(`/api/plugins/rpc/twoway/${deviceId}`, requestBody, defaultHttpOptionsFromConfig(config));
+    return this.http.post<Device>(`/api/rpc/twoway/${deviceId}`, requestBody, defaultHttpOptionsFromConfig(config));
+  }
+
+  public getPersistedRpc(rpcId: string, fullResponse = false, config?: RequestConfig): Observable<PersistentRpc> {
+    return this.http.get<PersistentRpc>(`/api/rpc/persistent/${rpcId}`, defaultHttpOptionsFromConfig(config));
   }
 
   public findByQuery(query: DeviceSearchQuery,
@@ -153,6 +159,28 @@ export class DeviceService {
 
   public unclaimDevice(deviceName: string, config?: RequestConfig) {
     return this.http.delete(`/api/customer/device/${deviceName}/claim`, defaultHttpOptionsFromConfig(config));
+  }
+
+  public assignDeviceToEdge(edgeId: string, deviceId: string,
+                            config?: RequestConfig): Observable<Device> {
+    return this.http.post<Device>(`/api/edge/${edgeId}/device/${deviceId}`,
+      defaultHttpOptionsFromConfig(config));
+  }
+
+  public unassignDeviceFromEdge(edgeId: string, deviceId: string,
+                                config?: RequestConfig) {
+    return this.http.delete(`/api/edge/${edgeId}/device/${deviceId}`,
+      defaultHttpOptionsFromConfig(config));
+  }
+
+  public getEdgeDevices(edgeId: string, pageLink: PageLink, type: string = '',
+                        config?: RequestConfig): Observable<PageData<DeviceInfo>> {
+    return this.http.get<PageData<DeviceInfo>>(`/api/edge/${edgeId}/devices${pageLink.toQuery()}&type=${type}`,
+      defaultHttpOptionsFromConfig(config));
+  }
+
+  public bulkImportDevices(entitiesData: BulkImportRequest, config?: RequestConfig): Observable<BulkImportResult> {
+    return this.http.post<BulkImportResult>('/api/device/bulk_import', entitiesData, defaultHttpOptionsFromConfig(config));
   }
 
 }

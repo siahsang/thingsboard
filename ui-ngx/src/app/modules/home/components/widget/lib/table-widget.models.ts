@@ -1,5 +1,5 @@
 ///
-/// Copyright © 2016-2020 The Thingsboard Authors
+/// Copyright © 2016-2021 The Thingsboard Authors
 ///
 /// Licensed under the Apache License, Version 2.0 (the "License");
 /// you may not use this file except in compliance with the License.
@@ -15,29 +15,46 @@
 ///
 
 import { EntityId } from '@shared/models/id/entity-id';
-import { DataKey, WidgetConfig } from '@shared/models/widget.models';
-import { getDescendantProp, isDefined } from '@core/utils';
+import { DataKey, WidgetActionDescriptor, WidgetConfig } from '@shared/models/widget.models';
+import { getDescendantProp, isDefined, isNotEmptyStr } from '@core/utils';
 import { AlarmDataInfo, alarmFields } from '@shared/models/alarm.models';
 import * as tinycolor_ from 'tinycolor2';
 import { Direction, EntityDataSortOrder, EntityKey } from '@shared/models/query/query.models';
 import { DataKeyType } from '@shared/models/telemetry/telemetry.models';
+import { WidgetContext } from '@home/models/widget-component.models';
+import { FormattedData } from '@home/components/widget/lib/maps/map-models';
 
 const tinycolor = tinycolor_;
 
+type ColumnVisibilityOptions = 'visible' | 'hidden';
+
+type ColumnSelectionOptions = 'enabled' | 'disabled';
+
 export interface TableWidgetSettings {
   enableSearch: boolean;
-  enableSelectColumnDisplay: boolean;
+  enableStickyAction: boolean;
+  enableStickyHeader: boolean;
   displayPagination: boolean;
   defaultPageSize: number;
-  defaultSortOrder: string;
+  useRowStyleFunction: boolean;
+  rowStyleFunction?: string;
 }
 
 export interface TableWidgetDataKeySettings {
   columnWidth?: string;
   useCellStyleFunction: boolean;
-  cellStyleFunction: string;
+  cellStyleFunction?: string;
   useCellContentFunction: boolean;
-  cellContentFunction: string;
+  cellContentFunction?: string;
+  defaultColumnVisibility?: ColumnVisibilityOptions;
+  columnSelectionToDisplay?: ColumnSelectionOptions;
+}
+
+export type ShowCellButtonActionFunction = (ctx: WidgetContext, data: EntityData | AlarmDataInfo | FormattedData) => boolean;
+
+export interface TableCellButtonActionDescriptor extends  WidgetActionDescriptor {
+  useShowActionCellButtonFunction: boolean;
+  showActionCellButtonFunction: ShowCellButtonActionFunction;
 }
 
 export interface EntityData {
@@ -45,6 +62,8 @@ export interface EntityData {
   entityName: string;
   entityLabel?: string;
   entityType?: string;
+  actionCellButtons?: TableCellButtonActionDescriptor[];
+  hasActions?: boolean;
   [key: string]: any;
 }
 
@@ -58,6 +77,7 @@ export interface DisplayColumn {
   title: string;
   def: string;
   display: boolean;
+  selectable: boolean;
 }
 
 export type CellContentFunction = (...args: any[]) => string;
@@ -69,11 +89,18 @@ export interface CellContentInfo {
   decimals?: number;
 }
 
-export type CellStyleFunction = (value: any) => any;
+export type CellStyleFunction = (...args: any[]) => any;
 
 export interface CellStyleInfo {
   useCellStyleFunction: boolean;
   cellStyleFunction?: CellStyleFunction;
+}
+
+export type RowStyleFunction = (...args: any[]) => any;
+
+export interface RowStyleInfo {
+  useRowStyleFunction: boolean;
+  rowStyleFunction?: RowStyleFunction;
 }
 
 
@@ -184,23 +211,47 @@ export function getEntityValue(entity: any, key: DataKey): any {
 export function getAlarmValue(alarm: AlarmDataInfo, key: EntityColumn) {
   let alarmField = null;
   if (key.type === DataKeyType.alarm) {
-    alarmField = alarmFields[key.name];
+    alarmField = alarmFields[key.name]?.value;
+    if (!alarmField && key.name.startsWith('details.')) {
+      alarmField = key.name;
+    }
   }
   if (alarmField) {
-    return getDescendantProp(alarm, alarmField.value);
+    return getDescendantProp(alarm, alarmField);
   } else {
     return getDescendantProp(alarm, key.label);
   }
 }
 
-export function getCellStyleInfo(keySettings: TableWidgetDataKeySettings): CellStyleInfo {
+export function getRowStyleInfo(settings: TableWidgetSettings, ...args: string[]): RowStyleInfo {
+  let rowStyleFunction: RowStyleFunction = null;
+  let useRowStyleFunction = false;
+
+  if (settings.useRowStyleFunction === true) {
+    if (isDefined(settings.rowStyleFunction) && settings.rowStyleFunction.length > 0) {
+      try {
+        rowStyleFunction = new Function(...args, settings.rowStyleFunction) as RowStyleFunction;
+        useRowStyleFunction = true;
+      } catch (e) {
+        rowStyleFunction = null;
+        useRowStyleFunction = false;
+      }
+    }
+  }
+  return {
+    useRowStyleFunction,
+    rowStyleFunction
+  };
+}
+
+export function getCellStyleInfo(keySettings: TableWidgetDataKeySettings, ...args: string[]): CellStyleInfo {
   let cellStyleFunction: CellStyleFunction = null;
   let useCellStyleFunction = false;
 
   if (keySettings.useCellStyleFunction === true) {
     if (isDefined(keySettings.cellStyleFunction) && keySettings.cellStyleFunction.length > 0) {
       try {
-        cellStyleFunction = new Function('value', keySettings.cellStyleFunction) as CellStyleFunction;
+        cellStyleFunction = new Function(...args, keySettings.cellStyleFunction) as CellStyleFunction;
         useCellStyleFunction = true;
       } catch (e) {
         cellStyleFunction = null;
@@ -248,7 +299,53 @@ export function widthStyle(width: string): any {
   return widthStyleObj;
 }
 
+export function getColumnDefaultVisibility(keySettings: TableWidgetDataKeySettings): boolean {
+  return !(isDefined(keySettings.defaultColumnVisibility) && keySettings.defaultColumnVisibility === 'hidden');
+}
 
+export function getColumnSelectionAvailability(keySettings: TableWidgetDataKeySettings): boolean {
+  return !(isDefined(keySettings.columnSelectionToDisplay) && keySettings.columnSelectionToDisplay === 'disabled');
+}
+
+export function getTableCellButtonActions(widgetContext: WidgetContext): TableCellButtonActionDescriptor[] {
+  return widgetContext.actionsApi.getActionDescriptors('actionCellButton').map(descriptor => {
+    let useShowActionCellButtonFunction = descriptor.useShowWidgetActionFunction || false;
+    let showActionCellButtonFunction: ShowCellButtonActionFunction = null;
+    if (useShowActionCellButtonFunction && isNotEmptyStr(descriptor.showWidgetActionFunction)) {
+      try {
+        showActionCellButtonFunction =
+          new Function('widgetContext', 'data', descriptor.showWidgetActionFunction) as ShowCellButtonActionFunction;
+      } catch (e) {
+        useShowActionCellButtonFunction = false;
+      }
+    }
+    return {...descriptor, showActionCellButtonFunction, useShowActionCellButtonFunction};
+  });
+}
+
+export function checkHasActions(cellButtonActions: TableCellButtonActionDescriptor[]): boolean {
+  return cellButtonActions.some(action => action.icon);
+}
+
+export function prepareTableCellButtonActions(widgetContext: WidgetContext, cellButtonActions: TableCellButtonActionDescriptor[],
+                                              data: EntityData | AlarmDataInfo | FormattedData): TableCellButtonActionDescriptor[] {
+  return cellButtonActions.map(action =>
+    filterTableCellButtonAction(widgetContext, action, data) ? action : { id: action.id } as TableCellButtonActionDescriptor);
+}
+
+function filterTableCellButtonAction(widgetContext: WidgetContext,
+                                     action: TableCellButtonActionDescriptor, data: EntityData | AlarmDataInfo | FormattedData): boolean {
+  if (action.useShowActionCellButtonFunction) {
+    try {
+      return action.showActionCellButtonFunction(widgetContext, data);
+    } catch (e) {
+      console.warn('Failed to execute showActionCellButtonFunction', e);
+      return false;
+    }
+  } else {
+    return true;
+  }
+}
 
 export function constructTableCssString(widgetConfig: WidgetConfig): string {
   const origColor = widgetConfig.color || 'rgba(0, 0, 0, 0.87)';

@@ -1,5 +1,5 @@
 /**
- * Copyright © 2016-2020 The Thingsboard Authors
+ * Copyright © 2016-2021 The Thingsboard Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -25,6 +25,7 @@ import org.thingsboard.common.util.ThingsBoardThreadFactory;
 import org.thingsboard.server.common.data.ApiUsageRecordKey;
 import org.thingsboard.server.common.data.EntityType;
 import org.thingsboard.server.common.data.EntityView;
+import org.thingsboard.server.common.data.id.CustomerId;
 import org.thingsboard.server.common.data.id.EntityId;
 import org.thingsboard.server.common.data.id.TenantId;
 import org.thingsboard.server.common.data.kv.AttributeKvEntry;
@@ -40,12 +41,11 @@ import org.thingsboard.server.common.msg.queue.TopicPartitionInfo;
 import org.thingsboard.server.dao.attributes.AttributesService;
 import org.thingsboard.server.dao.entityview.EntityViewService;
 import org.thingsboard.server.dao.timeseries.TimeseriesService;
-import org.thingsboard.server.dao.usagerecord.ApiUsageStateService;
 import org.thingsboard.server.gen.transport.TransportProtos;
 import org.thingsboard.server.queue.discovery.PartitionService;
 import org.thingsboard.server.queue.usagestats.TbApiUsageClient;
 import org.thingsboard.server.service.apiusage.TbApiUsageStateService;
-import org.thingsboard.server.service.queue.TbClusterService;
+import org.thingsboard.server.cluster.TbClusterService;
 import org.thingsboard.server.service.subscription.TbSubscriptionUtils;
 
 import javax.annotation.Nullable;
@@ -113,18 +113,19 @@ public class DefaultTelemetrySubscriptionService extends AbstractSubscriptionSer
 
     @Override
     public void saveAndNotify(TenantId tenantId, EntityId entityId, List<TsKvEntry> ts, FutureCallback<Void> callback) {
-        saveAndNotify(tenantId, entityId, ts, 0L, callback);
+        saveAndNotify(tenantId, null, entityId, ts, 0L, callback);
     }
 
     @Override
-    public void saveAndNotify(TenantId tenantId, EntityId entityId, List<TsKvEntry> ts, long ttl, FutureCallback<Void> callback) {
+    public void saveAndNotify(TenantId tenantId, CustomerId customerId, EntityId entityId, List<TsKvEntry> ts, long ttl, FutureCallback<Void> callback) {
         checkInternalEntity(entityId);
-        if (apiUsageStateService.getApiUsageState(tenantId).isDbStorageEnabled()) {
+        boolean sysTenant = TenantId.SYS_TENANT_ID.equals(tenantId) || tenantId == null;
+        if (sysTenant || apiUsageStateService.getApiUsageState(tenantId).isDbStorageEnabled()) {
             saveAndNotifyInternal(tenantId, entityId, ts, ttl, new FutureCallback<Integer>() {
                 @Override
                 public void onSuccess(Integer result) {
-                    if (result != null && result > 0) {
-                        apiUsageClient.report(tenantId, ApiUsageRecordKey.STORAGE_DP_COUNT, result);
+                    if (!sysTenant && result != null && result > 0) {
+                        apiUsageClient.report(tenantId, customerId, ApiUsageRecordKey.STORAGE_DP_COUNT, result);
                     }
                     callback.onSuccess(null);
                 }
@@ -134,7 +135,7 @@ public class DefaultTelemetrySubscriptionService extends AbstractSubscriptionSer
                     callback.onFailure(t);
                 }
             });
-        } else{
+        } else {
             callback.onFailure(new RuntimeException("DB storage writes are disabled due to API limits!"));
         }
     }
@@ -198,6 +199,7 @@ public class DefaultTelemetrySubscriptionService extends AbstractSubscriptionSer
     }
 
     @Override
+
     public void saveAndNotify(TenantId tenantId, EntityId entityId, String scope, List<AttributeKvEntry> attributes, FutureCallback<Void> callback) {
         saveAndNotify(tenantId, entityId, scope, attributes, true, callback);
     }

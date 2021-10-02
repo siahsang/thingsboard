@@ -1,5 +1,5 @@
 /**
- * Copyright © 2016-2020 The Thingsboard Authors
+ * Copyright © 2016-2021 The Thingsboard Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -33,7 +33,7 @@ public abstract class SequentialByEntityIdTbRuleEngineSubmitStrategy extends Abs
 
     private volatile BiConsumer<UUID, TbProtoQueueMsg<TransportProtos.ToRuleEngineMsg>> msgConsumer;
     private volatile ConcurrentMap<UUID, EntityId> msgToEntityIdMap = new ConcurrentHashMap<>();
-    private volatile ConcurrentMap<EntityId, Queue<IdMsgPair>> entityIdToListMap = new ConcurrentHashMap<>();
+    private volatile ConcurrentMap<EntityId, Queue<IdMsgPair<TransportProtos.ToRuleEngineMsg>>> entityIdToListMap = new ConcurrentHashMap<>();
 
     public SequentialByEntityIdTbRuleEngineSubmitStrategy(String queueName) {
         super(queueName);
@@ -49,7 +49,7 @@ public abstract class SequentialByEntityIdTbRuleEngineSubmitStrategy extends Abs
     public void submitAttempt(BiConsumer<UUID, TbProtoQueueMsg<TransportProtos.ToRuleEngineMsg>> msgConsumer) {
         this.msgConsumer = msgConsumer;
         entityIdToListMap.forEach((entityId, queue) -> {
-            IdMsgPair msg = queue.peek();
+            IdMsgPair<TransportProtos.ToRuleEngineMsg> msg = queue.peek();
             if (msg != null) {
                 msgConsumer.accept(msg.uuid, msg.msg);
             }
@@ -66,11 +66,11 @@ public abstract class SequentialByEntityIdTbRuleEngineSubmitStrategy extends Abs
     protected void doOnSuccess(UUID id) {
         EntityId entityId = msgToEntityIdMap.get(id);
         if (entityId != null) {
-            Queue<IdMsgPair> queue = entityIdToListMap.get(entityId);
+            Queue<IdMsgPair<TransportProtos.ToRuleEngineMsg>> queue = entityIdToListMap.get(entityId);
             if (queue != null) {
-                IdMsgPair next = null;
+                IdMsgPair<TransportProtos.ToRuleEngineMsg> next = null;
                 synchronized (queue) {
-                    IdMsgPair expected = queue.peek();
+                    IdMsgPair<TransportProtos.ToRuleEngineMsg> expected = queue.peek();
                     if (expected != null && expected.uuid.equals(id)) {
                         queue.poll();
                         next = queue.peek();
@@ -86,7 +86,7 @@ public abstract class SequentialByEntityIdTbRuleEngineSubmitStrategy extends Abs
     private void initMaps() {
         msgToEntityIdMap.clear();
         entityIdToListMap.clear();
-        for (IdMsgPair pair : orderedMsgList) {
+        for (IdMsgPair<TransportProtos.ToRuleEngineMsg> pair : orderedMsgList) {
             EntityId entityId = getEntityId(pair.msg.getValue());
             if (entityId != null) {
                 msgToEntityIdMap.put(pair.uuid, entityId);

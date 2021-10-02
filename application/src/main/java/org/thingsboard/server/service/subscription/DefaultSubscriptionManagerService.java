@@ -1,5 +1,5 @@
 /**
- * Copyright © 2016-2020 The Thingsboard Authors
+ * Copyright © 2016-2021 The Thingsboard Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -31,6 +31,7 @@ import org.thingsboard.server.common.data.kv.Aggregation;
 import org.thingsboard.server.common.data.kv.AttributeKvEntry;
 import org.thingsboard.server.common.data.kv.BaseReadTsKvQuery;
 import org.thingsboard.server.common.data.kv.BasicTsKvEntry;
+import org.thingsboard.server.common.data.kv.KvEntry;
 import org.thingsboard.server.common.data.kv.ReadTsKvQuery;
 import org.thingsboard.server.common.data.kv.StringDataEntry;
 import org.thingsboard.server.common.data.kv.TsKvEntry;
@@ -39,19 +40,20 @@ import org.thingsboard.server.common.msg.queue.TbCallback;
 import org.thingsboard.server.common.msg.queue.TopicPartitionInfo;
 import org.thingsboard.server.dao.attributes.AttributesService;
 import org.thingsboard.server.dao.timeseries.TimeseriesService;
-import org.thingsboard.server.dao.util.mapping.JacksonUtil;
+import org.thingsboard.common.util.JacksonUtil;
 import org.thingsboard.server.gen.transport.TransportProtos.*;
 import org.thingsboard.server.gen.transport.TransportProtos.LocalSubscriptionServiceMsgProto;
 import org.thingsboard.server.gen.transport.TransportProtos.TbSubscriptionUpdateProto;
 import org.thingsboard.server.gen.transport.TransportProtos.TbSubscriptionUpdateValueListProto;
 import org.thingsboard.server.queue.TbQueueProducer;
 import org.thingsboard.server.queue.common.TbProtoQueueMsg;
-import org.thingsboard.server.queue.discovery.PartitionChangeEvent;
+import org.thingsboard.server.queue.discovery.event.PartitionChangeEvent;
 import org.thingsboard.server.queue.discovery.PartitionService;
+import org.thingsboard.server.queue.discovery.TbApplicationEventListener;
 import org.thingsboard.server.queue.discovery.TbServiceInfoProvider;
 import org.thingsboard.server.queue.provider.TbQueueProducerProvider;
 import org.thingsboard.server.queue.util.TbCoreComponent;
-import org.thingsboard.server.service.queue.TbClusterService;
+import org.thingsboard.server.cluster.TbClusterService;
 import org.thingsboard.server.service.state.DefaultDeviceStateService;
 import org.thingsboard.server.service.state.DeviceStateService;
 import org.thingsboard.server.service.telemetry.sub.AlarmSubscriptionUpdate;
@@ -76,7 +78,7 @@ import java.util.function.Predicate;
 @Slf4j
 @TbCoreComponent
 @Service
-public class DefaultSubscriptionManagerService implements SubscriptionManagerService {
+public class DefaultSubscriptionManagerService extends TbApplicationEventListener<PartitionChangeEvent> implements SubscriptionManagerService {
 
     @Autowired
     private AttributesService attrService;
@@ -178,7 +180,7 @@ public class DefaultSubscriptionManagerService implements SubscriptionManagerSer
     }
 
     @Override
-    public void onApplicationEvent(PartitionChangeEvent partitionChangeEvent) {
+    protected void onTbApplicationEvent(PartitionChangeEvent partitionChangeEvent) {
         if (ServiceType.TB_CORE.equals(partitionChangeEvent.getServiceType())) {
             Set<TopicPartitionInfo> removedPartitions = new HashSet<>(currentPartitions);
             removedPartitions.removeAll(partitionChangeEvent.getPartitions());
@@ -212,7 +214,7 @@ public class DefaultSubscriptionManagerService implements SubscriptionManagerSer
                 }, s -> true, s -> {
                     List<TsKvEntry> subscriptionUpdate = null;
                     for (TsKvEntry kv : ts) {
-                        if (isInTimeRange(s, kv.getTs()) && (s.isAllKeys() || s.getKeyStates().containsKey((kv.getKey())))) {
+                        if ((s.isAllKeys() || s.getKeyStates().containsKey((kv.getKey())))) {
                             if (subscriptionUpdate == null) {
                                 subscriptionUpdate = new ArrayList<>();
                             }
@@ -221,6 +223,9 @@ public class DefaultSubscriptionManagerService implements SubscriptionManagerSer
                     }
                     return subscriptionUpdate;
                 });
+        if (entityId.getEntityType() == EntityType.DEVICE) {
+            updateDeviceInactivityTimeout(tenantId, entityId, ts);
+        }
         callback.onSuccess();
     }
 
@@ -254,11 +259,7 @@ public class DefaultSubscriptionManagerService implements SubscriptionManagerSer
                 });
         if (entityId.getEntityType() == EntityType.DEVICE) {
             if (TbAttributeSubscriptionScope.SERVER_SCOPE.name().equalsIgnoreCase(scope)) {
-                for (AttributeKvEntry attribute : attributes) {
-                    if (attribute.getKey().equals(DefaultDeviceStateService.INACTIVITY_TIMEOUT)) {
-                        deviceStateService.onDeviceInactivityTimeoutUpdate(new DeviceId(entityId.getId()), attribute.getLongValue().orElse(0L));
-                    }
-                }
+                updateDeviceInactivityTimeout(tenantId, entityId, attributes);
             } else if (TbAttributeSubscriptionScope.SHARED_SCOPE.name().equalsIgnoreCase(scope) && notifyDevice) {
                 clusterService.pushMsgToCore(DeviceAttributesEventNotificationMsg.onUpdate(tenantId,
                         new DeviceId(entityId.getId()), DataConstants.SHARED_SCOPE, new ArrayList<>(attributes))
@@ -266,6 +267,14 @@ public class DefaultSubscriptionManagerService implements SubscriptionManagerSer
             }
         }
         callback.onSuccess();
+    }
+
+    private void updateDeviceInactivityTimeout(TenantId tenantId, EntityId entityId, List<? extends KvEntry> kvEntries) {
+        for (KvEntry kvEntry : kvEntries) {
+            if (kvEntry.getKey().equals(DefaultDeviceStateService.INACTIVITY_TIMEOUT)) {
+                deviceStateService.onDeviceInactivityTimeoutUpdate(tenantId, new DeviceId(entityId.getId()), kvEntry.getLongValue().orElse(0L));
+            }
+        }
     }
 
     @Override
@@ -374,11 +383,6 @@ public class DefaultSubscriptionManagerService implements SubscriptionManagerSer
         }
     }
 
-    private boolean isInTimeRange(TbTimeseriesSubscription subscription, long kvTime) {
-        return (subscription.getStartTime() == 0 || subscription.getStartTime() <= kvTime)
-                && (subscription.getEndTime() == 0 || subscription.getEndTime() >= kvTime);
-    }
-
     private void removeSubscriptionFromEntityMap(TbSubscription sub) {
         Set<TbSubscription> entitySubSet = subscriptionsByEntityId.get(sub.getEntityId());
         if (entitySubSet != null) {
@@ -428,16 +432,9 @@ public class DefaultSubscriptionManagerService implements SubscriptionManagerSer
                 serviceId, subscription.getSessionId(), subscription.getSubscriptionId(), subscription.getEntityId());
 
         long curTs = System.currentTimeMillis();
-        List<ReadTsKvQuery> queries = new ArrayList<>();
-        subscription.getKeyStates().forEach((key, value) -> {
-            if (curTs > value) {
-                long startTs = subscription.getStartTime() > 0 ? Math.max(subscription.getStartTime(), value + 1L) : (value + 1L);
-                long endTs = subscription.getEndTime() > 0 ? Math.min(subscription.getEndTime(), curTs) : curTs;
-                queries.add(new BaseReadTsKvQuery(key, startTs, endTs, 0, 1000, Aggregation.NONE));
-            }
-        });
-        if (!queries.isEmpty()) {
-            DonAsynchron.withCallback(tsService.findAll(subscription.getTenantId(), subscription.getEntityId(), queries),
+
+        if (subscription.isLatestValues()) {
+            DonAsynchron.withCallback(tsService.findLatest(subscription.getTenantId(), subscription.getEntityId(), subscription.getKeyStates().keySet()),
                     missedUpdates -> {
                         if (missedUpdates != null && !missedUpdates.isEmpty()) {
                             TopicPartitionInfo tpi = partitionService.getNotificationsTopic(ServiceType.TB_CORE, subscription.getServiceId());
@@ -446,6 +443,26 @@ public class DefaultSubscriptionManagerService implements SubscriptionManagerSer
                     },
                     e -> log.error("Failed to fetch missed updates.", e),
                     tsCallBackExecutor);
+        } else {
+            List<ReadTsKvQuery> queries = new ArrayList<>();
+            subscription.getKeyStates().forEach((key, value) -> {
+                if (curTs > value) {
+                    long startTs = subscription.getStartTime() > 0 ? Math.max(subscription.getStartTime(), value + 1L) : (value + 1L);
+                    long endTs = subscription.getEndTime() > 0 ? Math.min(subscription.getEndTime(), curTs) : curTs;
+                    queries.add(new BaseReadTsKvQuery(key, startTs, endTs, 0, 1000, Aggregation.NONE));
+                }
+            });
+            if (!queries.isEmpty()) {
+                DonAsynchron.withCallback(tsService.findAll(subscription.getTenantId(), subscription.getEntityId(), queries),
+                        missedUpdates -> {
+                            if (missedUpdates != null && !missedUpdates.isEmpty()) {
+                                TopicPartitionInfo tpi = partitionService.getNotificationsTopic(ServiceType.TB_CORE, subscription.getServiceId());
+                                toCoreNotificationsProducer.send(tpi, toProto(subscription, missedUpdates), null);
+                            }
+                        },
+                        e -> log.error("Failed to fetch missed updates.", e),
+                        tsCallBackExecutor);
+            }
         }
     }
 
@@ -467,12 +484,19 @@ public class DefaultSubscriptionManagerService implements SubscriptionManagerSer
         data.forEach((key, value) -> {
             TbSubscriptionUpdateValueListProto.Builder dataBuilder = TbSubscriptionUpdateValueListProto.newBuilder();
             dataBuilder.setKey(key);
-            value.forEach(v -> {
+            boolean hasData = false;
+            for (Object v : value) {
                 Object[] array = (Object[]) v;
                 dataBuilder.addTs((long) array[0]);
-                dataBuilder.addValue((String) array[1]);
-            });
-            builder.addData(dataBuilder.build());
+                String strVal = (String) array[1];
+                if (strVal != null) {
+                    hasData = true;
+                    dataBuilder.addValue(strVal);
+                }
+            }
+            if (hasData) {
+                builder.addData(dataBuilder.build());
+            }
         });
 
         ToCoreNotificationMsg toCoreMsg = ToCoreNotificationMsg.newBuilder().setToLocalSubscriptionServiceMsg(

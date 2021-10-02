@@ -1,5 +1,5 @@
 ///
-/// Copyright © 2016-2020 The Thingsboard Authors
+/// Copyright © 2016-2021 The Thingsboard Authors
 ///
 /// Licensed under the Apache License, Version 2.0 (the "License");
 /// you may not use this file except in compliance with the License.
@@ -14,7 +14,7 @@
 /// limitations under the License.
 ///
 
-import { Component, Inject } from '@angular/core';
+import { ChangeDetectorRef, Component, Inject } from '@angular/core';
 import { Store } from '@ngrx/store';
 import { AppState } from '@core/core.state';
 import { FormBuilder, FormGroup, Validators } from '@angular/forms';
@@ -23,11 +23,12 @@ import { ActionNotificationShow } from '@app/core/notification/notification.acti
 import { TranslateService } from '@ngx-translate/core';
 import { ContactBasedComponent } from '../../components/entity/contact-based.component';
 import { EntityTableConfig } from '@home/models/entity/entities-table-config.models';
+import { isDefinedAndNotNull } from '@core/utils';
 
 @Component({
   selector: 'tb-tenant',
   templateUrl: './tenant.component.html',
-  styleUrls: []
+  styleUrls: ['./tenant.component.scss']
 })
 export class TenantComponent extends ContactBasedComponent<TenantInfo> {
 
@@ -35,8 +36,9 @@ export class TenantComponent extends ContactBasedComponent<TenantInfo> {
               protected translate: TranslateService,
               @Inject('entity') protected entityValue: TenantInfo,
               @Inject('entitiesTableConfig') protected entitiesTableConfigValue: EntityTableConfig<TenantInfo>,
-              protected fb: FormBuilder) {
-    super(store, fb, entityValue, entitiesTableConfigValue);
+              protected fb: FormBuilder,
+              protected cd: ChangeDetectorRef) {
+    super(store, fb, entityValue, entitiesTableConfigValue, cd);
   }
 
   hideDelete() {
@@ -54,7 +56,10 @@ export class TenantComponent extends ContactBasedComponent<TenantInfo> {
         tenantProfileId: [entity ? entity.tenantProfileId : null, [Validators.required]],
         additionalInfo: this.fb.group(
           {
-            description: [entity && entity.additionalInfo ? entity.additionalInfo.description : '']
+            description: [entity && entity.additionalInfo ? entity.additionalInfo.description : ''],
+            homeDashboardId: [entity && entity.additionalInfo ? entity.additionalInfo.homeDashboardId : null],
+            homeDashboardHideToolbar: [entity && entity.additionalInfo &&
+            isDefinedAndNotNull(entity.additionalInfo.homeDashboardHideToolbar) ? entity.additionalInfo.homeDashboardHideToolbar : true]
           }
         )
       }
@@ -65,6 +70,11 @@ export class TenantComponent extends ContactBasedComponent<TenantInfo> {
     this.entityForm.patchValue({title: entity.title});
     this.entityForm.patchValue({tenantProfileId: entity.tenantProfileId});
     this.entityForm.patchValue({additionalInfo: {description: entity.additionalInfo ? entity.additionalInfo.description : ''}});
+    this.entityForm.patchValue({additionalInfo:
+        {homeDashboardId: entity.additionalInfo ? entity.additionalInfo.homeDashboardId : null}});
+    this.entityForm.patchValue({additionalInfo:
+        {homeDashboardHideToolbar: entity.additionalInfo &&
+          isDefinedAndNotNull(entity.additionalInfo.homeDashboardHideToolbar) ? entity.additionalInfo.homeDashboardHideToolbar : true}});
   }
 
   updateFormState() {

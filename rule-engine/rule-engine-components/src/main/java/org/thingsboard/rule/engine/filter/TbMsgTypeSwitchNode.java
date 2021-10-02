@@ -1,5 +1,5 @@
 /**
- * Copyright © 2016-2020 The Thingsboard Authors
+ * Copyright © 2016-2021 The Thingsboard Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -33,9 +33,10 @@ import org.thingsboard.server.common.msg.session.SessionMsgType;
         type = ComponentType.FILTER,
         name = "message type switch",
         configClazz = EmptyNodeConfiguration.class,
-        relationTypes = {"Post attributes", "Post telemetry", "RPC Request from Device", "RPC Request to Device", "Activity Event", "Inactivity Event",
-                "Connect Event", "Disconnect Event", "Entity Created", "Entity Updated", "Entity Deleted", "Entity Assigned",
-                "Entity Unassigned", "Attributes Updated", "Attributes Deleted", "Alarm Acknowledged", "Alarm Cleared", "Other", "Entity Assigned From Tenant", "Entity Assigned To Tenant"},
+        relationTypes = {"Post attributes", "Post telemetry", "RPC Request from Device", "RPC Request to Device", "RPC Queued", "RPC Sent", "RPC Delivered", "RPC Successful", "RPC Timeout", "RPC Expired", "RPC Failed", "RPC Deleted",
+                "Activity Event", "Inactivity Event", "Connect Event", "Disconnect Event", "Entity Created", "Entity Updated", "Entity Deleted", "Entity Assigned",
+                "Entity Unassigned", "Attributes Updated", "Attributes Deleted", "Alarm Acknowledged", "Alarm Cleared", "Other", "Entity Assigned From Tenant", "Entity Assigned To Tenant",
+                "Timeseries Updated", "Timeseries Deleted"},
         nodeDescription = "Route incoming messages by Message Type",
         nodeDetails = "Sends messages with message types <b>\"Post attributes\", \"Post telemetry\", \"RPC Request\"</b> etc. via corresponding chain, otherwise <b>Other</b> chain is used.",
         uiResources = {"static/rulenode/rulenode-core-config.js"},
@@ -90,6 +91,26 @@ public class TbMsgTypeSwitchNode implements TbNode {
             relationType = "Entity Assigned From Tenant";
         } else if (msg.getType().equals(DataConstants.ENTITY_ASSIGNED_TO_TENANT)) {
             relationType = "Entity Assigned To Tenant";
+        } else if (msg.getType().equals(DataConstants.TIMESERIES_UPDATED)) {
+            relationType = "Timeseries Updated";
+        } else if (msg.getType().equals(DataConstants.TIMESERIES_DELETED)) {
+            relationType = "Timeseries Deleted";
+        } else if (msg.getType().equals(DataConstants.RPC_QUEUED)) {
+            relationType = "RPC Queued";
+        } else if (msg.getType().equals(DataConstants.RPC_SENT)) {
+            relationType = "RPC Sent";
+        } else if (msg.getType().equals(DataConstants.RPC_DELIVERED)) {
+            relationType = "RPC Delivered";
+        } else if (msg.getType().equals(DataConstants.RPC_SUCCESSFUL)) {
+            relationType = "RPC Successful";
+        } else if (msg.getType().equals(DataConstants.RPC_TIMEOUT)) {
+            relationType = "RPC Timeout";
+        } else if (msg.getType().equals(DataConstants.RPC_EXPIRED)) {
+            relationType = "RPC Expired";
+        } else if (msg.getType().equals(DataConstants.RPC_FAILED)) {
+            relationType = "RPC Failed";
+        } else if (msg.getType().equals(DataConstants.RPC_DELETED)) {
+            relationType = "RPC Deleted";
         } else {
             relationType = "Other";
         }

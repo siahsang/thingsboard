@@ -1,5 +1,5 @@
 ///
-/// Copyright © 2016-2020 The Thingsboard Authors
+/// Copyright © 2016-2021 The Thingsboard Authors
 ///
 /// Licensed under the Apache License, Version 2.0 (the "License");
 /// you may not use this file except in compliance with the License.
@@ -14,7 +14,7 @@
 /// limitations under the License.
 ///
 
-import { Component, Inject, Input, Optional } from '@angular/core';
+import { ChangeDetectorRef, Component, Inject, Input, Optional } from '@angular/core';
 import { Store } from '@ngrx/store';
 import { AppState } from '@core/core.state';
 import { FormBuilder, FormGroup, Validators } from '@angular/forms';
@@ -38,7 +38,10 @@ import {
 } from '@shared/models/device.models';
 import { EntityType } from '@shared/models/entity-type.models';
 import { RuleChainId } from '@shared/models/id/rule-chain-id';
-import {ServiceType} from "@shared/models/queue.models";
+import { ServiceType } from '@shared/models/queue.models';
+import { EntityId } from '@shared/models/id/entity-id';
+import { OtaUpdateType } from '@shared/models/ota-package.models';
+import { DashboardId } from '@shared/models/id/dashboard-id';
 
 @Component({
   selector: 'tb-device-profile',
@@ -52,11 +55,11 @@ export class DeviceProfileComponent extends EntityComponent<DeviceProfile> {
 
   entityType = EntityType;
 
-  deviceProfileTypes = Object.keys(DeviceProfileType);
+  deviceProfileTypes = Object.values(DeviceProfileType);
 
   deviceProfileTypeTranslations = deviceProfileTypeTranslationMap;
 
-  deviceTransportTypes = Object.keys(DeviceTransportType);
+  deviceTransportTypes = Object.values(DeviceTransportType);
 
   deviceTransportTypeTranslations = deviceTransportTypeTranslationMap;
 
@@ -66,12 +69,17 @@ export class DeviceProfileComponent extends EntityComponent<DeviceProfile> {
 
   serviceType = ServiceType.TB_RULE_ENGINE;
 
+  deviceProfileId: EntityId;
+
+  otaUpdateType = OtaUpdateType;
+
   constructor(protected store: Store<AppState>,
               protected translate: TranslateService,
               @Optional() @Inject('entity') protected entityValue: DeviceProfile,
               @Optional() @Inject('entitiesTableConfig') protected entitiesTableConfigValue: EntityTableConfig<DeviceProfile>,
-              protected fb: FormBuilder) {
-    super(store, fb, entityValue, entitiesTableConfigValue);
+              protected fb: FormBuilder,
+              protected cd: ChangeDetectorRef) {
+    super(store, fb, entityValue, entitiesTableConfigValue, cd);
   }
 
   hideDelete() {
@@ -83,12 +91,13 @@ export class DeviceProfileComponent extends EntityComponent<DeviceProfile> {
   }
 
   buildForm(entity: DeviceProfile): FormGroup {
+    this.deviceProfileId = entity?.id ? entity.id : null;
     this.displayProfileConfiguration = entity && entity.type &&
       deviceProfileTypeConfigurationInfoMap.get(entity.type).hasProfileConfiguration;
     this.displayTransportConfiguration = entity && entity.transportType &&
       deviceTransportTypeConfigurationInfoMap.get(entity.transportType).hasProfileConfiguration;
     const deviceProvisionConfiguration: DeviceProvisionConfiguration = {
-      type: entity?.provisionType ? entity?.provisionType : DeviceProvisionType.DISABLED,
+      type: entity?.provisionType ? entity.provisionType : DeviceProvisionType.DISABLED,
       provisionDeviceKey: entity?.provisionDeviceKey,
       provisionDeviceSecret: entity?.profileData?.provisionConfiguration?.provisionDeviceSecret
     };
@@ -96,6 +105,7 @@ export class DeviceProfileComponent extends EntityComponent<DeviceProfile> {
       {
         name: [entity ? entity.name : '', [Validators.required]],
         type: [entity ? entity.type : null, [Validators.required]],
+        image: [entity ? entity.image : null],
         transportType: [entity ? entity.transportType : null, [Validators.required]],
         profileData: this.fb.group({
           configuration: [entity && !this.isAdd ? entity.profileData?.configuration : {}, Validators.required],
@@ -104,7 +114,10 @@ export class DeviceProfileComponent extends EntityComponent<DeviceProfile> {
           provisionConfiguration: [deviceProvisionConfiguration, Validators.required]
         }),
         defaultRuleChainId: [entity && entity.defaultRuleChainId ? entity.defaultRuleChainId.id : null, []],
+        defaultDashboardId: [entity && entity.defaultDashboardId ? entity.defaultDashboardId.id : null, []],
         defaultQueueName: [entity ? entity.defaultQueueName : '', []],
+        firmwareId: [entity ? entity.firmwareId : null],
+        softwareId: [entity ? entity.softwareId : null],
         description: [entity ? entity.description : '', []],
       }
     );
@@ -157,17 +170,19 @@ export class DeviceProfileComponent extends EntityComponent<DeviceProfile> {
   }
 
   updateForm(entity: DeviceProfile) {
+    this.deviceProfileId = entity.id;
     this.displayProfileConfiguration = entity.type &&
       deviceProfileTypeConfigurationInfoMap.get(entity.type).hasProfileConfiguration;
     this.displayTransportConfiguration = entity.transportType &&
       deviceTransportTypeConfigurationInfoMap.get(entity.transportType).hasProfileConfiguration;
     const deviceProvisionConfiguration: DeviceProvisionConfiguration = {
-      type: entity?.provisionType ? entity?.provisionType : DeviceProvisionType.DISABLED,
+      type: entity?.provisionType ? entity.provisionType : DeviceProvisionType.DISABLED,
       provisionDeviceKey: entity?.provisionDeviceKey,
       provisionDeviceSecret: entity?.profileData?.provisionConfiguration?.provisionDeviceSecret
     };
     this.entityForm.patchValue({name: entity.name});
     this.entityForm.patchValue({type: entity.type}, {emitEvent: false});
+    this.entityForm.patchValue({image: entity.image}, {emitEvent: false});
     this.entityForm.patchValue({transportType: entity.transportType}, {emitEvent: false});
     this.entityForm.patchValue({provisionType: entity.provisionType}, {emitEvent: false});
     this.entityForm.patchValue({provisionDeviceKey: entity.provisionDeviceKey}, {emitEvent: false});
@@ -176,15 +191,21 @@ export class DeviceProfileComponent extends EntityComponent<DeviceProfile> {
       transportConfiguration: entity.profileData?.transportConfiguration,
       alarms: entity.profileData?.alarms,
       provisionConfiguration: deviceProvisionConfiguration
-    }});
-    this.entityForm.patchValue({defaultRuleChainId: entity.defaultRuleChainId ? entity.defaultRuleChainId.id : null});
-    this.entityForm.patchValue({defaultQueueName: entity.defaultQueueName});
-    this.entityForm.patchValue({description: entity.description});
+    }}, {emitEvent: false});
+    this.entityForm.patchValue({defaultRuleChainId: entity.defaultRuleChainId ? entity.defaultRuleChainId.id : null}, {emitEvent: false});
+    this.entityForm.patchValue({defaultDashboardId: entity.defaultDashboardId ? entity.defaultDashboardId.id : null}, {emitEvent: false});
+    this.entityForm.patchValue({defaultQueueName: entity.defaultQueueName}, {emitEvent: false});
+    this.entityForm.patchValue({firmwareId: entity.firmwareId}, {emitEvent: false});
+    this.entityForm.patchValue({softwareId: entity.softwareId}, {emitEvent: false});
+    this.entityForm.patchValue({description: entity.description}, {emitEvent: false});
   }
 
   prepareFormValue(formValue: any): any {
     if (formValue.defaultRuleChainId) {
       formValue.defaultRuleChainId = new RuleChainId(formValue.defaultRuleChainId);
+    }
+    if (formValue.defaultDashboardId) {
+      formValue.defaultDashboardId = new DashboardId(formValue.defaultDashboardId);
     }
     const deviceProvisionConfiguration: DeviceProvisionConfiguration = formValue.profileData.provisionConfiguration;
     formValue.provisionType = deviceProvisionConfiguration.type;

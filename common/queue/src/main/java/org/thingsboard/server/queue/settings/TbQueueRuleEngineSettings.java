@@ -1,5 +1,5 @@
 /**
- * Copyright © 2016-2020 The Thingsboard Authors
+ * Copyright © 2016-2021 The Thingsboard Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -36,8 +36,6 @@ public class TbQueueRuleEngineSettings {
     private String topic;
     private List<TbRuleEngineQueueConfiguration> queues;
 
-    //TODO 2.5 ybondarenko: make sure the queue names are valid to all queue providers.
-    // See how they are used in TbRuleEngineQueueFactory.createToRuleEngineMsgConsumer and all producers
     @PostConstruct
     public void validate() {
         queues.stream().filter(queue -> queue.getName().equals("Main")).findFirst().orElseThrow(() -> {

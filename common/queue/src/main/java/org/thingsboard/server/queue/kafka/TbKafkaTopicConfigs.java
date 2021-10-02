@@ -1,5 +1,5 @@
 /**
- * Copyright © 2016-2020 The Thingsboard Authors
+ * Copyright © 2016-2021 The Thingsboard Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,15 +17,16 @@ package org.thingsboard.server.queue.kafka;
 
 import lombok.Getter;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnExpression;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
+import org.thingsboard.server.common.data.StringUtils;
 
 import javax.annotation.PostConstruct;
 import java.util.HashMap;
 import java.util.Map;
 
 @Component
-@ConditionalOnExpression("'${queue.type:null}'=='kafka'")
+@ConditionalOnProperty(prefix = "queue", value = "type", havingValue = "kafka")
 public class TbKafkaTopicConfigs {
     @Value("${queue.kafka.topic-properties.core}")
     private String coreProperties;
@@ -37,6 +38,8 @@ public class TbKafkaTopicConfigs {
     private String notificationsProperties;
     @Value("${queue.kafka.topic-properties.js-executor}")
     private String jsExecutorProperties;
+    @Value("${queue.kafka.topic-properties.ota-updates:}")
+    private String fwUpdatesProperties;
 
     @Getter
     private Map<String, String> coreConfigs;
@@ -48,6 +51,8 @@ public class TbKafkaTopicConfigs {
     private Map<String, String> notificationsConfigs;
     @Getter
     private Map<String, String> jsExecutorConfigs;
+    @Getter
+    private Map<String, String> fwUpdatesConfigs;
 
     @PostConstruct
     private void init() {
@@ -56,15 +61,18 @@ public class TbKafkaTopicConfigs {
         transportApiConfigs = getConfigs(transportApiProperties);
         notificationsConfigs = getConfigs(notificationsProperties);
         jsExecutorConfigs = getConfigs(jsExecutorProperties);
+        fwUpdatesConfigs = getConfigs(fwUpdatesProperties);
     }
 
     private Map<String, String> getConfigs(String properties) {
         Map<String, String> configs = new HashMap<>();
-        for (String property : properties.split(";")) {
-            int delimiterPosition = property.indexOf(":");
-            String key = property.substring(0, delimiterPosition);
-            String value = property.substring(delimiterPosition + 1);
-            configs.put(key, value);
+        if (StringUtils.isNotEmpty(properties)) {
+            for (String property : properties.split(";")) {
+                int delimiterPosition = property.indexOf(":");
+                String key = property.substring(0, delimiterPosition);
+                String value = property.substring(delimiterPosition + 1);
+                configs.put(key, value);
+            }
         }
         return configs;
     }

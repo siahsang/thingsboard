@@ -1,5 +1,5 @@
 /**
- * Copyright © 2016-2020 The Thingsboard Authors
+ * Copyright © 2016-2021 The Thingsboard Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -28,23 +28,25 @@ import io.netty.handler.ssl.SslHandler;
 public class MqttTransportServerInitializer extends ChannelInitializer<SocketChannel> {
 
     private final MqttTransportContext context;
+    private final boolean sslEnabled;
 
-    public MqttTransportServerInitializer(MqttTransportContext context) {
+    public MqttTransportServerInitializer(MqttTransportContext context, boolean sslEnabled) {
         this.context = context;
+        this.sslEnabled = sslEnabled;
     }
 
     @Override
     public void initChannel(SocketChannel ch) {
         ChannelPipeline pipeline = ch.pipeline();
         SslHandler sslHandler = null;
-        if (context.getSslHandlerProvider() != null) {
+        if (sslEnabled && context.getSslHandlerProvider() != null) {
             sslHandler = context.getSslHandlerProvider().getSslHandler();
             pipeline.addLast(sslHandler);
         }
         pipeline.addLast("decoder", new MqttDecoder(context.getMaxPayloadSize()));
         pipeline.addLast("encoder", MqttEncoder.INSTANCE);
 
-        MqttTransportHandler handler = new MqttTransportHandler(context,sslHandler);
+        MqttTransportHandler handler = new MqttTransportHandler(context, sslHandler);
 
         pipeline.addLast(handler);
         ch.closeFuture().addListener(handler);

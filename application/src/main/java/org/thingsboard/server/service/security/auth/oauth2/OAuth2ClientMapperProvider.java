@@ -1,5 +1,5 @@
 /**
- * Copyright © 2016-2020 The Thingsboard Authors
+ * Copyright © 2016-2021 The Thingsboard Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -37,6 +37,10 @@ public class OAuth2ClientMapperProvider {
     @Qualifier("githubOAuth2ClientMapper")
     private OAuth2ClientMapper githubOAuth2ClientMapper;
 
+    @Autowired
+    @Qualifier("appleOAuth2ClientMapper")
+    private OAuth2ClientMapper appleOAuth2ClientMapper;
+
     public OAuth2ClientMapper getOAuth2ClientMapperByType(MapperType oauth2MapperType) {
         switch (oauth2MapperType) {
             case CUSTOM:
@@ -45,6 +49,8 @@ public class OAuth2ClientMapperProvider {
                 return basicOAuth2ClientMapper;
             case GITHUB:
                 return githubOAuth2ClientMapper;
+            case APPLE:
+                return appleOAuth2ClientMapper;
             default:
                 throw new RuntimeException("OAuth2ClientRegistrationMapper with type " + oauth2MapperType + " is not supported!");
         }

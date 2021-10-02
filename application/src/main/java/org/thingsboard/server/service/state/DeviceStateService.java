@@ -1,5 +1,5 @@
 /**
- * Copyright © 2016-2020 The Thingsboard Authors
+ * Copyright © 2016-2021 The Thingsboard Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,7 +18,8 @@ package org.thingsboard.server.service.state;
 import org.springframework.context.ApplicationListener;
 import org.thingsboard.server.common.data.Device;
 import org.thingsboard.server.common.data.id.DeviceId;
-import org.thingsboard.server.queue.discovery.PartitionChangeEvent;
+import org.thingsboard.server.common.data.id.TenantId;
+import org.thingsboard.server.queue.discovery.event.PartitionChangeEvent;
 import org.thingsboard.server.gen.transport.TransportProtos;
 import org.thingsboard.server.common.msg.queue.TbCallback;
 
@@ -27,19 +28,13 @@ import org.thingsboard.server.common.msg.queue.TbCallback;
  */
 public interface DeviceStateService extends ApplicationListener<PartitionChangeEvent> {
 
-    void onDeviceAdded(Device device);
+    void onDeviceConnect(TenantId tenantId, DeviceId deviceId);
 
-    void onDeviceUpdated(Device device);
+    void onDeviceActivity(TenantId tenantId, DeviceId deviceId, long lastReportedActivityTime);
 
-    void onDeviceDeleted(Device device);
+    void onDeviceDisconnect(TenantId tenantId, DeviceId deviceId);
 
-    void onDeviceConnect(DeviceId deviceId);
-
-    void onDeviceActivity(DeviceId deviceId, long lastReportedActivityTime);
-
-    void onDeviceDisconnect(DeviceId deviceId);
-
-    void onDeviceInactivityTimeoutUpdate(DeviceId deviceId, long inactivityTimeout);
+    void onDeviceInactivityTimeoutUpdate(TenantId tenantId, DeviceId deviceId, long inactivityTimeout);
 
     void onQueueMsg(TransportProtos.DeviceStateServiceMsgProto proto, TbCallback bytes);
 

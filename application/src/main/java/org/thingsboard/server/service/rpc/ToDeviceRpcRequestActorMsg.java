@@ -1,5 +1,5 @@
 /**
- * Copyright © 2016-2020 The Thingsboard Authors
+ * Copyright © 2016-2021 The Thingsboard Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,7 +18,7 @@ package org.thingsboard.server.service.rpc;
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;
 import lombok.ToString;
-import org.thingsboard.rule.engine.api.msg.ToDeviceActorNotificationMsg;
+import org.thingsboard.server.common.msg.ToDeviceActorNotificationMsg;
 import org.thingsboard.server.common.data.id.DeviceId;
 import org.thingsboard.server.common.data.id.TenantId;
 import org.thingsboard.server.common.msg.MsgType;
@@ -30,6 +30,8 @@ import org.thingsboard.server.common.msg.rpc.ToDeviceRpcRequest;
 @ToString
 @RequiredArgsConstructor
 public class ToDeviceRpcRequestActorMsg implements ToDeviceActorNotificationMsg {
+
+    private static final long serialVersionUID = -8592877558138716589L;
 
     @Getter
     private final String serviceId;

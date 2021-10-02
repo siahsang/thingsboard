@@ -1,5 +1,5 @@
 /**
- * Copyright © 2016-2020 The Thingsboard Authors
+ * Copyright © 2016-2021 The Thingsboard Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,6 +21,7 @@ import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.ConsumerRecords;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
+import org.springframework.util.StopWatch;
 import org.thingsboard.server.queue.TbQueueAdmin;
 import org.thingsboard.server.queue.TbQueueMsg;
 import org.thingsboard.server.queue.common.AbstractTbQueueConsumerTemplate;
@@ -42,28 +43,27 @@ public class TbKafkaConsumerTemplate<T extends TbQueueMsg> extends AbstractTbQue
     private final KafkaConsumer<String, byte[]> consumer;
     private final TbKafkaDecoder<T> decoder;
 
+    private final TbKafkaConsumerStatsService statsService;
+    private final String groupId;
+
     @Builder
     private TbKafkaConsumerTemplate(TbKafkaSettings settings, TbKafkaDecoder<T> decoder,
                                     String clientId, String groupId, String topic,
-                                    boolean autoCommit, int autoCommitIntervalMs,
-                                    int maxPollRecords,
-                                    TbQueueAdmin admin) {
+                                    TbQueueAdmin admin, TbKafkaConsumerStatsService statsService) {
         super(topic);
-        Properties props = settings.toProps();
+        Properties props = settings.toConsumerProps(topic);
         props.put(ConsumerConfig.CLIENT_ID_CONFIG, clientId);
         if (groupId != null) {
             props.put(ConsumerConfig.GROUP_ID_CONFIG, groupId);
         }
-        props.put(ConsumerConfig.MAX_POLL_RECORDS_CONFIG, settings.getMaxPollRecords());
-        props.put(ConsumerConfig.MAX_PARTITION_FETCH_BYTES_CONFIG, settings.getMaxPartitionFetchBytes());
-        props.put(ConsumerConfig.FETCH_MAX_BYTES_CONFIG, settings.getFetchMaxBytes());
-        props.put(ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG, autoCommit);
-        props.put(ConsumerConfig.AUTO_COMMIT_INTERVAL_MS_CONFIG, autoCommitIntervalMs);
-        props.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, "org.apache.kafka.common.serialization.StringDeserializer");
-        props.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, "org.apache.kafka.common.serialization.ByteArrayDeserializer");
-        if (maxPollRecords > 0) {
-            props.put(ConsumerConfig.MAX_POLL_RECORDS_CONFIG, maxPollRecords);
+
+        this.statsService = statsService;
+        this.groupId = groupId;
+
+        if (statsService != null) {
+            statsService.registerClientGroup(groupId);
         }
+
         this.admin = admin;
         this.consumer = new KafkaConsumer<>(props);
         this.decoder = decoder;
@@ -73,15 +73,26 @@ public class TbKafkaConsumerTemplate<T extends TbQueueMsg> extends AbstractTbQue
     protected void doSubscribe(List<String> topicNames) {
         if (!topicNames.isEmpty()) {
             topicNames.forEach(admin::createTopicIfNotExists);
+            log.info("subscribe topics {}", topicNames);
             consumer.subscribe(topicNames);
         } else {
+            log.info("unsubscribe due to empty topic list");
             consumer.unsubscribe();
         }
     }
 
     @Override
     protected List<ConsumerRecord<String, byte[]>> doPoll(long durationInMillis) {
+        StopWatch stopWatch = new StopWatch();
+        stopWatch.start();
+
+        log.trace("poll topic {} maxDuration {}", getTopic(), durationInMillis);
+
         ConsumerRecords<String, byte[]> records = consumer.poll(Duration.ofMillis(durationInMillis));
+
+        stopWatch.stop();
+        log.trace("poll topic {} took {}ms", getTopic(), stopWatch.getTotalTimeMillis());
+
         if (records.isEmpty()) {
             return Collections.emptyList();
         } else {
@@ -98,15 +109,18 @@ public class TbKafkaConsumerTemplate<T extends TbQueueMsg> extends AbstractTbQue
 
     @Override
     protected void doCommit() {
-        consumer.commitAsync();
+        consumer.commitSync();
     }
 
     @Override
     protected void doUnsubscribe() {
+        log.info("unsubscribe topic and close consumer for topic {}", getTopic());
         if (consumer != null) {
             consumer.unsubscribe();
             consumer.close();
         }
+        if (statsService != null) {
+            statsService.unregisterClientGroup(groupId);
+        }
     }
-
 }

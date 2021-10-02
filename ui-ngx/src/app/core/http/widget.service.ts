@@ -1,5 +1,5 @@
 ///
-/// Copyright © 2016-2020 The Thingsboard Authors
+/// Copyright © 2016-2021 The Thingsboard Authors
 ///
 /// Licensed under the Apache License, Version 2.0 (the "License");
 /// you may not use this file except in compliance with the License.
@@ -21,11 +21,18 @@ import { HttpClient } from '@angular/common/http';
 import { PageLink } from '@shared/models/page/page-link';
 import { PageData } from '@shared/models/page/page-data';
 import { WidgetsBundle } from '@shared/models/widgets-bundle.model';
-import { Widget, WidgetType, widgetType, widgetTypesData } from '@shared/models/widget.models';
+import {
+  Widget,
+  WidgetType,
+  widgetType,
+  WidgetTypeDetails,
+  WidgetTypeInfo,
+  widgetTypesData
+} from '@shared/models/widget.models';
 import { UtilsService } from '@core/services/utils.service';
 import { TranslateService } from '@ngx-translate/core';
 import { ResourcesService } from '../services/resources.service';
-import { toWidgetInfo, toWidgetType, WidgetInfo } from '@app/modules/home/models/widget-component.models';
+import { toWidgetInfo, toWidgetTypeDetails, WidgetInfo } from '@app/modules/home/models/widget-component.models';
 import { filter, map, mergeMap, tap } from 'rxjs/operators';
 import { WidgetTypeId } from '@shared/models/id/widget-type-id';
 import { NULL_UUID } from '@shared/models/id/has-uuid';
@@ -43,6 +50,8 @@ export class WidgetService {
   private systemWidgetsBundles: Array<WidgetsBundle>;
   private tenantWidgetsBundles: Array<WidgetsBundle>;
 
+  private widgetTypeInfosCache = new Map<string, Array<WidgetTypeInfo>>();
+
   private loadWidgetsBundleCacheSubject: ReplaySubject<any>;
 
   constructor(
@@ -57,6 +66,10 @@ export class WidgetService {
         this.invalidateWidgetsBundleCache();
       }
     );
+  }
+
+  public getWidgetScopeVariables(): string[] {
+    return ['tinycolor', 'cssjs', 'moment', '$', 'jQuery'];
   }
 
   public getAllWidgetsBundles(config?: RequestConfig): Observable<Array<WidgetsBundle>> {
@@ -115,6 +128,25 @@ export class WidgetService {
                               config?: RequestConfig): Observable<Array<WidgetType>> {
     return this.http.get<Array<WidgetType>>(`/api/widgetTypes?isSystem=${isSystem}&bundleAlias=${bundleAlias}`,
       defaultHttpOptionsFromConfig(config));
+  }
+
+  public getBundleWidgetTypesDetails(bundleAlias: string, isSystem: boolean,
+                                     config?: RequestConfig): Observable<Array<WidgetTypeDetails>> {
+    return this.http.get<Array<WidgetTypeDetails>>(`/api/widgetTypesDetails?isSystem=${isSystem}&bundleAlias=${bundleAlias}`,
+      defaultHttpOptionsFromConfig(config));
+  }
+
+  public getBundleWidgetTypeInfos(bundleAlias: string, isSystem: boolean,
+                                  config?: RequestConfig): Observable<Array<WidgetTypeInfo>> {
+    const key = bundleAlias + (isSystem ? '_sys' : '');
+    if (this.widgetTypeInfosCache.has(key)) {
+      return of(this.widgetTypeInfosCache.get(key));
+    } else {
+      return this.http.get<Array<WidgetTypeInfo>>(`/api/widgetTypesInfos?isSystem=${isSystem}&bundleAlias=${bundleAlias}`,
+        defaultHttpOptionsFromConfig(config)).pipe(
+          tap((res) => this.widgetTypeInfosCache.set(key, res) )
+      );
+    }
   }
 
   public loadBundleLibraryWidgets(bundleAlias: string, isSystem: boolean,
@@ -176,21 +208,22 @@ export class WidgetService {
       defaultHttpOptionsFromConfig(config));
   }
 
-  public saveWidgetType(widgetInfo: WidgetInfo,
-                        id: WidgetTypeId,
-                        bundleAlias: string,
-                        config?: RequestConfig): Observable<WidgetType> {
-    const widgetTypeInstance = toWidgetType(widgetInfo, id, undefined, bundleAlias);
-    return this.http.post<WidgetType>('/api/widgetType', widgetTypeInstance,
+  public saveWidgetTypeDetails(widgetInfo: WidgetInfo,
+                               id: WidgetTypeId,
+                               bundleAlias: string,
+                               createdTime: number,
+                               config?: RequestConfig): Observable<WidgetTypeDetails> {
+    const widgetTypeDetails = toWidgetTypeDetails(widgetInfo, id, undefined, bundleAlias, createdTime);
+    return this.http.post<WidgetTypeDetails>('/api/widgetType', widgetTypeDetails,
       defaultHttpOptionsFromConfig(config)).pipe(
       tap((savedWidgetType) => {
         this.widgetTypeUpdatedSubject.next(savedWidgetType);
       }));
   }
 
-  public saveImportedWidgetType(widgetTypeInstance: WidgetType,
-                                config?: RequestConfig): Observable<WidgetType> {
-    return this.http.post<WidgetType>('/api/widgetType', widgetTypeInstance,
+  public saveImportedWidgetTypeDetails(widgetTypeDetails: WidgetTypeDetails,
+                                       config?: RequestConfig): Observable<WidgetTypeDetails> {
+    return this.http.post<WidgetTypeDetails>('/api/widgetType', widgetTypeDetails,
       defaultHttpOptionsFromConfig(config)).pipe(
       tap((savedWidgetType) => {
         this.widgetTypeUpdatedSubject.next(savedWidgetType);
@@ -212,8 +245,8 @@ export class WidgetService {
   }
 
   public getWidgetTypeById(widgetTypeId: string,
-                           config?: RequestConfig): Observable<WidgetType> {
-    return this.http.get<WidgetType>(`/api/widgetType/${widgetTypeId}`,
+                           config?: RequestConfig): Observable<WidgetTypeDetails> {
+    return this.http.get<WidgetTypeDetails>(`/api/widgetType/${widgetTypeId}`,
       defaultHttpOptionsFromConfig(config));
   }
 
@@ -280,6 +313,6 @@ export class WidgetService {
     this.systemWidgetsBundles = undefined;
     this.tenantWidgetsBundles = undefined;
     this.loadWidgetsBundleCacheSubject = undefined;
+    this.widgetTypeInfosCache.clear();
   }
-
 }

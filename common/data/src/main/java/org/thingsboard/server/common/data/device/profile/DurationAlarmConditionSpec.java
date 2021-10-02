@@ -1,5 +1,5 @@
 /**
- * Copyright © 2016-2020 The Thingsboard Authors
+ * Copyright © 2016-2021 The Thingsboard Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,6 +17,7 @@ package org.thingsboard.server.common.data.device.profile;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import lombok.Data;
+import org.thingsboard.server.common.data.query.FilterPredicateValue;
 
 import java.util.concurrent.TimeUnit;
 
@@ -25,7 +26,7 @@ import java.util.concurrent.TimeUnit;
 public class DurationAlarmConditionSpec implements AlarmConditionSpec {
 
     private TimeUnit unit;
-    private long value;
+    private FilterPredicateValue<Long> predicate;
 
     @Override
     public AlarmConditionSpecType getType() {

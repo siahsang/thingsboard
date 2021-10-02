@@ -1,5 +1,5 @@
 ///
-/// Copyright © 2016-2020 The Thingsboard Authors
+/// Copyright © 2016-2021 The Thingsboard Authors
 ///
 /// Licensed under the Apache License, Version 2.0 (the "License");
 /// you may not use this file except in compliance with the License.
@@ -28,6 +28,7 @@ import {
   WidgetType,
   widgetType,
   WidgetTypeDescriptor,
+  WidgetTypeDetails,
   WidgetTypeParameters
 } from '@shared/models/widget.models';
 import { Timewindow, WidgetTimewindow } from '@shared/models/time/time.models';
@@ -77,6 +78,8 @@ import { PageLink } from '@shared/models/page/page-link';
 import { SortOrder } from '@shared/models/page/sort-order';
 import { DomSanitizer } from '@angular/platform-browser';
 import { Router } from '@angular/router';
+import { catchError, map, mergeMap, switchMap } from 'rxjs/operators';
+import { FormattedData } from '@home/components/widget/lib/maps/map-models';
 
 export interface IWidgetAction {
   name: string;
@@ -84,9 +87,13 @@ export interface IWidgetAction {
   onAction: ($event: Event) => void;
 }
 
+export type ShowWidgetHeaderActionFunction = (ctx: WidgetContext, data: FormattedData[]) => boolean;
+
 export interface WidgetHeaderAction extends IWidgetAction {
   displayName: string;
   descriptor: WidgetActionDescriptor;
+  useShowWidgetHeaderActionFunction: boolean;
+  showWidgetHeaderActionFunction: ShowWidgetHeaderActionFunction;
 }
 
 export interface WidgetAction extends IWidgetAction {
@@ -135,6 +142,10 @@ export class WidgetContext {
     this.changeDetectorValue = cd;
   }
 
+  set containerChangeDetector(cd: ChangeDetectorRef) {
+    this.containerChangeDetectorValue = cd;
+  }
+
   get currentUser(): AuthUser {
     if (this.store) {
       return getCurrentAuthUser(this.store);
@@ -161,6 +172,7 @@ export class WidgetContext {
   router: Router;
 
   private changeDetectorValue: ChangeDetectorRef;
+  private containerChangeDetectorValue: ChangeDetectorRef;
 
   inited = false;
   destroyed = false;
@@ -182,16 +194,23 @@ export class WidgetContext {
   };
 
   controlApi: RpcApi = {
-    sendOneWayCommand: (method, params, timeout) => {
+    sendOneWayCommand: (method, params, timeout, persistent, requestUUID) => {
       if (this.defaultSubscription) {
-        return this.defaultSubscription.sendOneWayCommand(method, params, timeout);
+        return this.defaultSubscription.sendOneWayCommand(method, params, timeout, persistent, requestUUID);
       } else {
         return of(null);
       }
     },
-    sendTwoWayCommand: (method, params, timeout) => {
+    sendTwoWayCommand: (method, params, timeout, persistent, requestUUID) => {
       if (this.defaultSubscription) {
-        return this.defaultSubscription.sendTwoWayCommand(method, params, timeout);
+        return this.defaultSubscription.sendTwoWayCommand(method, params, timeout, persistent, requestUUID);
+      } else {
+        return of(null);
+      }
+    },
+    completedCommand: () => {
+      if (this.defaultSubscription) {
+        return this.defaultSubscription.completedCommand();
       } else {
         return of(null);
       }
@@ -238,41 +257,45 @@ export class WidgetContext {
 
   rxjs = {
     forkJoin,
-    of
+    of,
+    map,
+    mergeMap,
+    switchMap,
+    catchError
   };
 
   showSuccessToast(message: string, duration: number = 1000,
                    verticalPosition: NotificationVerticalPosition = 'bottom',
                    horizontalPosition: NotificationHorizontalPosition = 'left',
-                   target?: string) {
+                   target: string = 'dashboardRoot') {
     this.showToast('success', message, duration, verticalPosition, horizontalPosition, target);
   }
 
   showInfoToast(message: string,
                 verticalPosition: NotificationVerticalPosition = 'bottom',
                 horizontalPosition: NotificationHorizontalPosition = 'left',
-                target?: string) {
+                target: string = 'dashboardRoot') {
     this.showToast('info', message, undefined, verticalPosition, horizontalPosition, target);
   }
 
   showWarnToast(message: string,
                 verticalPosition: NotificationVerticalPosition = 'bottom',
                 horizontalPosition: NotificationHorizontalPosition = 'left',
-                target?: string) {
+                target: string = 'dashboardRoot') {
     this.showToast('warn', message, undefined, verticalPosition, horizontalPosition, target);
   }
 
   showErrorToast(message: string,
                  verticalPosition: NotificationVerticalPosition = 'bottom',
                  horizontalPosition: NotificationHorizontalPosition = 'left',
-                 target?: string) {
+                 target: string = 'dashboardRoot') {
     this.showToast('error', message, undefined, verticalPosition, horizontalPosition, target);
   }
 
   showToast(type: NotificationType, message: string, duration: number,
             verticalPosition: NotificationVerticalPosition = 'bottom',
             horizontalPosition: NotificationHorizontalPosition = 'left',
-            target?: string) {
+            target: string = 'dashboardRoot') {
     this.store.dispatch(new ActionNotificationShow(
       {
         message,
@@ -300,6 +323,16 @@ export class WidgetContext {
       }
       try {
         this.changeDetectorValue.detectChanges();
+      } catch (e) {
+        // console.log(e);
+      }
+    }
+  }
+
+  detectContainerChanges() {
+    if (!this.destroyed) {
+      try {
+        this.containerChangeDetectorValue.detectChanges();
       } catch (e) {
         // console.log(e);
       }
@@ -347,6 +380,8 @@ export interface WidgetInfo extends WidgetTypeDescriptor, WidgetControllerDescri
   alias: string;
   typeSettingsSchema?: string | any;
   typeDataKeySettingsSchema?: string | any;
+  image?: string;
+  description?: string;
   componentFactory?: ComponentFactory<IDynamicWidgetComponent>;
 }
 
@@ -375,6 +410,8 @@ export const MissingWidgetType: WidgetInfo = {
   controllerScript: 'self.onInit = function() {}',
   settingsSchema: '{}\n',
   dataKeySettingsSchema: '{}\n',
+  image: null,
+  description: null,
   defaultConfig: '{\n' +
     '"title": "Widget type not found",\n' +
     '"datasources": [],\n' +
@@ -398,6 +435,8 @@ export const ErrorWidgetType: WidgetInfo = {
   controllerScript: 'self.onInit = function() {}',
   settingsSchema: '{}\n',
   dataKeySettingsSchema: '{}\n',
+  image: null,
+  description: null,
   defaultConfig: '{\n' +
     '"title": "Widget failed to load",\n' +
     '"datasources": [],\n' +
@@ -421,6 +460,13 @@ export interface WidgetTypeInstance {
   onDestroy?: () => void;
 }
 
+export function detailsToWidgetInfo(widgetTypeDetailsEntity: WidgetTypeDetails): WidgetInfo {
+  const widgetInfo = toWidgetInfo(widgetTypeDetailsEntity);
+  widgetInfo.image = widgetTypeDetailsEntity.image;
+  widgetInfo.description = widgetTypeDetailsEntity.description;
+  return widgetInfo;
+}
+
 export function toWidgetInfo(widgetTypeEntity: WidgetType): WidgetInfo {
   return {
     widgetName: widgetTypeEntity.name,
@@ -438,7 +484,18 @@ export function toWidgetInfo(widgetTypeEntity: WidgetType): WidgetInfo {
   };
 }
 
-export function toWidgetType(widgetInfo: WidgetInfo, id: WidgetTypeId, tenantId: TenantId, bundleAlias: string): WidgetType {
+export function toWidgetTypeDetails(widgetInfo: WidgetInfo, id: WidgetTypeId, tenantId: TenantId,
+                                    bundleAlias: string, createdTime: number): WidgetTypeDetails {
+  const widgetTypeEntity = toWidgetType(widgetInfo, id, tenantId, bundleAlias, createdTime);
+  const widgetTypeDetails: WidgetTypeDetails = {...widgetTypeEntity,
+    description: widgetInfo.description,
+    image: widgetInfo.image
+  };
+  return widgetTypeDetails;
+}
+
+export function toWidgetType(widgetInfo: WidgetInfo, id: WidgetTypeId, tenantId: TenantId,
+                             bundleAlias: string, createdTime: number): WidgetType {
   const descriptor: WidgetTypeDescriptor = {
     type: widgetInfo.type,
     sizeX: widgetInfo.sizeX,
@@ -454,6 +511,7 @@ export function toWidgetType(widgetInfo: WidgetInfo, id: WidgetTypeId, tenantId:
   return {
     id,
     tenantId,
+    createdTime,
     bundleAlias,
     alias: widgetInfo.alias,
     name: widgetInfo.widgetName,

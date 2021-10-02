@@ -1,5 +1,5 @@
 ///
-/// Copyright © 2016-2020 The Thingsboard Authors
+/// Copyright © 2016-2021 The Thingsboard Authors
 ///
 /// Licensed under the Apache License, Version 2.0 (the "License");
 /// you may not use this file except in compliance with the License.
@@ -24,6 +24,7 @@ import {
   isDefinedAndNotNull,
   isEqual,
   isNumber,
+  isNumeric,
   isUndefined
 } from '@app/core/utils';
 import { IWidgetSubscription, WidgetSubscriptionOptions } from '@core/api/widget-api.models';
@@ -74,8 +75,9 @@ export class TbFlot {
   private readonly utils: UtilsService;
 
   private settings: TbFlotSettings;
+  private comparisonEnabled: boolean;
 
-  private readonly tooltip: JQuery<any>;
+  private tooltip: JQuery<any>;
 
   private readonly yAxisTickFormatter: TbFlotTicksFormatterFunction;
   private readonly yaxis: TbFlotAxisOptions;
@@ -117,6 +119,7 @@ export class TbFlot {
   private mouseleaveHandler = this.onFlotMouseLeave.bind(this);
   private flotClickHandler = this.onFlotClick.bind(this);
 
+  private readonly showTooltip: boolean;
   private readonly animatedPie: boolean;
   private pieDataAnimationDuration: number;
   private pieData: DatasourceData[];
@@ -146,8 +149,9 @@ export class TbFlot {
     this.chartType = this.chartType || 'line';
     this.settings = ctx.settings as TbFlotSettings;
     this.utils = this.ctx.$injector.get(UtilsService);
-    this.tooltip = $('#flot-series-tooltip');
-    if (this.tooltip.length === 0) {
+    this.showTooltip = isDefined(this.settings.showTooltip) ? this.settings.showTooltip : true;
+    this.tooltip = this.showTooltip ? $('#flot-series-tooltip') : null;
+    if (this.tooltip?.length === 0) {
       this.tooltip = this.createTooltipElement();
     }
 
@@ -175,7 +179,7 @@ export class TbFlot {
         autoHighlight: this.tooltipIndividual === true,
         markings: []
       },
-      selection : { mode : ctx.isMobile ? null : 'x' },
+      selection : { mode : 'x' },
       legend : {
         show: false
       }
@@ -263,29 +267,7 @@ export class TbFlot {
         };
       }
 
-      if (this.settings.comparisonEnabled) {
-        const xaxis = deepClone(this.xaxis);
-        xaxis.position = 'top';
-        if (this.settings.xaxisSecond) {
-          if (this.settings.xaxisSecond.showLabels === false) {
-            xaxis.tickFormatter = () => {
-              return '';
-            };
-          }
-          xaxis.label = this.utils.customTranslation(this.settings.xaxisSecond.title, this.settings.xaxisSecond.title) || null;
-          xaxis.position = this.settings.xaxisSecond.axisPosition;
-        }
-        xaxis.tickLength = 0;
-        this.options.xaxes.push(xaxis);
-
-        this.options.series = {
-          stack: false
-        };
-      } else {
-        this.options.series = {
-          stack: this.settings.stack === true
-        };
-      }
+      this.options.series = {};
 
       this.options.crosshair = {
         mode: 'x'
@@ -298,7 +280,7 @@ export class TbFlot {
         };
       }
 
-      if (this.chartType === 'line' && isFinite(this.settings.thresholdsLineWidth)) {
+      if ((this.chartType === 'line' || this.chartType === 'bar') && isFinite(this.settings.thresholdsLineWidth)) {
         this.options.grid.markingsLineWidth = this.settings.thresholdsLineWidth;
       }
 
@@ -364,7 +346,6 @@ export class TbFlot {
 
       // Experimental
       this.animatedPie = this.settings.animatedPie === true;
-
     }
 
     if (this.ctx.defaultSubscription) {
@@ -372,10 +353,29 @@ export class TbFlot {
     }
   }
 
-
   private init($element: JQuery<any>, subscription: IWidgetSubscription) {
-    this.subscription = subscription;
     this.$element = $element;
+    this.subscription = subscription;
+    this.comparisonEnabled = this.subscription ? this.subscription.comparisonEnabled : this.settings.comparisonEnabled;
+    if (this.comparisonEnabled) {
+      const xaxis = deepClone(this.xaxis);
+      xaxis.position = 'top';
+      if (this.settings.xaxisSecond) {
+        if (this.settings.xaxisSecond.showLabels === false) {
+          xaxis.tickFormatter = () => {
+            return '';
+          };
+        }
+        xaxis.label = this.utils.customTranslation(this.settings.xaxisSecond.title, this.settings.xaxisSecond.title) || null;
+        xaxis.position = this.settings.xaxisSecond.axisPosition;
+      }
+      xaxis.tickLength = 0;
+      this.options.xaxes.push(xaxis);
+
+      this.options.series.stack = false;
+    } else {
+      this.options.series.stack = this.settings.stack === true;
+    }
     const colors: string[] = [];
     this.yaxes = [];
     const yaxesMap: {[units: string]: TbFlotAxisOptions} = {};
@@ -387,8 +387,8 @@ export class TbFlot {
       this.settings.dataKeysListForLabels.forEach((item) => {
         item.settings = {};
       });
-      subscription.datasources.forEach((item) => {
-        let datasource: Datasource = {
+      this.subscription.datasources.forEach((item) => {
+        const datasource: Datasource = {
           type: item.type,
           entityType: item.entityType,
           entityId: item.entityId,
@@ -425,7 +425,7 @@ export class TbFlot {
         fill: keySettings.fillLines === true
       };
 
-      if (this.settings.stack && !this.settings.comparisonEnabled) {
+      if (this.settings.stack && !this.comparisonEnabled) {
         series.stack = !keySettings.excludeFromStacking;
       } else {
         series.stack = false;
@@ -557,7 +557,7 @@ export class TbFlot {
       }
       this.options.xaxes[0].min = this.subscription.timeWindow.minTime;
       this.options.xaxes[0].max = this.subscription.timeWindow.maxTime;
-      if (this.settings.comparisonEnabled) {
+      if (this.comparisonEnabled) {
         this.options.xaxes[1].min = this.subscription.comparisonTimeWindow.minTime;
         this.options.xaxes[1].max = this.subscription.comparisonTimeWindow.maxTime;
       }
@@ -636,7 +636,7 @@ export class TbFlot {
 
           this.options.xaxes[0].min = this.subscription.timeWindow.minTime;
           this.options.xaxes[0].max = this.subscription.timeWindow.maxTime;
-          if (this.settings.comparisonEnabled) {
+          if (this.comparisonEnabled) {
             this.options.xaxes[1].min = this.subscription.comparisonTimeWindow.minTime;
             this.options.xaxes[1].max = this.subscription.comparisonTimeWindow.maxTime;
           }
@@ -654,7 +654,7 @@ export class TbFlot {
           } else {
             this.plot.getOptions().xaxes[0].min = this.subscription.timeWindow.minTime;
             this.plot.getOptions().xaxes[0].max = this.subscription.timeWindow.maxTime;
-            if (this.settings.comparisonEnabled) {
+            if (this.comparisonEnabled) {
               this.plot.getOptions().xaxes[1].min = this.subscription.comparisonTimeWindow.minTime;
               this.plot.getOptions().xaxes[1].max = this.subscription.comparisonTimeWindow.maxTime;
             }
@@ -702,7 +702,7 @@ export class TbFlot {
   }
 
   public checkMouseEvents() {
-    const enabled = !this.ctx.isMobile &&  !this.ctx.isEdit;
+    const enabled = !this.ctx.isEdit;
     if (isUndefined(this.mouseEventsEnabled) || this.mouseEventsEnabled !== enabled) {
       this.mouseEventsEnabled = enabled;
       if (this.$element) {
@@ -718,6 +718,10 @@ export class TbFlot {
 
   public destroy() {
     this.cleanup();
+    if (this.tooltip) {
+      this.tooltip.stop(true);
+      this.tooltip.hide();
+    }
     if (this.plot) {
       this.plot.destroy();
       this.plot = null;
@@ -825,7 +829,7 @@ export class TbFlot {
       useDashboardTimewindow: false,
       type: widgetType.latest,
       callbacks: {
-        onDataUpdated: (subscription) => {this.thresholdsSourcesDataUpdated(subscription.data)}
+        onDataUpdated: (subscription) => this.thresholdsSourcesDataUpdated(subscription.data)
       }
     };
     this.ctx.subscriptionApi.createSubscription(thresholdsSourcesSubscriptionOptions, true).subscribe(
@@ -840,7 +844,7 @@ export class TbFlot {
     data.forEach((keyData) => {
       if (keyData && keyData.data && keyData.data[0]) {
         const attrValue = keyData.data[0][1];
-        if (isFinite(attrValue)) {
+        if (isNumeric(attrValue) && isFinite(attrValue)) {
           const settings: TbFlotThresholdKeySettings = keyData.dataKey.settings;
           const colorIndex = this.subscription.data.length + allThresholds.length;
           this.generateThreshold(allThresholds, settings.yaxis, settings.lineWidth, settings.color, colorIndex, attrValue);
@@ -892,7 +896,7 @@ export class TbFlot {
       type: widgetType.latest,
       callbacks: {
         onDataUpdated: (subscription) => {
-          this.labelPatternsParamsDataUpdated(subscription.data)
+          this.labelPatternsParamsDataUpdated(subscription.data);
         }
       }
     };
@@ -914,22 +918,22 @@ export class TbFlot {
   }
 
   private substituteLabelPatterns(series: TbFlotSeries, seriesIndex: number) {
-    let seriesLabelPatternsSourcesData = this.labelPatternsSourcesData.filter((item) => {
+    const seriesLabelPatternsSourcesData = this.labelPatternsSourcesData.filter((item) => {
       return item.datasource.entityId === series.datasource.entityId;
     });
     let label = createLabelFromDatasource(series.datasource, series.dataKey.pattern);
     for (let i = 0; i < seriesLabelPatternsSourcesData.length; i++) {
-      let keyData = seriesLabelPatternsSourcesData[i];
+      const keyData = seriesLabelPatternsSourcesData[i];
       if (keyData && keyData.data && keyData.data[0]) {
-        let attrValue = keyData.data[0][1];
-        let attrName = keyData.dataKey.name;
+        const attrValue = keyData.data[0][1];
+        const attrName = keyData.dataKey.name;
         if (isDefined(attrValue) && (attrValue !== null)) {
           label = insertVariable(label, attrName, attrValue);
         }
       }
     }
     if (isDefined(this.subscription.legendData)) {
-      let targetLegendKeyIndex = this.subscription.legendData.keys.findIndex((key) => {
+      const targetLegendKeyIndex = this.subscription.legendData.keys.findIndex((key) => {
         return key.dataIndex === seriesIndex;
       });
       if (targetLegendKeyIndex !== -1) {
@@ -1094,7 +1098,7 @@ export class TbFlot {
               flex: '1'
             });
             let columnContent = '';
-            for (let i = c*maxRows; i < (c+1)*maxRows; i++) {
+            for (let i = c * maxRows; i < (c + 1) * maxRows; i++) {
               if (i >= hoverData.seriesHover.length) {
                 break;
               }
@@ -1167,10 +1171,10 @@ export class TbFlot {
   }
 
   private onFlotHover(e: any, pos: JQueryPlotPoint, item: TbFlotPlotItem) {
-    if (!this.plot) {
+    if (!this.plot || !this.tooltip) {
       return;
     }
-    if (!this.tooltipIndividual || item) {
+    if ((!this.tooltipIndividual || item) && !this.ctx.isEdit) {
       const multipleModeTooltip = !this.tooltipIndividual;
       if (multipleModeTooltip) {
         this.plot.unhighlight();
@@ -1283,15 +1287,23 @@ export class TbFlot {
     let minTimeHistorical: any;
     let hoverData: TbFlotSeriesHoverInfo;
     let value: any;
-    let lastValue: any;
+    let lastValue = 0;
     let minDistanceHistorical: number;
+    let deltaX = 0;
     const results: TbFlotHoverInfo[] = [{
       seriesHover: []
     }];
-    if (this.settings.comparisonEnabled) {
+    if (this.comparisonEnabled) {
       results.push({
         seriesHover: []
       });
+    }
+    if (this.chartType === 'bar' && this.options.series.bars.align !== 'left') {
+      if (this.options.series.bars.align === 'center') {
+        deltaX = this.options.series.bars.barWidth / 2;
+      } else {
+        deltaX = this.options.series.bars.barWidth;
+      }
     }
     for (i = 0; i < seriesList.length; i++) {
       series = seriesList[i];
@@ -1301,6 +1313,7 @@ export class TbFlot {
       } else {
         posx = pos.x;
       }
+      posx += deltaX;
       hoverIndex = this.findHoverIndexFromData(posx, series);
       if (series.data[hoverIndex] && series.data[hoverIndex][0]) {
         hoverDistance = posx - series.data[hoverIndex][0];

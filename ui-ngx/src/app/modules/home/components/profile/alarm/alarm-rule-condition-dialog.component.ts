@@ -1,5 +1,5 @@
 ///
-/// Copyright © 2016-2020 The Thingsboard Authors
+/// Copyright © 2016-2021 The Thingsboard Authors
 ///
 /// Licensed under the Apache License, Version 2.0 (the "License");
 /// you may not use this file except in compliance with the License.
@@ -22,34 +22,35 @@ import { AppState } from '@core/core.state';
 import { FormBuilder, FormControl, FormGroup, FormGroupDirective, NgForm, Validators } from '@angular/forms';
 import { Router } from '@angular/router';
 import { DialogComponent } from '@app/shared/components/dialog.component';
-import { UtilsService } from '@core/services/utils.service';
 import { TranslateService } from '@ngx-translate/core';
-import { KeyFilter, keyFilterInfosToKeyFilters, keyFiltersToKeyFilterInfos } from '@shared/models/query/query.models';
+import { keyFilterInfosToKeyFilters, keyFiltersToKeyFilterInfos } from '@shared/models/query/query.models';
 import { AlarmCondition, AlarmConditionType, AlarmConditionTypeTranslationMap } from '@shared/models/device.models';
 import { TimeUnit, timeUnitTranslationMap } from '@shared/models/time/time.models';
+import { EntityId } from '@shared/models/id/entity-id';
 
 export interface AlarmRuleConditionDialogData {
   readonly: boolean;
   condition: AlarmCondition;
+  entityId?: EntityId;
 }
 
 @Component({
   selector: 'tb-alarm-rule-condition-dialog',
   templateUrl: './alarm-rule-condition-dialog.component.html',
   providers: [{provide: ErrorStateMatcher, useExisting: AlarmRuleConditionDialogComponent}],
-  styleUrls: ['/alarm-rule-condition-dialog.component.scss']
+  styleUrls: ['./alarm-rule-condition-dialog.component.scss']
 })
 export class AlarmRuleConditionDialogComponent extends DialogComponent<AlarmRuleConditionDialogComponent, AlarmCondition>
   implements OnInit, ErrorStateMatcher {
 
-  timeUnits = Object.keys(TimeUnit);
+  timeUnits = Object.values(TimeUnit);
   timeUnitTranslations = timeUnitTranslationMap;
-  alarmConditionTypes = Object.keys(AlarmConditionType);
+  alarmConditionTypes = Object.values(AlarmConditionType);
   AlarmConditionType = AlarmConditionType;
   alarmConditionTypeTranslation = AlarmConditionTypeTranslationMap;
-
   readonly = this.data.readonly;
   condition = this.data.condition;
+  entityId = this.data.entityId;
 
   conditionFormGroup: FormGroup;
 
@@ -61,7 +62,6 @@ export class AlarmRuleConditionDialogComponent extends DialogComponent<AlarmRule
               @SkipSelf() private errorStateMatcher: ErrorStateMatcher,
               public dialogRef: MatDialogRef<AlarmRuleConditionDialogComponent, AlarmCondition>,
               private fb: FormBuilder,
-              private utils: UtilsService,
               public translate: TranslateService) {
     super(store, router, dialogRef);
 
@@ -69,9 +69,8 @@ export class AlarmRuleConditionDialogComponent extends DialogComponent<AlarmRule
       keyFilters: [keyFiltersToKeyFilterInfos(this.condition?.condition), Validators.required],
       spec: this.fb.group({
         type: [AlarmConditionType.SIMPLE, Validators.required],
-        unit: [{value: null, disable: true}, Validators.required],
-        value: [{value: null, disable: true}, [Validators.required, Validators.min(1), Validators.max(2147483647), Validators.pattern('[0-9]*')]],
-        count: [{value: null, disable: true}, [Validators.required, Validators.min(1), Validators.max(2147483647), Validators.pattern('[0-9]*')]]
+        unit: [null, Validators.required],
+        predicate: [null, Validators.required]
       })
     });
     this.conditionFormGroup.patchValue({spec: this.condition?.spec});
@@ -97,42 +96,37 @@ export class AlarmRuleConditionDialogComponent extends DialogComponent<AlarmRule
   private updateValidators(type: AlarmConditionType, resetDuration = false, emitEvent = false) {
     switch (type) {
       case AlarmConditionType.DURATION:
-        this.conditionFormGroup.get('spec.value').enable();
         this.conditionFormGroup.get('spec.unit').enable();
-        this.conditionFormGroup.get('spec.count').disable();
+        this.conditionFormGroup.get('spec.predicate').enable();
         if (resetDuration) {
           this.conditionFormGroup.get('spec').patchValue({
-            count: null
+            predicate: null
           });
         }
         break;
       case AlarmConditionType.REPEATING:
-        this.conditionFormGroup.get('spec.count').enable();
-        this.conditionFormGroup.get('spec.value').disable();
+        this.conditionFormGroup.get('spec.predicate').enable();
         this.conditionFormGroup.get('spec.unit').disable();
         if (resetDuration) {
           this.conditionFormGroup.get('spec').patchValue({
-            value: null,
-            unit: null
+            unit: null,
+            predicate: null
           });
         }
         break;
       case AlarmConditionType.SIMPLE:
-        this.conditionFormGroup.get('spec.value').disable();
         this.conditionFormGroup.get('spec.unit').disable();
-        this.conditionFormGroup.get('spec.count').disable();
+        this.conditionFormGroup.get('spec.predicate').disable();
         if (resetDuration) {
           this.conditionFormGroup.get('spec').patchValue({
-            value: null,
             unit: null,
-            count: null
+            predicate: null
           });
         }
         break;
     }
-    this.conditionFormGroup.get('spec.value').updateValueAndValidity({emitEvent});
+    this.conditionFormGroup.get('spec.predicate').updateValueAndValidity({emitEvent});
     this.conditionFormGroup.get('spec.unit').updateValueAndValidity({emitEvent});
-    this.conditionFormGroup.get('spec.count').updateValueAndValidity({emitEvent});
   }
 
   cancel(): void {

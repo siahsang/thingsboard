@@ -1,5 +1,5 @@
 /**
- * Copyright © 2016-2020 The Thingsboard Authors
+ * Copyright © 2016-2021 The Thingsboard Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,8 +21,9 @@ import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
-import org.mockito.runners.MockitoJUnitRunner;
+import org.mockito.junit.MockitoJUnitRunner;
 import org.thingsboard.rule.engine.api.TbContext;
+import org.thingsboard.rule.engine.api.TbEmail;
 import org.thingsboard.rule.engine.api.TbNodeConfiguration;
 import org.thingsboard.rule.engine.api.TbNodeException;
 import org.thingsboard.server.common.data.id.DeviceId;
@@ -79,9 +80,9 @@ public class TbMsgToEmailNodeTest {
         assertEquals("oreo", metadataCaptor.getValue().getValue("username"));
         assertNotSame(metaData, metadataCaptor.getValue());
 
-        EmailPojo actual = new ObjectMapper().readValue(dataCaptor.getValue().getBytes(), EmailPojo.class);
+        TbEmail actual = new ObjectMapper().readValue(dataCaptor.getValue().getBytes(), TbEmail.class);
 
-        EmailPojo expected = new EmailPojo.EmailPojoBuilder()
+        TbEmail expected = TbEmail.builder()
                 .from("test@mail.org")
                 .to("user@email.io")
                 .subject("Hi oreo there")
@@ -97,6 +98,7 @@ public class TbMsgToEmailNodeTest {
             config.setToTemplate("${userEmail}");
             config.setSubjectTemplate("Hi ${username} there");
             config.setBodyTemplate("${name} is to high. Current ${passed} and ${count}");
+            config.setMailBodyType("false");
             ObjectMapper mapper = new ObjectMapper();
             TbNodeConfiguration nodeConfiguration = new TbNodeConfiguration(mapper.valueToTree(config));
 

@@ -1,5 +1,5 @@
 /**
- * Copyright © 2016-2020 The Thingsboard Authors
+ * Copyright © 2016-2021 The Thingsboard Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -25,11 +25,13 @@ import org.springframework.web.bind.annotation.RequestMethod;
 import org.springframework.web.bind.annotation.ResponseBody;
 import org.springframework.web.bind.annotation.RestController;
 import org.thingsboard.rule.engine.api.MailService;
+import org.thingsboard.rule.engine.api.SmsService;
 import org.thingsboard.server.common.data.AdminSettings;
 import org.thingsboard.server.common.data.UpdateMessage;
 import org.thingsboard.server.common.data.exception.ThingsboardException;
 import org.thingsboard.server.common.data.id.TenantId;
 import org.thingsboard.server.common.data.security.model.SecuritySettings;
+import org.thingsboard.server.common.data.sms.config.TestSmsRequest;
 import org.thingsboard.server.dao.settings.AdminSettingsService;
 import org.thingsboard.server.queue.util.TbCoreComponent;
 import org.thingsboard.server.service.security.permission.Operation;
@@ -44,6 +46,9 @@ public class AdminController extends BaseController {
 
     @Autowired
     private MailService mailService;
+
+    @Autowired
+    private SmsService smsService;
 
     @Autowired
     private AdminSettingsService adminSettingsService;
@@ -62,7 +67,7 @@ public class AdminController extends BaseController {
             accessControlService.checkPermission(getCurrentUser(), Resource.ADMIN_SETTINGS, Operation.READ);
             AdminSettings adminSettings = checkNotNull(adminSettingsService.findAdminSettingsByKey(TenantId.SYS_TENANT_ID, key));
             if (adminSettings.getKey().equals("mail")) {
-                ((ObjectNode) adminSettings.getJsonValue()).put("password", "");
+                ((ObjectNode) adminSettings.getJsonValue()).remove("password");
             }
             return adminSettings;
         } catch (Exception e) {
@@ -79,7 +84,9 @@ public class AdminController extends BaseController {
             adminSettings = checkNotNull(adminSettingsService.saveAdminSettings(TenantId.SYS_TENANT_ID, adminSettings));
             if (adminSettings.getKey().equals("mail")) {
                 mailService.updateMailConfiguration();
-                ((ObjectNode) adminSettings.getJsonValue()).put("password", "");
+                ((ObjectNode) adminSettings.getJsonValue()).remove("password");
+            } else if (adminSettings.getKey().equals("sms")) {
+                smsService.updateSmsConfiguration();
             }
             return adminSettings;
         } catch (Exception e) {
@@ -119,9 +126,24 @@ public class AdminController extends BaseController {
             accessControlService.checkPermission(getCurrentUser(), Resource.ADMIN_SETTINGS, Operation.READ);
             adminSettings = checkNotNull(adminSettings);
             if (adminSettings.getKey().equals("mail")) {
+                if(!adminSettings.getJsonValue().has("password")) {
+                    AdminSettings mailSettings = checkNotNull(adminSettingsService.findAdminSettingsByKey(TenantId.SYS_TENANT_ID, "mail"));
+                    ((ObjectNode) adminSettings.getJsonValue()).put("password", mailSettings.getJsonValue().get("password").asText());
+                }
                 String email = getCurrentUser().getEmail();
                 mailService.sendTestMail(adminSettings.getJsonValue(), email);
             }
+        } catch (Exception e) {
+            throw handleException(e);
+        }
+    }
+
+    @PreAuthorize("hasAuthority('SYS_ADMIN')")
+    @RequestMapping(value = "/settings/testSms", method = RequestMethod.POST)
+    public void sendTestSms(@RequestBody TestSmsRequest testSmsRequest) throws ThingsboardException {
+        try {
+            accessControlService.checkPermission(getCurrentUser(), Resource.ADMIN_SETTINGS, Operation.READ);
+            smsService.sendTestSms(testSmsRequest);
         } catch (Exception e) {
             throw handleException(e);
         }

@@ -1,5 +1,5 @@
 /**
- * Copyright © 2016-2020 The Thingsboard Authors
+ * Copyright © 2016-2021 The Thingsboard Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,14 +14,21 @@
  * limitations under the License.
  */
 :host {
+  overflow-x: auto;
+
   .mat-column-order {
     flex: 0 0 40px;
   }
   .mat-column-sampleData {
     flex: 0 0 120px;
     min-width: 120px;
+    max-width: 230px;
   }
   .mat-column-type {
+    flex: 0 0 180px;
+    min-width: 180px;
+  }
+  .mat-column-key {
     flex: 0 0 120px;
     min-width: 120px;
   }

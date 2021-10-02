@@ -1,5 +1,5 @@
 /**
- * Copyright © 2016-2020 The Thingsboard Authors
+ * Copyright © 2016-2021 The Thingsboard Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,11 +19,18 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.access.prepost.PreAuthorize;
-import org.springframework.web.bind.annotation.*;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestMethod;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.ResponseBody;
+import org.springframework.web.bind.annotation.ResponseStatus;
+import org.springframework.web.bind.annotation.RestController;
+import org.thingsboard.server.common.data.StringUtils;
 import org.thingsboard.server.common.data.exception.ThingsboardException;
 import org.thingsboard.server.common.data.oauth2.OAuth2ClientInfo;
-import org.thingsboard.server.common.data.oauth2.OAuth2ClientsParams;
-import org.thingsboard.server.common.data.oauth2.SchemeType;
+import org.thingsboard.server.common.data.oauth2.OAuth2Info;
+import org.thingsboard.server.common.data.oauth2.PlatformType;
 import org.thingsboard.server.dao.oauth2.OAuth2Configuration;
 import org.thingsboard.server.queue.util.TbCoreComponent;
 import org.thingsboard.server.service.security.permission.Operation;
@@ -31,6 +38,7 @@ import org.thingsboard.server.service.security.permission.Resource;
 import org.thingsboard.server.utils.MiscUtils;
 
 import javax.servlet.http.HttpServletRequest;
+import java.util.Enumeration;
 import java.util.List;
 
 @RestController
@@ -44,9 +52,25 @@ public class OAuth2Controller extends BaseController {
 
     @RequestMapping(value = "/noauth/oauth2Clients", method = RequestMethod.POST)
     @ResponseBody
-    public List<OAuth2ClientInfo> getOAuth2Clients(HttpServletRequest request) throws ThingsboardException {
+    public List<OAuth2ClientInfo> getOAuth2Clients(HttpServletRequest request,
+                                                   @RequestParam(required = false) String pkgName,
+                                                   @RequestParam(required = false) String platform) throws ThingsboardException {
         try {
-            return oAuth2Service.getOAuth2Clients(MiscUtils.getScheme(request), MiscUtils.getDomainNameAndPort(request));
+            if (log.isDebugEnabled()) {
+                log.debug("Executing getOAuth2Clients: [{}][{}][{}]", request.getScheme(), request.getServerName(), request.getServerPort());
+                Enumeration<String> headerNames = request.getHeaderNames();
+                while (headerNames.hasMoreElements()) {
+                    String header = headerNames.nextElement();
+                    log.debug("Header: {} {}", header, request.getHeader(header));
+                }
+            }
+            PlatformType platformType = null;
+            if (StringUtils.isNotEmpty(platform)) {
+                try {
+                    platformType = PlatformType.valueOf(platform);
+                } catch (Exception e) {}
+            }
+            return oAuth2Service.getOAuth2Clients(MiscUtils.getScheme(request), MiscUtils.getDomainNameAndPort(request), pkgName, platformType);
         } catch (Exception e) {
             throw handleException(e);
         }
@@ -55,10 +79,10 @@ public class OAuth2Controller extends BaseController {
     @PreAuthorize("hasAnyAuthority('SYS_ADMIN')")
     @RequestMapping(value = "/oauth2/config", method = RequestMethod.GET, produces = "application/json")
     @ResponseBody
-    public OAuth2ClientsParams getCurrentOAuth2Params() throws ThingsboardException {
+    public OAuth2Info getCurrentOAuth2Info() throws ThingsboardException {
         try {
             accessControlService.checkPermission(getCurrentUser(), Resource.OAUTH2_CONFIGURATION_INFO, Operation.READ);
-            return oAuth2Service.findOAuth2Params();
+            return oAuth2Service.findOAuth2Info();
         } catch (Exception e) {
             throw handleException(e);
         }
@@ -67,11 +91,11 @@ public class OAuth2Controller extends BaseController {
     @PreAuthorize("hasAnyAuthority('SYS_ADMIN')")
     @RequestMapping(value = "/oauth2/config", method = RequestMethod.POST)
     @ResponseStatus(value = HttpStatus.OK)
-    public OAuth2ClientsParams saveOAuth2Params(@RequestBody OAuth2ClientsParams oauth2Params) throws ThingsboardException {
+    public OAuth2Info saveOAuth2Info(@RequestBody OAuth2Info oauth2Info) throws ThingsboardException {
         try {
             accessControlService.checkPermission(getCurrentUser(), Resource.OAUTH2_CONFIGURATION_INFO, Operation.WRITE);
-            oAuth2Service.saveOAuth2Params(oauth2Params);
-            return oAuth2Service.findOAuth2Params();
+            oAuth2Service.saveOAuth2Info(oauth2Info);
+            return oAuth2Service.findOAuth2Info();
         } catch (Exception e) {
             throw handleException(e);
         }

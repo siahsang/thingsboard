@@ -1,5 +1,5 @@
 ///
-/// Copyright © 2016-2020 The Thingsboard Authors
+/// Copyright © 2016-2021 The Thingsboard Authors
 ///
 /// Licensed under the Apache License, Version 2.0 (the "License");
 /// you may not use this file except in compliance with the License.
@@ -772,7 +772,7 @@ function drawDigitalLabel(context: DigitalGaugeCanvasRenderingContext2D, options
   context.textAlign = 'center';
   context.font = Drawings.font(options, 'Label', fontSizeFactor);
   context.lineWidth = 0;
-  drawText(context, options, 'Label', options.label.toUpperCase(), textX, textY);
+  drawText(context, options, 'Label', options.label, textX, textY);
 }
 
 function drawDigitalMinMax(context: DigitalGaugeCanvasRenderingContext2D, options: CanvasDigitalGaugeOptions) {

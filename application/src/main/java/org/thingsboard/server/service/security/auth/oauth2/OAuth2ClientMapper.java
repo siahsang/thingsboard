@@ -1,5 +1,5 @@
 /**
- * Copyright © 2016-2020 The Thingsboard Authors
+ * Copyright © 2016-2021 The Thingsboard Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,9 +16,11 @@
 package org.thingsboard.server.service.security.auth.oauth2;
 
 import org.springframework.security.oauth2.client.authentication.OAuth2AuthenticationToken;
-import org.thingsboard.server.common.data.oauth2.OAuth2ClientRegistrationInfo;
+import org.thingsboard.server.common.data.oauth2.OAuth2Registration;
 import org.thingsboard.server.service.security.model.SecurityUser;
 
+import javax.servlet.http.HttpServletRequest;
+
 public interface OAuth2ClientMapper {
-    SecurityUser getOrCreateUserByClientPrincipal(OAuth2AuthenticationToken token, String providerAccessToken, OAuth2ClientRegistrationInfo clientRegistration);
+    SecurityUser getOrCreateUserByClientPrincipal(HttpServletRequest request, OAuth2AuthenticationToken token, String providerAccessToken, OAuth2Registration registration);
 }

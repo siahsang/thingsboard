@@ -1,5 +1,5 @@
 /**
- * Copyright © 2016-2020 The Thingsboard Authors
+ * Copyright © 2016-2021 The Thingsboard Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,7 +22,6 @@ import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.util.StringUtils;
-import org.thingsboard.rule.engine.api.util.TbNodeUtils;
 import org.thingsboard.rule.engine.api.RuleEngineDeviceRpcRequest;
 import org.thingsboard.rule.engine.api.RuleNode;
 import org.thingsboard.rule.engine.api.TbContext;
@@ -30,6 +29,7 @@ import org.thingsboard.rule.engine.api.TbNode;
 import org.thingsboard.rule.engine.api.TbNodeConfiguration;
 import org.thingsboard.rule.engine.api.TbNodeException;
 import org.thingsboard.rule.engine.api.TbRelationTypes;
+import org.thingsboard.rule.engine.api.util.TbNodeUtils;
 import org.thingsboard.server.common.data.DataConstants;
 import org.thingsboard.server.common.data.EntityType;
 import org.thingsboard.server.common.data.id.DeviceId;
@@ -81,13 +81,19 @@ public class TbSendRPCRequestNode implements TbNode {
             tmp = msg.getMetaData().getValue("oneway");
             boolean oneway = !StringUtils.isEmpty(tmp) && Boolean.parseBoolean(tmp);
 
+            tmp = msg.getMetaData().getValue(DataConstants.PERSISTENT);
+            boolean persisted = !StringUtils.isEmpty(tmp) && Boolean.parseBoolean(tmp);
+
             tmp = msg.getMetaData().getValue("requestUUID");
             UUID requestUUID = !StringUtils.isEmpty(tmp) ? UUID.fromString(tmp) : Uuids.timeBased();
             tmp = msg.getMetaData().getValue("originServiceId");
             String originServiceId = !StringUtils.isEmpty(tmp) ? tmp : null;
 
-            tmp = msg.getMetaData().getValue("expirationTime");
+            tmp = msg.getMetaData().getValue(DataConstants.EXPIRATION_TIME);
             long expirationTime = !StringUtils.isEmpty(tmp) ? Long.parseLong(tmp) : (System.currentTimeMillis() + TimeUnit.SECONDS.toMillis(config.getTimeoutInSeconds()));
+
+            tmp = msg.getMetaData().getValue(DataConstants.RETRIES);
+            Integer retries = !StringUtils.isEmpty(tmp) ? Integer.parseInt(tmp) : null;
 
             String params;
             JsonElement paramsEl = json.get("params");
@@ -96,6 +102,8 @@ public class TbSendRPCRequestNode implements TbNode {
             } else {
                 params = gson.toJson(paramsEl);
             }
+
+            String additionalInfo = gson.toJson(json.get(DataConstants.ADDITIONAL_INFO));
 
             RuleEngineDeviceRpcRequest request = RuleEngineDeviceRpcRequest.builder()
                     .oneway(oneway)
@@ -107,16 +115,19 @@ public class TbSendRPCRequestNode implements TbNode {
                     .requestUUID(requestUUID)
                     .originServiceId(originServiceId)
                     .expirationTime(expirationTime)
+                    .retries(retries)
                     .restApiCall(restApiCall)
+                    .persisted(persisted)
+                    .additionalInfo(additionalInfo)
                     .build();
 
             ctx.getRpcService().sendRpcRequestToDevice(request, ruleEngineDeviceRpcResponse -> {
-                if (!ruleEngineDeviceRpcResponse.getError().isPresent()) {
-                    TbMsg next = ctx.newMsg(msg.getQueueName(), msg.getType(), msg.getOriginator(), msg.getMetaData(), ruleEngineDeviceRpcResponse.getResponse().orElse("{}"));
+                if (ruleEngineDeviceRpcResponse.getError().isEmpty()) {
+                    TbMsg next = ctx.newMsg(msg.getQueueName(), msg.getType(), msg.getOriginator(), msg.getCustomerId(), msg.getMetaData(), ruleEngineDeviceRpcResponse.getResponse().orElse("{}"));
                     ctx.enqueueForTellNext(next, TbRelationTypes.SUCCESS);
                 } else {
-                    TbMsg next = ctx.newMsg(msg.getQueueName(), msg.getType(), msg.getOriginator(), msg.getMetaData(), wrap("error", ruleEngineDeviceRpcResponse.getError().get().name()));
-                    ctx.tellFailure(next, new RuntimeException(ruleEngineDeviceRpcResponse.getError().get().name()));
+                    TbMsg next = ctx.newMsg(msg.getQueueName(), msg.getType(), msg.getOriginator(), msg.getCustomerId(), msg.getMetaData(), wrap("error", ruleEngineDeviceRpcResponse.getError().get().name()));
+                    ctx.enqueueForTellFailure(next, ruleEngineDeviceRpcResponse.getError().get().name());
                 }
             });
             ctx.ack(msg);

@@ -1,5 +1,5 @@
 ///
-/// Copyright © 2016-2020 The Thingsboard Authors
+/// Copyright © 2016-2021 The Thingsboard Authors
 ///
 /// Licensed under the Apache License, Version 2.0 (the "License");
 /// you may not use this file except in compliance with the License.
@@ -16,8 +16,8 @@
 
 import { Component, ElementRef, forwardRef, Input, OnInit, ViewChild } from '@angular/core';
 import { ControlValueAccessor, FormBuilder, FormGroup, NG_VALUE_ACCESSOR } from '@angular/forms';
-import { Observable } from 'rxjs';
-import { map, mergeMap, share, tap } from 'rxjs/operators';
+import { Observable, of } from 'rxjs';
+import { catchError, debounceTime, distinctUntilChanged, map, share, switchMap, tap } from 'rxjs/operators';
 import { Store } from '@ngrx/store';
 import { AppState } from '@core/core.state';
 import { TranslateService } from '@ngx-translate/core';
@@ -29,6 +29,7 @@ import { EntityService } from '@core/http/entity.service';
 import { TruncatePipe } from '@shared/pipe/truncate.pipe';
 import { RuleChainService } from '@core/http/rule-chain.service';
 import { MatAutocompleteTrigger } from '@angular/material/autocomplete';
+import { RuleChainType } from '@app/shared/models/rule-chain.models';
 
 @Component({
   selector: 'tb-rule-chain-autocomplete',
@@ -98,6 +99,7 @@ export class RuleChainAutocompleteComponent implements ControlValueAccessor, OnI
   ngOnInit() {
     this.filteredRuleChains = this.selectRuleChainFormGroup.get('ruleChainId').valueChanges
       .pipe(
+        debounceTime(150),
         tap(value => {
           let modelValue;
           if (typeof value === 'string' || !value) {
@@ -109,8 +111,10 @@ export class RuleChainAutocompleteComponent implements ControlValueAccessor, OnI
           if (value === null) {
             this.clear();
           }
-        }), map(value => value ? (typeof value === 'string' ? value : value.name) : ''),
-        mergeMap(name => this.fetchRuleChain(name) ),
+        }),
+        map(value => value ? (typeof value === 'string' ? value : value.name) : ''),
+        distinctUntilChanged(),
+        switchMap(name => this.fetchRuleChain(name) ),
         share()
       );
   }
@@ -187,8 +191,11 @@ export class RuleChainAutocompleteComponent implements ControlValueAccessor, OnI
 
   fetchRuleChain(searchText?: string): Observable<Array<BaseData<EntityId>>> {
     this.searchText = searchText;
+    // @voba: at the moment device profiles are not supported by edge, so 'core' hardcoded
     return this.entityService.getEntitiesByNameFilter(EntityType.RULE_CHAIN, searchText,
-      50, null, {ignoreLoading: true});
+      50, RuleChainType.CORE, {ignoreLoading: true}).pipe(
+        catchError(() => of([]))
+    );
   }
 
   clear() {

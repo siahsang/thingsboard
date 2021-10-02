@@ -1,5 +1,5 @@
 /**
- * Copyright © 2016-2020 The Thingsboard Authors
+ * Copyright © 2016-2021 The Thingsboard Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -40,13 +40,17 @@ public class CustomerUserPermissions extends AbstractPermissions {
         put(Resource.USER, userPermissionChecker);
         put(Resource.WIDGETS_BUNDLE, widgetsPermissionChecker);
         put(Resource.WIDGET_TYPE, widgetsPermissionChecker);
+        put(Resource.EDGE, customerEntityPermissionChecker);
+        put(Resource.RPC, rpcPermissionChecker);
     }
 
     private static final PermissionChecker customerEntityPermissionChecker =
             new PermissionChecker.GenericPermissionChecker(Operation.READ, Operation.READ_CREDENTIALS,
-                    Operation.READ_ATTRIBUTES, Operation.READ_TELEMETRY, Operation.RPC_CALL, Operation.CLAIM_DEVICES) {
+                    Operation.READ_ATTRIBUTES, Operation.READ_TELEMETRY, Operation.RPC_CALL, Operation.CLAIM_DEVICES,
+                    Operation.WRITE, Operation.WRITE_ATTRIBUTES, Operation.WRITE_TELEMETRY) {
 
                 @Override
+                @SuppressWarnings("unchecked")
                 public boolean hasPermission(SecurityUser user, Operation operation, EntityId entityId, HasTenantId entity) {
 
                     if (!super.hasPermission(user, operation, entityId, entity)) {
@@ -69,6 +73,7 @@ public class CustomerUserPermissions extends AbstractPermissions {
             new PermissionChecker.GenericPermissionChecker(Operation.READ, Operation.READ_ATTRIBUTES, Operation.READ_TELEMETRY) {
 
                 @Override
+                @SuppressWarnings("unchecked")
                 public boolean hasPermission(SecurityUser user, Operation operation, EntityId entityId, HasTenantId entity) {
                     if (!super.hasPermission(user, operation, entityId, entity)) {
                         return false;
@@ -119,6 +124,7 @@ public class CustomerUserPermissions extends AbstractPermissions {
     private static final PermissionChecker widgetsPermissionChecker = new PermissionChecker.GenericPermissionChecker(Operation.READ) {
 
         @Override
+        @SuppressWarnings("unchecked")
         public boolean hasPermission(SecurityUser user, Operation operation, EntityId entityId, HasTenantId entity) {
             if (!super.hasPermission(user, operation, entityId, entity)) {
                 return false;
@@ -132,5 +138,23 @@ public class CustomerUserPermissions extends AbstractPermissions {
             return true;
         }
 
+    };
+
+    private static final PermissionChecker rpcPermissionChecker = new PermissionChecker.GenericPermissionChecker(Operation.READ) {
+
+        @Override
+        @SuppressWarnings("unchecked")
+        public boolean hasPermission(SecurityUser user, Operation operation, EntityId entityId, HasTenantId entity) {
+            if (!super.hasPermission(user, operation, entityId, entity)) {
+                return false;
+            }
+            if (entity.getTenantId() == null || entity.getTenantId().isNullUid()) {
+                return true;
+            }
+            if (!user.getTenantId().equals(entity.getTenantId())) {
+                return false;
+            }
+            return true;
+        }
     };
 }

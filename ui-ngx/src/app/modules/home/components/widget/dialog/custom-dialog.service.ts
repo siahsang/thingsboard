@@ -1,5 +1,5 @@
 ///
-/// Copyright © 2016-2020 The Thingsboard Authors
+/// Copyright © 2016-2021 The Thingsboard Authors
 ///
 /// Licensed under the Apache License, Version 2.0 (the "License");
 /// you may not use this file except in compliance with the License.
@@ -28,6 +28,7 @@ import {
   CustomDialogContainerComponent,
   CustomDialogContainerData
 } from '@home/components/widget/dialog/custom-dialog-container.component';
+import { SharedHomeComponentsModule } from '@home/components/shared-home-components.module';
 
 @Injectable()
 export class CustomDialogService {
@@ -44,7 +45,7 @@ export class CustomDialogService {
     return this.dynamicComponentFactoryService.createDynamicComponentFactory(
       class CustomDialogComponentInstance extends CustomDialogComponent {},
       template,
-      [SharedModule, CustomDialogModule]).pipe(
+      [SharedModule, CustomDialogModule, SharedHomeComponentsModule]).pipe(
       mergeMap((factory) => {
           const dialogData: CustomDialogContainerData = {
             controller,

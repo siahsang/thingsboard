@@ -1,5 +1,5 @@
 ///
-/// Copyright © 2016-2020 The Thingsboard Authors
+/// Copyright © 2016-2021 The Thingsboard Authors
 ///
 /// Licensed under the Apache License, Version 2.0 (the "License");
 /// you may not use this file except in compliance with the License.
@@ -19,7 +19,7 @@ import { AuthService } from '@core/auth/auth.service';
 import { Store } from '@ngrx/store';
 import { AppState } from '@core/core.state';
 import { PageComponent } from '@shared/components/page.component';
-import { FormBuilder } from '@angular/forms';
+import { FormBuilder, Validators } from '@angular/forms';
 import { ActionNotificationShow } from '@core/notification/notification.actions';
 import { TranslateService } from '@ngx-translate/core';
 
@@ -30,9 +30,11 @@ import { TranslateService } from '@ngx-translate/core';
 })
 export class ResetPasswordRequestComponent extends PageComponent implements OnInit {
 
+  clicked: boolean = false;
+
   requestPasswordRequest = this.fb.group({
-    email: ['']
-  });
+    email: ['', [Validators.email, Validators.required]]
+  }, {updateOn: 'submit'});
 
   constructor(protected store: Store<AppState>,
               private authService: AuthService,
@@ -44,13 +46,23 @@ export class ResetPasswordRequestComponent extends PageComponent implements OnIn
   ngOnInit() {
   }
 
+  disableInputs() {
+    this.requestPasswordRequest.disable();
+    this.clicked = true;
+  }
+
   sendResetPasswordLink() {
-    this.authService.sendResetPasswordLink(this.requestPasswordRequest.get('email').value).subscribe(
-      () => {
-        this.store.dispatch(new ActionNotificationShow({ message: this.translate.instant('login.password-link-sent-message'),
-          type: 'success' }));
-      }
-    );
+    if (this.requestPasswordRequest.valid) {
+      this.disableInputs();
+      this.authService.sendResetPasswordLink(this.requestPasswordRequest.get('email').value).subscribe(
+        () => {
+          this.store.dispatch(new ActionNotificationShow({
+            message: this.translate.instant('login.password-link-sent-message'),
+            type: 'success'
+          }));
+        }
+      );
+    }
   }
 
 }

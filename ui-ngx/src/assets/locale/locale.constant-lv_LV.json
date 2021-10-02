@@ -641,7 +641,7 @@
         "credentials-type": "Akreditācijas datu tips",
         "access-token": "Piekļuves tokens",
         "access-token-required": "Piekļuves tokens ir nepieciešams.",
-        "access-token-invalid": "Piekļuves tokena garumam ir jābūt no 1 līdz 20 rakstzīmēm.",
+        "access-token-invalid": "Piekļuves tokena garumam ir jābūt no 1 līdz 32 rakstzīmēm.",
         "rsa-key": "RSA publiskā atslēga",
         "rsa-key-required": "RSA publiskā atslēga ir nepieciešama.",
         "secret": "Noslēpums",
@@ -894,7 +894,6 @@
         "body": "Galvenā daļa",
         "method": "Metode",
         "type": "Tips",
-        "entity": "Vienība",
         "message-id": "Ziņojuma Id",
         "message-type": "Ziņojuma tips",
         "data-type": "Datu tips",
@@ -906,7 +905,9 @@
         "success": "Sekmīgi",
         "failed": "Kļūda",
         "messages-processed": "Ziņojumi apstrādāti",
-        "errors-occurred": "Kļūdas konstatētas"
+        "errors-occurred": "Kļūdas konstatētas",
+        "all-events": "Visi",
+        "entity-type": "Vienības tips"
     },
     "extension": {
         "extensions": "Paplašinājumi",
@@ -1468,7 +1469,7 @@
         "timeseries": "Laika sērijas",
         "search-data": "Meklēt datus",
         "no-data-found": "Nav datu atrasti",
-        "latest-values": "Pedējās vērtības",
+        "latest": "Pedējās vērtības",
         "rpc": "Kontroles logrīks",
         "alarm": "Trauksmes logrīks",
         "static": "Statiskais logrīks",

@@ -1,5 +1,5 @@
 ///
-/// Copyright © 2016-2020 The Thingsboard Authors
+/// Copyright © 2016-2021 The Thingsboard Authors
 ///
 /// Licensed under the Apache License, Version 2.0 (the "License");
 /// you may not use this file except in compliance with the License.
@@ -14,7 +14,7 @@
 /// limitations under the License.
 ///
 
-import { Component, Inject, Optional } from '@angular/core';
+import { ChangeDetectorRef, Component, Inject, Optional } from '@angular/core';
 import { select, Store } from '@ngrx/store';
 import { AppState } from '@core/core.state';
 import { EntityComponent } from '../../components/entity/entity.component';
@@ -23,8 +23,10 @@ import { User } from '@shared/models/user.model';
 import { selectAuth } from '@core/auth/auth.selectors';
 import { map } from 'rxjs/operators';
 import { Authority } from '@shared/models/authority.enum';
-import { isUndefined } from '@core/utils';
+import { isDefinedAndNotNull, isUndefined } from '@core/utils';
 import { EntityTableConfig } from '@home/models/entity/entities-table-config.models';
+import { ActionNotificationShow } from '@app/core/notification/notification.actions';
+import { TranslateService } from '@ngx-translate/core';
 
 @Component({
   selector: 'tb-user',
@@ -43,8 +45,10 @@ export class UserComponent extends EntityComponent<User> {
   constructor(protected store: Store<AppState>,
               @Optional() @Inject('entity') protected entityValue: User,
               @Optional() @Inject('entitiesTableConfig') protected entitiesTableConfigValue: EntityTableConfig<User>,
-              public fb: FormBuilder) {
-    super(store, fb, entityValue, entitiesTableConfigValue);
+              public fb: FormBuilder,
+              protected cd: ChangeDetectorRef,
+              protected translate: TranslateService) {
+    super(store, fb, entityValue, entitiesTableConfigValue, cd);
   }
 
   hideDelete() {
@@ -56,11 +60,11 @@ export class UserComponent extends EntityComponent<User> {
   }
 
   isUserCredentialsEnabled(): boolean {
-    if (!this.entity || !this.entity.additionalInfo || isUndefined(this.entity.additionalInfo.userCredentialsEnabled)) {
-      return true;
-    } else {
       return this.entity.additionalInfo.userCredentialsEnabled === true;
-    }
+  }
+
+  isUserCredentialPresent(): boolean {
+    return this.entity && this.entity.additionalInfo && isDefinedAndNotNull(this.entity.additionalInfo.userCredentialsEnabled);
   }
 
   buildForm(entity: User): FormGroup {
@@ -74,6 +78,9 @@ export class UserComponent extends EntityComponent<User> {
             description: [entity && entity.additionalInfo ? entity.additionalInfo.description : ''],
             defaultDashboardId: [entity && entity.additionalInfo ? entity.additionalInfo.defaultDashboardId : null],
             defaultDashboardFullscreen: [entity && entity.additionalInfo ? entity.additionalInfo.defaultDashboardFullscreen : false],
+            homeDashboardId: [entity && entity.additionalInfo ? entity.additionalInfo.homeDashboardId : null],
+            homeDashboardHideToolbar: [entity && entity.additionalInfo &&
+            isDefinedAndNotNull(entity.additionalInfo.homeDashboardHideToolbar) ? entity.additionalInfo.homeDashboardHideToolbar : true]
           }
         )
       }
@@ -89,6 +96,23 @@ export class UserComponent extends EntityComponent<User> {
         {defaultDashboardId: entity.additionalInfo ? entity.additionalInfo.defaultDashboardId : null}});
     this.entityForm.patchValue({additionalInfo:
         {defaultDashboardFullscreen: entity.additionalInfo ? entity.additionalInfo.defaultDashboardFullscreen : false}});
+    this.entityForm.patchValue({additionalInfo:
+        {homeDashboardId: entity.additionalInfo ? entity.additionalInfo.homeDashboardId : null}});
+    this.entityForm.patchValue({additionalInfo:
+        {homeDashboardHideToolbar: entity.additionalInfo &&
+          isDefinedAndNotNull(entity.additionalInfo.homeDashboardHideToolbar) ? entity.additionalInfo.homeDashboardHideToolbar : true}});
+  }
+
+  onUserIdCopied($event) {
+    this.store.dispatch(new ActionNotificationShow(
+      {
+        message: this.translate.instant('user.idCopiedMessage'),
+        type: 'success',
+        duration: 750,
+        verticalPosition: 'bottom',
+        horizontalPosition: 'right'
+      }
+    ))
   }
 
 }

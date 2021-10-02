@@ -1,5 +1,5 @@
 ///
-/// Copyright © 2016-2020 The Thingsboard Authors
+/// Copyright © 2016-2021 The Thingsboard Authors
 ///
 /// Licensed under the Apache License, Version 2.0 (the "License");
 /// you may not use this file except in compliance with the License.
@@ -27,6 +27,7 @@ import { MatChipInputEvent, MatChipList } from '@angular/material/chips';
 import { coerceBooleanProperty } from '@angular/cdk/coercion';
 import { AssetService } from '@core/http/asset.service';
 import { DeviceService } from '@core/http/device.service';
+import { EdgeService } from '@core/http/edge.service';
 import { EntityViewService } from '@core/http/entity-view.service';
 import { BroadcastService } from '@core/services/broadcast.service';
 import { COMMA, ENTER, SEMICOLON } from '@angular/cdk/keycodes';
@@ -96,6 +97,7 @@ export class EntitySubTypeListComponent implements ControlValueAccessor, OnInit,
               public translate: TranslateService,
               private assetService: AssetService,
               private deviceService: DeviceService,
+              private edgeService: EdgeService,
               private entityViewService: EntityViewService,
               private fb: FormBuilder) {
     this.entitySubtypeListFormGroup = this.fb.group({
@@ -136,6 +138,16 @@ export class EntitySubTypeListComponent implements ControlValueAccessor, OnInit,
         this.noSubtypesMathingText = 'device.no-device-types-matching';
         this.subtypeListEmptyText = 'device.device-type-list-empty';
         this.broadcastSubscription = this.broadcast.on('deviceSaved', () => {
+          this.entitySubtypes = null;
+        });
+        break;
+      case EntityType.EDGE:
+        this.placeholder = this.required ? this.translate.instant('edge.enter-edge-type')
+          : this.translate.instant('edge.any-edge');
+        this.secondaryPlaceholder = '+' + this.translate.instant('edge.edge-type');
+        this.noSubtypesMathingText = 'edge.no-edge-types-matching';
+        this.subtypeListEmptyText = 'edge.edge-type-list-empty';
+        this.broadcastSubscription = this.broadcast.on('edgeSaved', () => {
           this.entitySubtypes = null;
         });
         break;
@@ -191,7 +203,7 @@ export class EntitySubTypeListComponent implements ControlValueAccessor, OnInit,
     this.dirty = true;
   }
 
-  add(entitySubtype: string): void {
+  private add(entitySubtype: string): void {
     if (!this.modelValue || this.modelValue.indexOf(entitySubtype) === -1) {
       if (!this.modelValue) {
         this.modelValue = [];
@@ -201,13 +213,12 @@ export class EntitySubTypeListComponent implements ControlValueAccessor, OnInit,
       this.entitySubtypeListFormGroup.get('entitySubtypeList').setValue(this.entitySubtypeList);
     }
     this.propagateChange(this.modelValue);
-    this.clear();
   }
 
   chipAdd(event: MatChipInputEvent): void {
-    const value = event.value;
-    if ((value || '').trim()) {
-      this.add(value.trim());
+    const value = (event.value || '').trim();
+    if (value) {
+      this.add(value);
     }
     this.clear('');
   }
@@ -222,7 +233,6 @@ export class EntitySubTypeListComponent implements ControlValueAccessor, OnInit,
         this.modelValue = null;
       }
       this.propagateChange(this.modelValue);
-      this.clear();
     }
   }
 
@@ -259,6 +269,9 @@ export class EntitySubTypeListComponent implements ControlValueAccessor, OnInit,
           break;
         case EntityType.DEVICE:
           subTypesObservable = this.deviceService.getDeviceTypes({ignoreLoading: true});
+          break;
+        case EntityType.EDGE:
+          subTypesObservable = this.edgeService.getEdgeTypes({ignoreLoading: true});
           break;
         case EntityType.ENTITY_VIEW:
           subTypesObservable = this.entityViewService.getEntityViewTypes({ignoreLoading: true});

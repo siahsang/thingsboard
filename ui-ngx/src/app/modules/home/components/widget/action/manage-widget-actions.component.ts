@@ -1,5 +1,5 @@
 ///
-/// Copyright © 2016-2020 The Thingsboard Authors
+/// Copyright © 2016-2021 The Thingsboard Authors
 ///
 /// Licensed under the Apache License, Version 2.0 (the "License");
 /// you may not use this file except in compliance with the License.
@@ -42,6 +42,7 @@ import {
   WidgetActionDialogData
 } from '@home/components/widget/action/widget-action-dialog.component';
 import { deepClone } from '@core/utils';
+import { widgetType } from '@shared/models/widget.models';
 
 @Component({
   selector: 'tb-manage-widget-actions',
@@ -58,6 +59,8 @@ import { deepClone } from '@core/utils';
 export class ManageWidgetActionsComponent extends PageComponent implements OnInit, AfterViewInit, OnDestroy, ControlValueAccessor {
 
   @Input() disabled: boolean;
+
+  @Input() widgetType: widgetType;
 
   @Input() callbacks: WidgetActionCallbacks;
 
@@ -180,7 +183,8 @@ export class ManageWidgetActionsComponent extends PageComponent implements OnIni
         isAdd,
         callbacks: this.callbacks,
         actionsData,
-        action: deepClone(action)
+        action: deepClone(action),
+        widgetType: this.widgetType
       }
     }).afterClosed().subscribe(
       (res) => {

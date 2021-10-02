@@ -623,7 +623,7 @@
 		"credentials-type": "資格情報タイプ",
 		"access-token": "アクセストークン",
 		"access-token-required": "アクセストークンが必要です。",
-		"access-token-invalid": "アクセストークンの長さは、1〜20文字でなければなりません。",
+		"access-token-invalid": "アクセストークンの長さは、1〜32文字でなければなりません。",
 		"rsa-key": "RSA公開鍵",
 		"rsa-key-required": "RSA公開鍵が必要です。",
 		"secret": "秘密",
@@ -768,7 +768,6 @@
 		"body": "体",
 		"method": "方法",
 		"type": "タイプ",
-		"entity": "エンティティ",
 		"message-id": "メッセージID",
 		"message-type": "メッセージタイプ",
 		"data-type": "データ・タイプ",
@@ -780,7 +779,9 @@
 		"success": "成功",
 		"failed": "失敗",
 		"messages-processed": "処理されたメッセージ",
-		"errors-occurred": "エラーが発生しました"
+		"errors-occurred": "エラーが発生しました",
+    "all-events": "すべて",
+    "entity-type": "エンティティタイプ"
 	},
 	"extension": {
 		"extensions": "拡張機能",
@@ -1305,7 +1306,7 @@
 		"timeseries": "時系列",
 		"search-data": "検索データ",
 		"no-data-found": "何もデータが見つかりませんでした",
-		"latest-values": "最新の値",
+		"latest": "最新の値",
 		"rpc": "コントロールウィジェット",
 		"alarm": "アラームウィジェット",
 		"static": "静的ウィジェット",

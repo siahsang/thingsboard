@@ -1,5 +1,5 @@
 /**
- * Copyright © 2016-2020 The Thingsboard Authors
+ * Copyright © 2016-2021 The Thingsboard Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -27,6 +27,8 @@ public class TbMsgToEmailNodeConfiguration implements NodeConfiguration {
     private String bccTemplate;
     private String subjectTemplate;
     private String bodyTemplate;
+    private String isHtmlTemplate;
+    private String mailBodyType;
 
     @Override
     public TbMsgToEmailNodeConfiguration defaultConfiguration() {
@@ -35,6 +37,7 @@ public class TbMsgToEmailNodeConfiguration implements NodeConfiguration {
         configuration.toTemplate = "${userEmail}";
         configuration.subjectTemplate = "Device ${deviceType} temperature high";
         configuration.bodyTemplate = "Device ${deviceName} has high temperature ${temp}";
+        configuration.mailBodyType = "false";
         return configuration;
     }
 }

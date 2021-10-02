@@ -1,5 +1,5 @@
 /**
- * Copyright © 2016-2020 The Thingsboard Authors
+ * Copyright © 2016-2021 The Thingsboard Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,22 +15,21 @@
  */
 package org.thingsboard.server.transport.mqtt;
 
-import com.google.common.io.Resources;
 import io.netty.handler.ssl.SslHandler;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnExpression;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 import org.thingsboard.server.common.data.DeviceTransportType;
+import org.thingsboard.server.common.data.ResourceUtils;
 import org.thingsboard.server.common.msg.EncryptionUtil;
 import org.thingsboard.server.common.transport.TransportService;
 import org.thingsboard.server.common.transport.TransportServiceCallback;
 import org.thingsboard.server.common.transport.auth.ValidateDeviceCredentialsResponse;
+import org.thingsboard.server.common.transport.util.SslUtil;
 import org.thingsboard.server.gen.transport.TransportProtos;
-import org.thingsboard.server.transport.mqtt.util.SslUtil;
 
 import javax.net.ssl.KeyManager;
 import javax.net.ssl.KeyManagerFactory;
@@ -39,12 +38,9 @@ import javax.net.ssl.SSLEngine;
 import javax.net.ssl.TrustManager;
 import javax.net.ssl.TrustManagerFactory;
 import javax.net.ssl.X509TrustManager;
-import java.io.File;
-import java.io.FileInputStream;
-import java.io.IOException;
 import java.io.InputStream;
-import java.net.URL;
 import java.security.KeyStore;
+import java.security.cert.CertificateEncodingException;
 import java.security.cert.CertificateException;
 import java.security.cert.X509Certificate;
 import java.util.concurrent.CountDownLatch;
@@ -55,7 +51,6 @@ import java.util.concurrent.TimeUnit;
  */
 @Slf4j
 @Component("MqttSslHandlerProvider")
-@ConditionalOnExpression("'${transport.type:null}'=='null' || ('${transport.type}'=='local' && '${transport.mqtt.enabled}'=='true')")
 @ConditionalOnProperty(prefix = "transport.mqtt.ssl", value = "enabled", havingValue = "true", matchIfMissing = false)
 public class MqttSslHandlerProvider {
 
@@ -73,22 +68,33 @@ public class MqttSslHandlerProvider {
     @Autowired
     private TransportService transportService;
 
-    public SslHandler getSslHandler() {
-        try {
-            URL ksUrl = Resources.getResource(keyStoreFile);
-            File ksFile = new File(ksUrl.toURI());
-            URL tsUrl = Resources.getResource(keyStoreFile);
-            File tsFile = new File(tsUrl.toURI());
+    private SSLContext sslContext;
 
+    public SslHandler getSslHandler() {
+        if (sslContext == null) {
+            sslContext = createSslContext();
+        }
+        SSLEngine sslEngine = sslContext.createSSLEngine();
+        sslEngine.setUseClientMode(false);
+        sslEngine.setNeedClientAuth(false);
+        sslEngine.setWantClientAuth(true);
+        sslEngine.setEnabledProtocols(sslEngine.getSupportedProtocols());
+        sslEngine.setEnabledCipherSuites(sslEngine.getSupportedCipherSuites());
+        sslEngine.setEnableSessionCreation(true);
+        return new SslHandler(sslEngine);
+    }
+
+    private SSLContext createSslContext() {
+        try {
             TrustManagerFactory tmFactory = TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm());
             KeyStore trustStore = KeyStore.getInstance(keyStoreType);
-            try (InputStream tsFileInputStream = new FileInputStream(tsFile)) {
+            try (InputStream tsFileInputStream = ResourceUtils.getInputStream(this, keyStoreFile)) {
                 trustStore.load(tsFileInputStream, keyStorePassword.toCharArray());
             }
             tmFactory.init(trustStore);
 
             KeyStore ks = KeyStore.getInstance(keyStoreType);
-            try (InputStream ksFileInputStream = new FileInputStream(ksFile)) {
+            try (InputStream ksFileInputStream = ResourceUtils.getInputStream(this, keyStoreFile)) {
                 ks.load(ksFileInputStream, keyStorePassword.toCharArray());
             }
             KeyManagerFactory kmf = KeyManagerFactory.getInstance(KeyManagerFactory.getDefaultAlgorithm());
@@ -102,17 +108,10 @@ public class MqttSslHandlerProvider {
             }
             SSLContext sslContext = SSLContext.getInstance(sslProtocol);
             sslContext.init(km, tm, null);
-            SSLEngine sslEngine = sslContext.createSSLEngine();
-            sslEngine.setUseClientMode(false);
-            sslEngine.setNeedClientAuth(false);
-            sslEngine.setWantClientAuth(true);
-            sslEngine.setEnabledProtocols(sslEngine.getSupportedProtocols());
-            sslEngine.setEnabledCipherSuites(sslEngine.getSupportedCipherSuites());
-            sslEngine.setEnableSessionCreation(true);
-            return new SslHandler(sslEngine);
+            return sslContext;
         } catch (Exception e) {
             log.error("Unable to set up SSL context. Reason: " + e.getMessage(), e);
-            throw new RuntimeException("Failed to get SSL handler", e);
+            throw new RuntimeException("Failed to get SSL context", e);
         }
     }
 
@@ -154,7 +153,7 @@ public class MqttSslHandlerProvider {
             String credentialsBody = null;
             for (X509Certificate cert : chain) {
                 try {
-                    String strCert = SslUtil.getX509CertificateString(cert);
+                    String strCert = SslUtil.getCertificateString(cert);
                     String sha3Hash = EncryptionUtil.getSha3Hash(strCert);
                     final String[] credentialsBodyHolder = new String[1];
                     CountDownLatch latch = new CountDownLatch(1);
@@ -179,7 +178,7 @@ public class MqttSslHandlerProvider {
                         credentialsBody = credentialsBodyHolder[0];
                         break;
                     }
-                } catch (InterruptedException | IOException e) {
+                } catch (InterruptedException | CertificateEncodingException e) {
                     log.error(e.getMessage(), e);
                 }
             }

@@ -1,5 +1,5 @@
 ///
-/// Copyright © 2016-2020 The Thingsboard Authors
+/// Copyright © 2016-2021 The Thingsboard Authors
 ///
 /// Licensed under the Apache License, Version 2.0 (the "License");
 /// you may not use this file except in compliance with the License.
@@ -18,7 +18,7 @@ import { Store } from '@ngrx/store';
 import { AppState } from '@core/core.state';
 import { FormBuilder, FormGroup, ValidatorFn, Validators } from '@angular/forms';
 import { ContactBased } from '@shared/models/contact-based.model';
-import { AfterViewInit, Directive } from '@angular/core';
+import { AfterViewInit, ChangeDetectorRef, Directive } from '@angular/core';
 import { POSTAL_CODE_PATTERNS } from '@home/models/contact.models';
 import { HasId } from '@shared/models/base-data';
 import { EntityComponent } from './entity.component';
@@ -30,8 +30,9 @@ export abstract class ContactBasedComponent<T extends ContactBased<HasId>> exten
   protected constructor(protected store: Store<AppState>,
                         protected fb: FormBuilder,
                         protected entityValue: T,
-                        protected entitiesTableConfigValue: EntityTableConfig<T>) {
-    super(store, fb, entityValue, entitiesTableConfigValue);
+                        protected entitiesTableConfigValue: EntityTableConfig<T>,
+                        protected cd: ChangeDetectorRef) {
+    super(store, fb, entityValue, entitiesTableConfigValue, cd);
   }
 
   buildForm(entity: T): FormGroup {

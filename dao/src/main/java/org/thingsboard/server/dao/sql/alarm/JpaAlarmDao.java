@@ -1,5 +1,5 @@
 /**
- * Copyright © 2016-2020 The Thingsboard Authors
+ * Copyright © 2016-2021 The Thingsboard Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -24,11 +24,14 @@ import org.springframework.stereotype.Component;
 import org.thingsboard.server.common.data.alarm.Alarm;
 import org.thingsboard.server.common.data.alarm.AlarmInfo;
 import org.thingsboard.server.common.data.alarm.AlarmQuery;
+import org.thingsboard.server.common.data.alarm.AlarmSeverity;
 import org.thingsboard.server.common.data.alarm.AlarmStatus;
+import org.thingsboard.server.common.data.id.AlarmId;
 import org.thingsboard.server.common.data.id.CustomerId;
 import org.thingsboard.server.common.data.id.EntityId;
 import org.thingsboard.server.common.data.id.TenantId;
 import org.thingsboard.server.common.data.page.PageData;
+import org.thingsboard.server.common.data.page.PageLink;
 import org.thingsboard.server.common.data.query.AlarmData;
 import org.thingsboard.server.common.data.query.AlarmDataQuery;
 import org.thingsboard.server.dao.DaoUtil;
@@ -102,11 +105,46 @@ public class JpaAlarmDao extends JpaAbstractDao<AlarmEntity, Alarm> implements A
         } else if (query.getStatus() != null) {
             statusSet = Collections.singleton(query.getStatus());
         }
+        if (affectedEntity != null) {
+            return DaoUtil.toPageData(
+                    alarmRepository.findAlarms(
+                            tenantId.getId(),
+                            affectedEntity.getId(),
+                            affectedEntity.getEntityType().name(),
+                            query.getPageLink().getStartTime(),
+                            query.getPageLink().getEndTime(),
+                            statusSet,
+                            Objects.toString(query.getPageLink().getTextSearch(), ""),
+                            DaoUtil.toPageable(query.getPageLink())
+                    )
+            );
+        } else {
+            return DaoUtil.toPageData(
+                    alarmRepository.findAllAlarms(
+                            tenantId.getId(),
+                            query.getPageLink().getStartTime(),
+                            query.getPageLink().getEndTime(),
+                            statusSet,
+                            Objects.toString(query.getPageLink().getTextSearch(), ""),
+                            DaoUtil.toPageable(query.getPageLink())
+                    )
+            );
+        }
+    }
+
+    @Override
+    public PageData<AlarmInfo> findCustomerAlarms(TenantId tenantId, CustomerId customerId, AlarmQuery query) {
+        log.trace("Try to find customer alarms by status [{}] and pageLink [{}]", query.getStatus(), query.getPageLink());
+        Set<AlarmStatus> statusSet = null;
+        if (query.getSearchStatus() != null) {
+            statusSet = query.getSearchStatus().getStatuses();
+        } else if (query.getStatus() != null) {
+            statusSet = Collections.singleton(query.getStatus());
+        }
         return DaoUtil.toPageData(
-                alarmRepository.findAlarms(
+                alarmRepository.findCustomerAlarms(
                         tenantId.getId(),
-                        affectedEntity.getId(),
-                        affectedEntity.getEntityType().name(),
+                        customerId.getId(),
                         query.getPageLink().getStartTime(),
                         query.getPageLink().getEndTime(),
                         statusSet,
@@ -119,5 +157,16 @@ public class JpaAlarmDao extends JpaAbstractDao<AlarmEntity, Alarm> implements A
     @Override
     public PageData<AlarmData> findAlarmDataByQueryForEntities(TenantId tenantId, CustomerId customerId, AlarmDataQuery query, Collection<EntityId> orderedEntityIds) {
         return alarmQueryRepository.findAlarmDataByQueryForEntities(tenantId, customerId, query, orderedEntityIds);
+    }
+
+    @Override
+    public Set<AlarmSeverity> findAlarmSeverities(TenantId tenantId, EntityId entityId, Set<AlarmStatus> statuses) {
+        return alarmRepository.findAlarmSeverities(tenantId.getId(), entityId.getId(), entityId.getEntityType().name(), statuses);
+    }
+
+    @Override
+    public PageData<AlarmId> findAlarmsIdsByEndTsBeforeAndTenantId(Long time, TenantId tenantId, PageLink pageLink) {
+        return DaoUtil.pageToPageData(alarmRepository.findAlarmsIdsByEndTsBeforeAndTenantId(time, tenantId.getId(), DaoUtil.toPageable(pageLink)))
+                .mapData(AlarmId::new);
     }
 }

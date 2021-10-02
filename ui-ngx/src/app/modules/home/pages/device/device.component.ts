@@ -1,5 +1,5 @@
 ///
-/// Copyright © 2016-2020 The Thingsboard Authors
+/// Copyright © 2016-2021 The Thingsboard Authors
 ///
 /// Licensed under the Apache License, Version 2.0 (the "License");
 /// you may not use this file except in compliance with the License.
@@ -14,17 +14,16 @@
 /// limitations under the License.
 ///
 
-import { Component, Inject } from '@angular/core';
+import { ChangeDetectorRef, Component, Inject } from '@angular/core';
 import { Store } from '@ngrx/store';
 import { AppState } from '@core/core.state';
 import { EntityComponent } from '../../components/entity/entity.component';
 import { FormBuilder, FormGroup, Validators } from '@angular/forms';
 import {
   createDeviceConfiguration,
-  createDeviceProfileConfiguration, createDeviceTransportConfiguration,
+  createDeviceTransportConfiguration, DeviceCredentials,
   DeviceData,
   DeviceInfo,
-  DeviceProfileData,
   DeviceProfileInfo,
   DeviceProfileType,
   DeviceTransportType
@@ -33,9 +32,10 @@ import { EntityType } from '@shared/models/entity-type.models';
 import { NULL_UUID } from '@shared/models/id/has-uuid';
 import { ActionNotificationShow } from '@core/notification/notification.actions';
 import { TranslateService } from '@ngx-translate/core';
-import { DeviceService } from '@core/http/device.service';
-import { ClipboardService } from 'ngx-clipboard';
 import { EntityTableConfig } from '@home/models/entity/entities-table-config.models';
+import { Subject } from 'rxjs';
+import { OtaUpdateType } from '@shared/models/ota-package.models';
+import { distinctUntilChanged } from 'rxjs/operators';
 
 @Component({
   selector: 'tb-device',
@@ -46,20 +46,24 @@ export class DeviceComponent extends EntityComponent<DeviceInfo> {
 
   entityType = EntityType;
 
-  deviceScope: 'tenant' | 'customer' | 'customer_user';
+  deviceCredentials$: Subject<DeviceCredentials>;
+
+  deviceScope: 'tenant' | 'customer' | 'customer_user' | 'edge' | 'edge_customer_user';
+
+  otaUpdateType = OtaUpdateType;
 
   constructor(protected store: Store<AppState>,
               protected translate: TranslateService,
-              private deviceService: DeviceService,
-              private clipboardService: ClipboardService,
               @Inject('entity') protected entityValue: DeviceInfo,
               @Inject('entitiesTableConfig') protected entitiesTableConfigValue: EntityTableConfig<DeviceInfo>,
-              public fb: FormBuilder) {
-    super(store, fb, entityValue, entitiesTableConfigValue);
+              public fb: FormBuilder,
+              protected cd: ChangeDetectorRef) {
+    super(store, fb, entityValue, entitiesTableConfigValue, cd);
   }
 
   ngOnInit() {
     this.deviceScope = this.entitiesTableConfig.componentsData.deviceScope;
+    this.deviceCredentials$ = this.entitiesTableConfigValue.componentsData.deviceCredentials$;
     super.ngOnInit();
   }
 
@@ -76,30 +80,50 @@ export class DeviceComponent extends EntityComponent<DeviceInfo> {
   }
 
   buildForm(entity: DeviceInfo): FormGroup {
-    return this.fb.group(
+    const form = this.fb.group(
       {
         name: [entity ? entity.name : '', [Validators.required]],
         deviceProfileId: [entity ? entity.deviceProfileId : null, [Validators.required]],
+        firmwareId: [entity ? entity.firmwareId : null],
+        softwareId: [entity ? entity.softwareId : null],
         label: [entity ? entity.label : ''],
         deviceData: [entity ? entity.deviceData : null, [Validators.required]],
         additionalInfo: this.fb.group(
           {
             gateway: [entity && entity.additionalInfo ? entity.additionalInfo.gateway : false],
+            overwriteActivityTime: [entity && entity.additionalInfo ? entity.additionalInfo.overwriteActivityTime : false],
             description: [entity && entity.additionalInfo ? entity.additionalInfo.description : ''],
           }
         )
       }
     );
+    form.get('deviceProfileId').valueChanges.pipe(
+      distinctUntilChanged((prev, curr) => prev?.id === curr?.id)
+    ).subscribe(profileId => {
+      if (profileId && this.isEdit) {
+        this.entityForm.patchValue({
+          firmwareId: null,
+          softwareId: null
+        }, {emitEvent: false});
+      }
+    });
+    return form;
   }
 
   updateForm(entity: DeviceInfo) {
-    this.entityForm.patchValue({name: entity.name});
-    this.entityForm.patchValue({deviceProfileId: entity.deviceProfileId});
-    this.entityForm.patchValue({label: entity.label});
-    this.entityForm.patchValue({deviceData: entity.deviceData});
-    this.entityForm.patchValue({additionalInfo:
-        {gateway: entity.additionalInfo ? entity.additionalInfo.gateway : false}});
-    this.entityForm.patchValue({additionalInfo: {description: entity.additionalInfo ? entity.additionalInfo.description : ''}});
+    this.entityForm.patchValue({
+      name: entity.name,
+      deviceProfileId: entity.deviceProfileId,
+      firmwareId: entity.firmwareId,
+      softwareId: entity.softwareId,
+      label: entity.label,
+      deviceData: entity.deviceData,
+      additionalInfo: {
+        gateway: entity.additionalInfo ? entity.additionalInfo.gateway : false,
+        overwriteActivityTime: entity.additionalInfo ? entity.additionalInfo.overwriteActivityTime : false,
+        description: entity.additionalInfo ? entity.additionalInfo.description : ''
+      }
+    });
   }
 
 
@@ -112,26 +136,6 @@ export class DeviceComponent extends EntityComponent<DeviceInfo> {
         verticalPosition: 'bottom',
         horizontalPosition: 'right'
       }));
-  }
-
-  copyAccessToken($event) {
-    if (this.entity.id) {
-      this.deviceService.getDeviceCredentials(this.entity.id.id, true).subscribe(
-        (deviceCredentials) => {
-          const credentialsId = deviceCredentials.credentialsId;
-          if (this.clipboardService.copyFromContent(credentialsId)) {
-            this.store.dispatch(new ActionNotificationShow(
-              {
-                message: this.translate.instant('device.accessTokenCopiedMessage'),
-                type: 'success',
-                duration: 750,
-                verticalPosition: 'bottom',
-                horizontalPosition: 'right'
-              }));
-          }
-        }
-      );
-    }
   }
 
   onDeviceProfileUpdated() {

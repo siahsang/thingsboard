@@ -1,5 +1,5 @@
 ///
-/// Copyright © 2016-2020 The Thingsboard Authors
+/// Copyright © 2016-2021 The Thingsboard Authors
 ///
 /// Licensed under the Apache License, Version 2.0 (the "License");
 /// you may not use this file except in compliance with the License.
@@ -29,6 +29,8 @@ import { AlarmRule, DeviceProfileAlarm, deviceProfileAlarmValidator } from '@sha
 import { MatDialog } from '@angular/material/dialog';
 import { COMMA, ENTER, SEMICOLON } from '@angular/cdk/keycodes';
 import { MatChipInputEvent } from '@angular/material/chips';
+import { EntityId } from '@shared/models/id/entity-id';
+import { UtilsService } from '@core/services/utils.service';
 
 @Component({
   selector: 'tb-device-profile-alarm',
@@ -60,6 +62,9 @@ export class DeviceProfileAlarmComponent implements ControlValueAccessor, OnInit
   @Input()
   expanded = false;
 
+  @Input()
+  deviceProfileId: EntityId;
+
   private modelValue: DeviceProfileAlarm;
 
   alarmFormGroup: FormGroup;
@@ -68,6 +73,7 @@ export class DeviceProfileAlarmComponent implements ControlValueAccessor, OnInit
   private propagateChangePending = false;
 
   constructor(private dialog: MatDialog,
+              private utils: UtilsService,
               private fb: FormBuilder) {
   }
 
@@ -133,6 +139,19 @@ export class DeviceProfileAlarmComponent implements ControlValueAccessor, OnInit
   }
 
   public validate(c: FormControl) {
+    if (c.parent) {
+      const alarmType = c.value.alarmType;
+      const profileAlarmsType = [];
+      c.parent.getRawValue().forEach((alarm: DeviceProfileAlarm) => {
+          profileAlarmsType.push(alarm.alarmType);
+        }
+      );
+      if (profileAlarmsType.filter(profileAlarmType => profileAlarmType === alarmType).length > 1) {
+        this.alarmFormGroup.get('alarmType').setErrors({
+          unique: true
+        });
+      }
+    }
     return (this.alarmFormGroup.valid) ? null : {
       alarm: {
         valid: false,
@@ -168,6 +187,10 @@ export class DeviceProfileAlarmComponent implements ControlValueAccessor, OnInit
     }
   }
 
+  get alarmTypeTitle(): string {
+    const alarmType = this.alarmFormGroup.get('alarmType').value;
+    return this.utils.customTranslation(alarmType, alarmType);
+  }
 
   private updateModel() {
     const value = this.alarmFormGroup.value;

@@ -1,5 +1,5 @@
 /**
- * Copyright © 2016-2020 The Thingsboard Authors
+ * Copyright © 2016-2021 The Thingsboard Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,6 +15,7 @@
  */
 package org.thingsboard.server.common.msg.rpc;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import lombok.Data;
 import org.thingsboard.server.common.data.id.DeviceId;
 import org.thingsboard.server.common.data.id.TenantId;
@@ -34,5 +35,9 @@ public class ToDeviceRpcRequest implements Serializable {
     private final boolean oneway;
     private final long expirationTime;
     private final ToDeviceRpcRequestBody body;
+    private final boolean persisted;
+    private final Integer retries;
+    @JsonIgnore
+    private final String additionalInfo;
 }
 

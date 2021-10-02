@@ -1,5 +1,5 @@
 ///
-/// Copyright © 2016-2020 The Thingsboard Authors
+/// Copyright © 2016-2021 The Thingsboard Authors
 ///
 /// Licensed under the Apache License, Version 2.0 (the "License");
 /// you may not use this file except in compliance with the License.
@@ -38,18 +38,27 @@ import {
   WidgetActionsData
 } from '@home/components/widget/action/manage-widget-actions.component.models';
 import { UtilsService } from '@core/services/utils.service';
-import { WidgetActionSource, WidgetActionType, widgetActionTypeTranslationMap } from '@shared/models/widget.models';
+import {
+  WidgetActionSource,
+  WidgetActionType,
+  widgetActionTypeTranslationMap
+} from '@shared/models/widget.models';
 import { map, mergeMap, startWith, tap } from 'rxjs/operators';
 import { DashboardService } from '@core/http/dashboard.service';
 import { Dashboard } from '@shared/models/dashboard.models';
 import { DashboardUtilsService } from '@core/services/dashboard-utils.service';
 import { CustomActionEditorCompleter } from '@home/components/widget/action/custom-action.models';
+import { isDefinedAndNotNull } from '@core/utils';
+import { MobileActionEditorComponent } from '@home/components/widget/action/mobile-action-editor.component';
+import { widgetType } from '@shared/models/widget.models';
+import { WidgetService } from '@core/http/widget.service';
 
 export interface WidgetActionDialogData {
   isAdd: boolean;
   callbacks: WidgetActionCallbacks;
   actionsData: WidgetActionsData;
   action?: WidgetActionDescriptorInfo;
+  widgetType: widgetType;
 }
 
 @Component({
@@ -62,6 +71,8 @@ export class WidgetActionDialogComponent extends DialogComponent<WidgetActionDia
                                                  WidgetActionDescriptorInfo> implements OnInit, ErrorStateMatcher {
 
   @ViewChild('dashboardStateInput') dashboardStateInput: ElementRef;
+
+  @ViewChild('mobileActionEditor', {static: false}) mobileActionEditor: MobileActionEditorComponent;
 
   widgetActionFormGroup: FormGroup;
   actionTypeFormGroup: FormGroup;
@@ -80,12 +91,16 @@ export class WidgetActionDialogComponent extends DialogComponent<WidgetActionDia
   customActionEditorCompleter = CustomActionEditorCompleter;
 
   submitted = false;
+  widgetType = widgetType;
+
+  functionScopeVariables: string[];
 
   constructor(protected store: Store<AppState>,
               protected router: Router,
               private utils: UtilsService,
               private dashboardService: DashboardService,
               private dashboardUtils: DashboardUtilsService,
+              private widgetService: WidgetService,
               @Inject(MAT_DIALOG_DATA) public data: WidgetActionDialogData,
               @SkipSelf() private errorStateMatcher: ErrorStateMatcher,
               public dialogRef: MatDialogRef<WidgetActionDialogComponent, WidgetActionDescriptorInfo>,
@@ -102,6 +117,7 @@ export class WidgetActionDialogComponent extends DialogComponent<WidgetActionDia
     } else {
       this.action = this.data.action;
     }
+    this.functionScopeVariables = this.widgetService.getWidgetScopeVariables();
   }
 
   ngOnInit(): void {
@@ -112,15 +128,39 @@ export class WidgetActionDialogComponent extends DialogComponent<WidgetActionDia
       this.fb.control(this.action.name, [this.validateActionName(), Validators.required]));
     this.widgetActionFormGroup.addControl('icon',
       this.fb.control(this.action.icon, [Validators.required]));
+    this.widgetActionFormGroup.addControl('useShowWidgetActionFunction',
+      this.fb.control(this.action.useShowWidgetActionFunction, []));
+    this.widgetActionFormGroup.addControl('showWidgetActionFunction',
+      this.fb.control(this.action.showWidgetActionFunction || 'return true;', []));
     this.widgetActionFormGroup.addControl('type',
       this.fb.control(this.action.type, [Validators.required]));
+    this.updateShowWidgetActionForm();
     this.updateActionTypeFormGroup(this.action.type, this.action);
     this.widgetActionFormGroup.get('type').valueChanges.subscribe((type: WidgetActionType) => {
       this.updateActionTypeFormGroup(type);
     });
     this.widgetActionFormGroup.get('actionSourceId').valueChanges.subscribe(() => {
       this.widgetActionFormGroup.get('name').updateValueAndValidity();
+      this.updateShowWidgetActionForm();
     });
+    this.widgetActionFormGroup.get('useShowWidgetActionFunction').valueChanges.subscribe(() => {
+      this.updateShowWidgetActionForm();
+    });
+  }
+
+  displayShowWidgetActionForm(): boolean {
+    return !!this.data.actionsData.actionSources[this.widgetActionFormGroup.get('actionSourceId').value]?.hasShowCondition;
+  }
+
+  private updateShowWidgetActionForm() {
+    const actionSourceId = this.widgetActionFormGroup.get('actionSourceId').value;
+    const useShowWidgetActionFunction = this.widgetActionFormGroup.get('useShowWidgetActionFunction').value;
+    if (!!this.data.actionsData.actionSources[actionSourceId]?.hasShowCondition && useShowWidgetActionFunction) {
+      this.widgetActionFormGroup.get('showWidgetActionFunction').setValidators([Validators.required]);
+    } else {
+      this.widgetActionFormGroup.get('showWidgetActionFunction').clearValidators();
+    }
+    this.widgetActionFormGroup.get('showWidgetActionFunction').updateValueAndValidity();
   }
 
   private updateActionTypeFormGroup(type?: WidgetActionType, action?: WidgetActionDescriptorInfo) {
@@ -137,7 +177,7 @@ export class WidgetActionDialogComponent extends DialogComponent<WidgetActionDia
           );
           this.actionTypeFormGroup.addControl(
             'setEntityId',
-            this.fb.control(action ? action.setEntityId : true, [])
+            this.fb.control(this.data.widgetType === widgetType.static ? false : action ? action.setEntityId : true, [])
           );
           this.actionTypeFormGroup.addControl(
             'stateEntityParamName',
@@ -145,12 +185,38 @@ export class WidgetActionDialogComponent extends DialogComponent<WidgetActionDia
           );
           if (type === WidgetActionType.openDashboard) {
             this.actionTypeFormGroup.addControl(
+              'openNewBrowserTab',
+              this.fb.control(action ? action.openNewBrowserTab : false, [])
+            );
+            this.actionTypeFormGroup.addControl(
               'targetDashboardId',
               this.fb.control(action ? action.targetDashboardId : null,
                 [Validators.required])
             );
             this.setupSelectedDashboardStateIds(action ? action.targetDashboardId : null);
           } else {
+            if (type === WidgetActionType.openDashboardState) {
+              this.actionTypeFormGroup.addControl(
+                'openInSeparateDialog',
+                this.fb.control(action ? action.openInSeparateDialog : false, [])
+              );
+              this.actionTypeFormGroup.addControl(
+                'dialogTitle',
+                this.fb.control(action ? action.dialogTitle : '', [])
+              );
+              this.actionTypeFormGroup.addControl(
+                'dialogHideDashboardToolbar',
+                this.fb.control(action && isDefinedAndNotNull(action.dialogHideDashboardToolbar) ? action.dialogHideDashboardToolbar : true, [])
+              );
+              this.actionTypeFormGroup.addControl(
+                'dialogWidth',
+                this.fb.control(action ? action.dialogWidth : null, [Validators.min(1), Validators.max(100)])
+              );
+              this.actionTypeFormGroup.addControl(
+                'dialogHeight',
+                this.fb.control(action ? action.dialogHeight : null, [Validators.min(1), Validators.max(100)])
+              );
+            }
             this.actionTypeFormGroup.addControl(
               'openRightLayout',
               this.fb.control(action ? action.openRightLayout : false, [])
@@ -168,6 +234,12 @@ export class WidgetActionDialogComponent extends DialogComponent<WidgetActionDia
           this.actionTypeFormGroup.addControl(
             'customAction',
             this.fb.control(toCustomAction(action), [Validators.required])
+          );
+          break;
+        case WidgetActionType.mobileAction:
+          this.actionTypeFormGroup.addControl(
+            'mobileAction',
+            this.fb.control(action ? action.mobileAction : null, [Validators.required])
           );
           break;
       }
@@ -286,14 +358,19 @@ export class WidgetActionDialogComponent extends DialogComponent<WidgetActionDia
 
   save(): void {
     this.submitted = true;
-    const type: WidgetActionType = this.widgetActionFormGroup.get('type').value;
-    let result: WidgetActionDescriptorInfo;
-    if (type === WidgetActionType.customPretty) {
-      result = {...this.widgetActionFormGroup.value, ...this.actionTypeFormGroup.get('customAction').value};
-    } else {
-      result = {...this.widgetActionFormGroup.value, ...this.actionTypeFormGroup.value};
+    if (this.mobileActionEditor != null) {
+      this.mobileActionEditor.validateOnSubmit();
     }
-    result.id = this.action.id;
-    this.dialogRef.close(result);
+    if (this.widgetActionFormGroup.valid && this.actionTypeFormGroup.valid) {
+      const type: WidgetActionType = this.widgetActionFormGroup.get('type').value;
+      let result: WidgetActionDescriptorInfo;
+      if (type === WidgetActionType.customPretty) {
+        result = {...this.widgetActionFormGroup.value, ...this.actionTypeFormGroup.get('customAction').value};
+      } else {
+        result = {...this.widgetActionFormGroup.value, ...this.actionTypeFormGroup.value};
+      }
+      result.id = this.action.id;
+      this.dialogRef.close(result);
+    }
   }
 }

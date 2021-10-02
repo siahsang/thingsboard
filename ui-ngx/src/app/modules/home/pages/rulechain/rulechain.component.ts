@@ -1,5 +1,5 @@
 ///
-/// Copyright © 2016-2020 The Thingsboard Authors
+/// Copyright © 2016-2021 The Thingsboard Authors
 ///
 /// Licensed under the Apache License, Version 2.0 (the "License");
 /// you may not use this file except in compliance with the License.
@@ -14,7 +14,7 @@
 /// limitations under the License.
 ///
 
-import { Component, Inject } from '@angular/core';
+import { ChangeDetectorRef, Component, Inject } from '@angular/core';
 import { Store } from '@ngrx/store';
 import { AppState } from '@core/core.state';
 import { EntityComponent } from '../../components/entity/entity.component';
@@ -31,12 +31,20 @@ import { EntityTableConfig } from '@home/models/entity/entities-table-config.mod
 })
 export class RuleChainComponent extends EntityComponent<RuleChain> {
 
+  ruleChainScope: 'tenant' | 'edges' | 'edge';
+
   constructor(protected store: Store<AppState>,
               protected translate: TranslateService,
               @Inject('entity') protected entityValue: RuleChain,
               @Inject('entitiesTableConfig') protected entitiesTableConfigValue: EntityTableConfig<RuleChain>,
-              public fb: FormBuilder) {
-    super(store, fb, entityValue, entitiesTableConfigValue);
+              public fb: FormBuilder,
+              protected cd: ChangeDetectorRef) {
+    super(store, fb, entityValue, entitiesTableConfigValue, cd);
+  }
+
+  ngOnInit() {
+    this.ruleChainScope = this.entitiesTableConfig.componentsData.ruleChainScope;
+    super.ngOnInit();
   }
 
   hideDelete() {
@@ -77,5 +85,31 @@ export class RuleChainComponent extends EntityComponent<RuleChain> {
         verticalPosition: 'bottom',
         horizontalPosition: 'right'
       }));
+  }
+
+  isEdgeRootRuleChain() {
+    if (this.entitiesTableConfig && this.entityValue) {
+      return this.entitiesTableConfig.componentsData.edge?.rootRuleChainId?.id == this.entityValue.id.id;
+    } else {
+      return false;
+    }
+  }
+
+  isAutoAssignToEdgeRuleChain() {
+    if (this.entitiesTableConfig && this.entityValue) {
+      return !this.entityValue.root &&
+        this.entitiesTableConfig.componentsData?.autoAssignToEdgeRuleChainIds?.includes(this.entityValue.id.id);
+    } else {
+      return false;
+    }
+  }
+
+  isNotAutoAssignToEdgeRuleChain() {
+    if (this.entitiesTableConfig && this.entityValue) {
+      return !this.entityValue.root &&
+        !this.entitiesTableConfig.componentsData?.autoAssignToEdgeRuleChainIds?.includes(this.entityValue.id.id);
+    } else {
+      return false;
+    }
   }
 }

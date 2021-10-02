@@ -1,5 +1,5 @@
 ///
-/// Copyright © 2016-2020 The Thingsboard Authors
+/// Copyright © 2016-2021 The Thingsboard Authors
 ///
 /// Licensed under the Apache License, Version 2.0 (the "License");
 /// you may not use this file except in compliance with the License.
@@ -59,6 +59,7 @@ const helpBaseUrl = 'https://thingsboard.io';
 export const HelpLinks = {
   linksMap: {
     outgoingMailSettings: helpBaseUrl + '/docs/user-guide/ui/mail-settings',
+    smsProviderSettings: helpBaseUrl + '/docs/user-guide/ui/sms-provider-settings',
     securitySettings: helpBaseUrl + '/docs/user-guide/ui/security-settings',
     oauth2Settings: helpBaseUrl + '/docs/user-guide/oauth-2-support/',
     ruleEngine: helpBaseUrl + '/docs/user-guide/rule-engine-2-0/overview/',
@@ -107,17 +108,21 @@ export const HelpLinks = {
     ruleNodeRabbitMq: helpBaseUrl + '/docs/user-guide/rule-engine-2-0/external-nodes/#rabbitmq-node',
     ruleNodeRestApiCall: helpBaseUrl + '/docs/user-guide/rule-engine-2-0/external-nodes/#rest-api-call-node',
     ruleNodeSendEmail: helpBaseUrl + '/docs/user-guide/rule-engine-2-0/external-nodes/#send-email-node',
+    ruleNodeSendSms: helpBaseUrl + '/docs/user-guide/rule-engine-2-0/external-nodes/#send-sms-node',
     tenants: helpBaseUrl + '/docs/user-guide/ui/tenants',
     tenantProfiles: helpBaseUrl + '/docs/user-guide/ui/tenant-profiles',
     customers: helpBaseUrl + '/docs/user-guide/ui/customers',
     users: helpBaseUrl + '/docs/user-guide/ui/users',
     devices: helpBaseUrl + '/docs/user-guide/ui/devices',
     deviceProfiles: helpBaseUrl + '/docs/user-guide/ui/device-profiles',
+    edges: helpBaseUrl + '/docs/user-guide/ui/edges',
     assets: helpBaseUrl + '/docs/user-guide/ui/assets',
     entityViews: helpBaseUrl + '/docs/user-guide/ui/entity-views',
     entitiesImport: helpBaseUrl + '/docs/user-guide/bulk-provisioning',
     rulechains: helpBaseUrl + '/docs/user-guide/ui/rule-chains',
+    resources: helpBaseUrl + '/docs/user-guide/ui/resources',
     dashboards: helpBaseUrl + '/docs/user-guide/ui/dashboards',
+    otaUpdates: helpBaseUrl + '/docs/user-guide/ui/ota-updates',
     widgetsBundles: helpBaseUrl + '/docs/user-guide/ui/widget-library#bundles',
     widgetsConfig:  helpBaseUrl + '/docs/user-guide/ui/dashboards#widget-configuration',
     widgetsConfigTimeseries:  helpBaseUrl + '/docs/user-guide/ui/dashboards#timeseries',
@@ -125,6 +130,8 @@ export const HelpLinks = {
     widgetsConfigRpc: helpBaseUrl +  '/docs/user-guide/ui/dashboards#rpc',
     widgetsConfigAlarm: helpBaseUrl +  '/docs/user-guide/ui/dashboards#alarm',
     widgetsConfigStatic: helpBaseUrl +  '/docs/user-guide/ui/dashboards#static',
+    ruleNodePushToCloud: helpBaseUrl + '/docs/user-guide/rule-engine-2-0/action-nodes/#push-to-cloud',
+    ruleNodePushToEdge: helpBaseUrl + '/docs/user-guide/rule-engine-2-0/action-nodes/#push-to-edge'
   }
 };
 
@@ -140,6 +147,22 @@ export enum ValueType {
   BOOLEAN = 'BOOLEAN',
   JSON = 'JSON'
 }
+
+export enum DataType {
+  STRING = 'STRING',
+  LONG = 'LONG',
+  BOOLEAN = 'BOOLEAN',
+  DOUBLE = 'DOUBLE',
+  JSON = 'JSON'
+}
+
+export const DataTypeTranslationMap = new Map([
+  [DataType.STRING, 'value.string'],
+  [DataType.LONG, 'value.integer'],
+  [DataType.BOOLEAN, 'value.boolean'],
+  [DataType.DOUBLE, 'value.double'],
+  [DataType.JSON, 'value.json']
+]);
 
 export const valueTypesMap = new Map<ValueType, ValueTypeData>(
   [
@@ -219,5 +242,6 @@ export const contentTypesMap = new Map<ContentType, ContentTypeData>(
 );
 
 export const customTranslationsPrefix = 'custom.';
+export const i18nPrefix = 'i18n';
 
 export const MODULES_MAP = new InjectionToken<{[key: string]: any}>('ModulesMap');

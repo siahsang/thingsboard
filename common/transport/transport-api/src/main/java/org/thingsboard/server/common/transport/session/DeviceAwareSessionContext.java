@@ -1,5 +1,5 @@
 /**
- * Copyright © 2016-2020 The Thingsboard Authors
+ * Copyright © 2016-2021 The Thingsboard Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,13 +18,13 @@ package org.thingsboard.server.common.transport.session;
 import lombok.Data;
 import lombok.Getter;
 import lombok.Setter;
+import org.thingsboard.server.common.data.Device;
 import org.thingsboard.server.common.data.DeviceProfile;
 import org.thingsboard.server.common.data.id.DeviceId;
-import org.thingsboard.server.common.msg.session.SessionContext;
 import org.thingsboard.server.common.transport.auth.TransportDeviceInfo;
 import org.thingsboard.server.gen.transport.TransportProtos;
-import org.thingsboard.server.gen.transport.TransportProtos.DeviceInfoProto;
 
+import java.util.Optional;
 import java.util.UUID;
 
 /**
@@ -46,6 +46,7 @@ public abstract class DeviceAwareSessionContext implements SessionContext {
     @Setter
     private volatile TransportProtos.SessionInfoProto sessionInfo;
 
+    @Setter
     private volatile boolean connected;
 
     public DeviceId getDeviceId() {
@@ -54,15 +55,23 @@ public abstract class DeviceAwareSessionContext implements SessionContext {
 
     public void setDeviceInfo(TransportDeviceInfo deviceInfo) {
         this.deviceInfo = deviceInfo;
-        this.connected = true;
         this.deviceId = deviceInfo.getDeviceId();
     }
 
     @Override
-    public void onProfileUpdate(DeviceProfile deviceProfile) {
+    public void onDeviceProfileUpdate(TransportProtos.SessionInfoProto sessionInfo, DeviceProfile deviceProfile) {
+        this.sessionInfo = sessionInfo;
         this.deviceProfile = deviceProfile;
         this.deviceInfo.setDeviceType(deviceProfile.getName());
-        this.sessionInfo = TransportProtos.SessionInfoProto.newBuilder().mergeFrom(sessionInfo).setDeviceType(deviceProfile.getName()).build();
+
+    }
+
+    @Override
+    public void onDeviceUpdate(TransportProtos.SessionInfoProto sessionInfo, Device device, Optional<DeviceProfile> deviceProfileOpt) {
+        this.sessionInfo = sessionInfo;
+        this.deviceInfo.setDeviceProfileId(device.getDeviceProfileId());
+        this.deviceInfo.setDeviceType(device.getType());
+        deviceProfileOpt.ifPresent(profile -> this.deviceProfile = profile);
     }
 
     public boolean isConnected() {

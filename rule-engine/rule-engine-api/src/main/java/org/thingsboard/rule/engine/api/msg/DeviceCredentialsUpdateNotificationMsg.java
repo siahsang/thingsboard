@@ -1,5 +1,5 @@
 /**
- * Copyright © 2016-2020 The Thingsboard Authors
+ * Copyright © 2016-2021 The Thingsboard Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,14 +16,11 @@
 package org.thingsboard.rule.engine.api.msg;
 
 import lombok.Data;
-import lombok.Getter;
-import lombok.ToString;
 import org.thingsboard.server.common.data.id.DeviceId;
 import org.thingsboard.server.common.data.id.TenantId;
-import org.thingsboard.server.common.data.kv.AttributeKey;
+import org.thingsboard.server.common.data.security.DeviceCredentials;
 import org.thingsboard.server.common.msg.MsgType;
-
-import java.util.Set;
+import org.thingsboard.server.common.msg.ToDeviceActorNotificationMsg;
 
 /**
  * @author Andrew Shvayka
@@ -31,8 +28,16 @@ import java.util.Set;
 @Data
 public class DeviceCredentialsUpdateNotificationMsg implements ToDeviceActorNotificationMsg {
 
+    private static final long serialVersionUID = -3956907402411126990L;
+
     private final TenantId tenantId;
     private final DeviceId deviceId;
+
+    /**
+     * LwM2M
+     * @return
+     */
+    private final DeviceCredentials deviceCredentials;
 
     @Override
     public MsgType getMsgType() {

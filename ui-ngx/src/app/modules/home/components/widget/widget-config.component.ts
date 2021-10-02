@@ -1,5 +1,5 @@
 ///
-/// Copyright © 2016-2020 The Thingsboard Authors
+/// Copyright © 2016-2021 The Thingsboard Authors
 ///
 /// Licensed under the Apache License, Version 2.0 (the "License");
 /// you may not use this file except in compliance with the License.
@@ -40,7 +40,7 @@ import {
   Validators
 } from '@angular/forms';
 import { WidgetConfigComponentData } from '@home/models/widget-component.models';
-import { deepClone, isDefined, isObject } from '@app/core/utils';
+import { deepClone, isDefined, isObject, isUndefined } from '@app/core/utils';
 import {
   alarmFields,
   AlarmSearchStatus,
@@ -54,13 +54,13 @@ import { UtilsService } from '@core/services/utils.service';
 import { DataKeyType } from '@shared/models/telemetry/telemetry.models';
 import { TranslateService } from '@ngx-translate/core';
 import { EntityType } from '@shared/models/entity-type.models';
-import { forkJoin, Observable, of, Subscription } from 'rxjs';
+import { Observable, of, Subscription } from 'rxjs';
 import { WidgetConfigCallbacks } from '@home/components/widget/widget-config.component.models';
 import {
   EntityAliasDialogComponent,
   EntityAliasDialogData
 } from '@home/components/alias/entity-alias-dialog.component';
-import { catchError, map, mergeMap, tap } from 'rxjs/operators';
+import { catchError, mergeMap, tap } from 'rxjs/operators';
 import { MatDialog } from '@angular/material/dialog';
 import { EntityService } from '@core/http/entity.service';
 import { JsonFormComponentData } from '@shared/components/json-form/json-form-component.models';
@@ -71,6 +71,7 @@ import { Filter, Filters } from '@shared/models/query/query.models';
 import { FilterDialogComponent, FilterDialogData } from '@home/components/filter/filter-dialog.component';
 import { COMMA, ENTER, SEMICOLON } from '@angular/cdk/keycodes';
 import { MatChipInputEvent } from '@angular/material/chips';
+import { DndDropEvent } from 'ngx-drag-drop';
 
 const emptySettingsSchema: JsonSchema = {
   type: 'object',
@@ -141,7 +142,7 @@ export class WidgetConfigComponent extends PageComponent implements OnInit, Cont
   widgetType: widgetType;
 
   datasourceType = DatasourceType;
-  datasourceTypes: Array<DatasourceType>;
+  datasourceTypes: Array<DatasourceType> = [];
   datasourceTypesTranslations = datasourceTypeTranslationMap;
 
   widgetConfigCallbacks: WidgetConfigCallbacks = {
@@ -186,11 +187,6 @@ export class WidgetConfigComponent extends PageComponent implements OnInit, Cont
   }
 
   ngOnInit(): void {
-    if (this.functionsOnly) {
-      this.datasourceTypes = [DatasourceType.function];
-    } else {
-      this.datasourceTypes = [DatasourceType.function, DatasourceType.entity];
-    }
     this.dataSettings = this.fb.group({});
     this.targetDeviceSettings = this.fb.group({});
     this.alarmSourceSettings = this.fb.group({});
@@ -232,7 +228,8 @@ export class WidgetConfigComponent extends PageComponent implements OnInit, Cont
     });
     this.layoutSettings = this.fb.group({
       mobileOrder: [null, [Validators.pattern(/^-?[0-9]+$/)]],
-      mobileHeight: [null, [Validators.min(1), Validators.max(10), Validators.pattern(/^\d*$/)]]
+      mobileHeight: [null, [Validators.min(1), Validators.max(10), Validators.pattern(/^\d*$/)]],
+      mobileHide: [false]
     });
     this.actionsSettings = this.fb.group({
       actionsData: [null, []]
@@ -295,6 +292,14 @@ export class WidgetConfigComponent extends PageComponent implements OnInit, Cont
   }
 
   private buildForms() {
+    if (this.functionsOnly) {
+      this.datasourceTypes = [DatasourceType.function];
+    } else {
+      this.datasourceTypes = [DatasourceType.function, DatasourceType.entity];
+      if (this.widgetType === widgetType.latest) {
+        this.datasourceTypes.push(DatasourceType.entityCount);
+      }
+    }
     this.dataSettings = this.fb.group({});
     this.targetDeviceSettings = this.fb.group({});
     this.alarmSourceSettings = this.fb.group({});
@@ -498,7 +503,8 @@ export class WidgetConfigComponent extends PageComponent implements OnInit, Cont
           this.layoutSettings.patchValue(
             {
               mobileOrder: layout.mobileOrder,
-              mobileHeight: layout.mobileHeight
+              mobileHeight: layout.mobileHeight,
+              mobileHide: layout.mobileHide
             },
             {emitEvent: false}
           );
@@ -506,7 +512,8 @@ export class WidgetConfigComponent extends PageComponent implements OnInit, Cont
           this.layoutSettings.patchValue(
             {
               mobileOrder: null,
-              mobileHeight: null
+              mobileHeight: null,
+              mobileHide: false
             },
             {emitEvent: false}
           );
@@ -517,22 +524,28 @@ export class WidgetConfigComponent extends PageComponent implements OnInit, Cont
   }
 
   private buildDatasourceForm(datasource?: Datasource): FormGroup {
-    const dataKeysRequired = !this.modelValue.typeParameters || !this.modelValue.typeParameters.dataKeysOptional;
+    let dataKeysRequired = !this.modelValue.typeParameters || !this.modelValue.typeParameters.dataKeysOptional
+      || datasource?.type === DatasourceType.entityCount;
     const datasourceFormGroup = this.fb.group(
       {
         type: [datasource ? datasource.type : null, [Validators.required]],
         name: [datasource ? datasource.name : null, []],
         entityAliasId: [datasource ? datasource.entityAliasId : null,
-          datasource && datasource.type === DatasourceType.entity ? [Validators.required] : []],
+          datasource && (datasource.type === DatasourceType.entity ||
+                         datasource.type === DatasourceType.entityCount) ? [Validators.required] : []],
         filterId: [datasource ? datasource.filterId : null, []],
         dataKeys: [datasource ? datasource.dataKeys : null, dataKeysRequired ? [Validators.required] : []]
       }
     );
     datasourceFormGroup.get('type').valueChanges.subscribe((type: DatasourceType) => {
       datasourceFormGroup.get('entityAliasId').setValidators(
-        type === DatasourceType.entity ? [Validators.required] : []
+        (type === DatasourceType.entity || type === DatasourceType.entityCount) ? [Validators.required] : []
       );
+      dataKeysRequired = !this.modelValue.typeParameters || !this.modelValue.typeParameters.dataKeysOptional
+        || type === DatasourceType.entityCount;
+      datasourceFormGroup.get('dataKeys').setValidators(dataKeysRequired ? [Validators.required] : []);
       datasourceFormGroup.get('entityAliasId').updateValueAndValidity();
+      datasourceFormGroup.get('dataKeys').updateValueAndValidity();
     });
     return datasourceFormGroup;
   }
@@ -659,8 +672,22 @@ export class WidgetConfigComponent extends PageComponent implements OnInit, Cont
     return !!this.modelValue && !!this.modelValue.settingsSchema && !!this.modelValue.settingsSchema.schema;
   }
 
+  public dndDatasourceMoved(index: number) {
+    this.datasourcesFormArray().removeAt(index);
+  }
+
+  public onDatasourceDrop(event: DndDropEvent) {
+    let index = event.index;
+    if (isUndefined(index)) {
+      index = this.datasourcesFormArray().length;
+    }
+    this.datasourcesFormArray().insert(index,
+      this.buildDatasourceForm(event.data)
+    );
+  }
+
   public removeDatasource(index: number) {
-    (this.dataSettings.get('datasources') as FormArray).removeAt(index);
+    this.datasourcesFormArray().removeAt(index);
   }
 
   public addDatasource() {
@@ -673,8 +700,7 @@ export class WidgetConfigComponent extends PageComponent implements OnInit, Cont
         dataKeys: []
       };
     }
-    const datasourcesFormArray = this.dataSettings.get('datasources') as FormArray;
-    datasourcesFormArray.push(this.buildDatasourceForm(newDatasource));
+    this.datasourcesFormArray().push(this.buildDatasourceForm(newDatasource));
   }
 
   public generateDataKey(chip: any, type: DataKeyType): DataKey {
@@ -704,6 +730,8 @@ export class WidgetConfigComponent extends PageComponent implements OnInit, Cont
         if (!result.funcBody) {
           result.funcBody = 'return prevValue + 1;';
         }
+      } else if (type === DataKeyType.count) {
+        result.name = 'count';
       }
       if (isDefined(this.modelValue.dataKeySettingsSchema.schema)) {
         result.settings = this.utils.generateObjectFromJsonSchema(this.modelValue.dataKeySettingsSchema.schema);
@@ -792,44 +820,18 @@ export class WidgetConfigComponent extends PageComponent implements OnInit, Cont
     );
   }
 
-  private fetchEntityKeys(entityAliasId: string, query: string, dataKeyTypes: Array<DataKeyType>): Observable<Array<DataKey>> {
-    return this.aliasController.resolveSingleEntityInfo(entityAliasId).pipe(
-      mergeMap((entity) => {
-        if (entity) {
-          const fetchEntityTasks: Array<Observable<Array<DataKey>>> = [];
-          for (const dataKeyType of dataKeyTypes) {
-            fetchEntityTasks.push(
-              this.entityService.getEntityKeys(
-                {entityType: entity.entityType, id: entity.id},
-                query,
-                dataKeyType,
-                {ignoreLoading: true, ignoreErrors: true}
-              ).pipe(
-                map((keys) => {
-                  const dataKeys: Array<DataKey> = [];
-                  for (const key of keys) {
-                    dataKeys.push({name: key, type: dataKeyType});
-                  }
-                  return dataKeys;
-                }
-                ),
-                catchError(val => of([]))
-            ));
-          }
-          return forkJoin(fetchEntityTasks).pipe(
-            map(arrayOfDataKeys => {
-              const result = new Array<DataKey>();
-              arrayOfDataKeys.forEach((dataKeyArray) => {
-                result.push(...dataKeyArray);
-              });
-              return result;
-            }
-          ));
-        } else {
-          return of([]);
-        }
+  private fetchEntityKeys(entityAliasId: string, dataKeyTypes: Array<DataKeyType>): Observable<Array<DataKey>> {
+    return this.aliasController.getAliasInfo(entityAliasId).pipe(
+      mergeMap((aliasInfo) => {
+        return this.entityService.getEntityKeysByEntityFilter(
+          aliasInfo.entityFilter,
+          dataKeyTypes,
+          {ignoreLoading: true, ignoreErrors: true}
+        ).pipe(
+          catchError(() => of([]))
+        );
       }),
-      catchError(val => of([] as Array<DataKey>))
+      catchError(() => of([] as Array<DataKey>))
     );
   }
 

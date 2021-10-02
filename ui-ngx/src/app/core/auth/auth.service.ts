@@ -1,5 +1,5 @@
 ///
-/// Copyright © 2016-2020 The Thingsboard Authors
+/// Copyright © 2016-2021 The Thingsboard Authors
 ///
 /// Licensed under the Apache License, Version 2.0 (the "License");
 /// you may not use this file except in compliance with the License.
@@ -31,7 +31,7 @@ import { ActionAuthAuthenticated, ActionAuthLoadUser, ActionAuthUnauthenticated 
 import { getCurrentAuthState, getCurrentAuthUser } from './auth.selectors';
 import { Authority } from '@shared/models/authority.enum';
 import { ActionSettingsChangeLanguage } from '@app/core/settings/settings.actions';
-import { AuthPayload, AuthState } from '@core/auth/auth.models';
+import { AuthPayload, AuthState, SysParamsState } from '@core/auth/auth.models';
 import { TranslateService } from '@ngx-translate/core';
 import { AuthUser } from '@shared/models/user.model';
 import { TimeService } from '@core/services/time.service';
@@ -44,7 +44,8 @@ import { AdminService } from '@core/http/admin.service';
 import { ActionNotificationShow } from '@core/notification/notification.actions';
 import { MatDialog, MatDialogConfig } from '@angular/material/dialog';
 import { AlertDialogComponent } from '@shared/components/dialog/alert-dialog.component';
-import { OAuth2ClientInfo } from '@shared/models/oauth2.models';
+import { OAuth2ClientInfo, PlatformType } from '@shared/models/oauth2.models';
+import { isDefinedAndNotNull, isMobileApp } from '@core/utils';
 
 @Injectable({
     providedIn: 'root'
@@ -149,8 +150,11 @@ export class AuthService {
   }
 
   public changePassword(currentPassword: string, newPassword: string) {
-    return this.http.post('/api/auth/changePassword',
-      {currentPassword, newPassword}, defaultHttpOptions());
+    return this.http.post('/api/auth/changePassword', {currentPassword, newPassword}, defaultHttpOptions()).pipe(
+      tap((loginResponse: LoginResponse) => {
+          this.setUserFromJwtToken(loginResponse.token, loginResponse.refreshToken, false);
+        }
+      ));
   }
 
   public activateByEmailCode(emailCode: string): Observable<LoginResponse> {
@@ -191,15 +195,18 @@ export class AuthService {
   }
 
   public gotoDefaultPlace(isAuthenticated: boolean) {
-    const authState = getCurrentAuthState(this.store);
-    const url = this.defaultUrl(isAuthenticated, authState);
-    this.zone.run(() => {
-      this.router.navigateByUrl(url);
-    });
+    if (!isMobileApp()) {
+      const authState = getCurrentAuthState(this.store);
+      const url = this.defaultUrl(isAuthenticated, authState);
+      this.zone.run(() => {
+        this.router.navigateByUrl(url);
+      });
+    }
   }
 
   public loadOAuth2Clients(): Observable<Array<OAuth2ClientInfo>> {
-    return this.http.post<Array<OAuth2ClientInfo>>(`/api/noauth/oauth2Clients`,
+    const url = '/api/noauth/oauth2Clients?platform=' + PlatformType.WEB;
+    return this.http.post<Array<OAuth2ClientInfo>>(url,
       null, defaultHttpOptions()).pipe(
       catchError(err => of([])),
       tap((OAuth2Clients) => {
@@ -282,8 +289,7 @@ export class AuthService {
       if (publicId) {
         return this.publicLogin(publicId).pipe(
           mergeMap((response) => {
-            this.updateAndValidateToken(response.token, 'jwt_token', false);
-            this.updateAndValidateToken(response.refreshToken, 'refresh_token', false);
+            this.updateAndValidateTokens(response.token, response.refreshToken, false);
             return this.procceedJwtTokenValidate();
           }),
           catchError((err) => {
@@ -292,10 +298,11 @@ export class AuthService {
           })
         );
       } else if (accessToken) {
-        this.utils.updateQueryParam('accessToken', null);
+        const queryParamsToRemove = ['accessToken'];
         if (refreshToken) {
-          this.utils.updateQueryParam('refreshToken', null);
+          queryParamsToRemove.push('refreshToken');
         }
+        this.utils.removeQueryParams(queryParamsToRemove);
         try {
           this.updateAndValidateToken(accessToken, 'jwt_token', false);
           if (refreshToken) {
@@ -317,8 +324,7 @@ export class AuthService {
         };
         return this.http.post<LoginResponse>('/api/auth/login', loginRequest, defaultHttpOptions()).pipe(
           mergeMap((loginResponse: LoginResponse) => {
-              this.updateAndValidateToken(loginResponse.token, 'jwt_token', false);
-              this.updateAndValidateToken(loginResponse.refreshToken, 'refresh_token', false);
+              this.updateAndValidateTokens(loginResponse.token, loginResponse.refreshToken, false);
               return this.procceedJwtTokenValidate();
             }
           )
@@ -427,19 +433,27 @@ export class AuthService {
     }
   }
 
-  private loadSystemParams(authPayload: AuthPayload): Observable<any> {
-    const sources: Array<Observable<any>> = [this.loadIsUserTokenAccessEnabled(authPayload.authUser),
-                                             this.fetchAllowedDashboardIds(authPayload),
-                                             this.timeService.loadMaxDatapointsLimit()];
-    return forkJoin(sources)
-      .pipe(map((data) => {
-        const userTokenAccessEnabled: boolean = data[0];
-        const allowedDashboardIds: string[] = data[1];
-        return {userTokenAccessEnabled, allowedDashboardIds};
-      }));
+  public loadIsEdgesSupportEnabled(): Observable<boolean> {
+    return this.http.get<boolean>('/api/edges/enabled', defaultHttpOptions());
   }
 
-  public refreshJwtToken(): Observable<LoginResponse> {
+  private loadSystemParams(authPayload: AuthPayload): Observable<SysParamsState> {
+    const sources = [this.loadIsUserTokenAccessEnabled(authPayload.authUser),
+                     this.fetchAllowedDashboardIds(authPayload),
+                     this.loadIsEdgesSupportEnabled(),
+                     this.timeService.loadMaxDatapointsLimit()];
+    return forkJoin(sources)
+      .pipe(map((data) => {
+        const userTokenAccessEnabled: boolean = data[0] as boolean;
+        const allowedDashboardIds: string[] = data[1] as string[];
+        const edgesSupportEnabled: boolean = data[2] as boolean;
+        return {userTokenAccessEnabled, allowedDashboardIds, edgesSupportEnabled};
+      }, catchError((err) => {
+        return of({});
+      })));
+  }
+
+  public refreshJwtToken(loadUserElseStoreJwtToken = true): Observable<LoginResponse> {
     let response: Observable<LoginResponse> = this.refreshTokenSubject;
     if (this.refreshTokenSubject === null) {
         this.refreshTokenSubject = new ReplaySubject<LoginResponse>(1);
@@ -448,15 +462,23 @@ export class AuthService {
         const refreshTokenValid = AuthService.isTokenValid('refresh_token');
         this.setUserFromJwtToken(null, null, false);
         if (!refreshTokenValid) {
-          this.refreshTokenSubject.error(new Error(this.translate.instant('access.refresh-token-expired')));
-          this.refreshTokenSubject = null;
+          this.translate.get('access.refresh-token-expired').subscribe(
+            (translation) => {
+              this.refreshTokenSubject.error(new Error(translation));
+              this.refreshTokenSubject = null;
+            }
+          );
         } else {
           const refreshTokenRequest = {
             refreshToken
           };
           const refreshObservable = this.http.post<LoginResponse>('/api/auth/token', refreshTokenRequest, defaultHttpOptions());
           refreshObservable.subscribe((loginResponse: LoginResponse) => {
-            this.setUserFromJwtToken(loginResponse.token, loginResponse.refreshToken, false);
+            if (loadUserElseStoreJwtToken) {
+              this.setUserFromJwtToken(loginResponse.token, loginResponse.refreshToken, false);
+            } else {
+              this.updateAndValidateTokens(loginResponse.token, loginResponse.refreshToken, true);
+            }
             this.refreshTokenSubject.next(loginResponse);
             this.refreshTokenSubject.complete();
             this.refreshTokenSubject = null;
@@ -474,7 +496,7 @@ export class AuthService {
     const subject = new ReplaySubject<void>();
     if (!AuthService.isTokenValid('jwt_token')) {
       if (doRefresh) {
-        this.refreshJwtToken().subscribe(
+        this.refreshJwtToken(!doRefresh).subscribe(
           () => {
             subject.next();
             subject.complete();
@@ -498,31 +520,52 @@ export class AuthService {
     return this.refreshTokenSubject !== null;
   }
 
-  public setUserFromJwtToken(jwtToken, refreshToken, notify) {
+  public setUserFromJwtToken(jwtToken, refreshToken, notify): Observable<boolean> {
+    const authenticatedSubject = new ReplaySubject<boolean>();
     if (!jwtToken) {
       AuthService.clearTokenData();
       if (notify) {
         this.notifyUnauthenticated();
       }
+      authenticatedSubject.next(false);
+      authenticatedSubject.complete();
     } else {
-      this.updateAndValidateToken(jwtToken, 'jwt_token', true);
-      this.updateAndValidateToken(refreshToken, 'refresh_token', true);
+      this.updateAndValidateTokens(jwtToken, refreshToken, true);
       if (notify) {
         this.notifyUserLoaded(false);
         this.loadUser(false).subscribe(
           (authPayload) => {
             this.notifyUserLoaded(true);
             this.notifyAuthenticated(authPayload);
+            authenticatedSubject.next(true);
+            authenticatedSubject.complete();
           },
           () => {
             this.notifyUserLoaded(true);
             this.notifyUnauthenticated();
+            authenticatedSubject.next(false);
+            authenticatedSubject.complete();
           }
         );
       } else {
-        this.loadUser(false).subscribe();
+        this.loadUser(false).subscribe(
+          () => {
+            authenticatedSubject.next(true);
+            authenticatedSubject.complete();
+          },
+          () => {
+            authenticatedSubject.next(false);
+            authenticatedSubject.complete();
+          }
+        );
       }
     }
+    return authenticatedSubject;
+  }
+
+  private updateAndValidateTokens(jwtToken, refreshToken, notify: boolean) {
+    this.updateAndValidateToken(jwtToken, 'jwt_token', notify);
+    this.updateAndValidateToken(refreshToken, 'refresh_token', notify);
   }
 
   public parsePublicId(): string {

@@ -1,5 +1,5 @@
 /**
- * Copyright © 2016-2020 The Thingsboard Authors
+ * Copyright © 2016-2021 The Thingsboard Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,14 +19,22 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 import org.thingsboard.server.common.data.id.CustomerId;
 import org.thingsboard.server.common.data.id.DashboardId;
 import org.thingsboard.server.common.data.id.TenantId;
+import org.thingsboard.server.common.data.validation.NoXss;
 
-import java.util.*;
+import javax.validation.Valid;
+import java.util.HashSet;
+import java.util.Set;
 
 public class DashboardInfo extends SearchTextBased<DashboardId> implements HasName, HasTenantId {
 
     private TenantId tenantId;
+    @NoXss
     private String title;
+    private String image;
+    @Valid
     private Set<ShortCustomerInfo> assignedCustomers;
+    private boolean mobileHide;
+    private Integer mobileOrder;
 
     public DashboardInfo() {
         super();
@@ -40,7 +48,10 @@ public class DashboardInfo extends SearchTextBased<DashboardId> implements HasNa
         super(dashboardInfo);
         this.tenantId = dashboardInfo.getTenantId();
         this.title = dashboardInfo.getTitle();
+        this.image = dashboardInfo.getImage();
         this.assignedCustomers = dashboardInfo.getAssignedCustomers();
+        this.mobileHide = dashboardInfo.isMobileHide();
+        this.mobileOrder = dashboardInfo.getMobileOrder();
     }
 
     public TenantId getTenantId() {
@@ -59,6 +70,14 @@ public class DashboardInfo extends SearchTextBased<DashboardId> implements HasNa
         this.title = title;
     }
 
+    public String getImage() {
+        return image;
+    }
+
+    public void setImage(String image) {
+        this.image = image;
+    }
+
     public Set<ShortCustomerInfo> getAssignedCustomers() {
         return assignedCustomers;
     }
@@ -67,9 +86,26 @@ public class DashboardInfo extends SearchTextBased<DashboardId> implements HasNa
         this.assignedCustomers = assignedCustomers;
     }
 
+    public boolean isMobileHide() {
+        return mobileHide;
+    }
+
+    public void setMobileHide(boolean mobileHide) {
+        this.mobileHide = mobileHide;
+    }
+
+    public Integer getMobileOrder() {
+        return mobileOrder;
+    }
+
+    public void setMobileOrder(Integer mobileOrder) {
+        this.mobileOrder = mobileOrder;
+    }
+
     public boolean isAssignedToCustomer(CustomerId customerId) {
         return this.assignedCustomers != null && this.assignedCustomers.contains(new ShortCustomerInfo(customerId, null, false));
     }
+
 
     public ShortCustomerInfo getAssignedCustomerInfo(CustomerId customerId) {
         if (this.assignedCustomers != null) {

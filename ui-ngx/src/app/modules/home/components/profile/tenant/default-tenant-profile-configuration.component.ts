@@ -1,5 +1,5 @@
 ///
-/// Copyright © 2016-2020 The Thingsboard Authors
+/// Copyright © 2016-2021 The Thingsboard Authors
 ///
 /// Licensed under the Apache License, Version 2.0 (the "License");
 /// you may not use this file except in compliance with the License.
@@ -59,6 +59,8 @@ export class DefaultTenantProfileConfigurationComponent implements ControlValueA
       maxUsers: [null, [Validators.required, Validators.min(0)]],
       maxDashboards: [null, [Validators.required, Validators.min(0)]],
       maxRuleChains: [null, [Validators.required, Validators.min(0)]],
+      maxResourcesInBytes: [null, [Validators.required, Validators.min(0)]],
+      maxOtaPackagesInBytes: [null, [Validators.required, Validators.min(0)]],
       transportTenantMsgRateLimit: [null, []],
       transportTenantTelemetryMsgRateLimit: [null, []],
       transportTenantTelemetryDataPointsRateLimit: [null, []],
@@ -70,7 +72,13 @@ export class DefaultTenantProfileConfigurationComponent implements ControlValueA
       maxREExecutions: [null, [Validators.required, Validators.min(0)]],
       maxJSExecutions: [null, [Validators.required, Validators.min(0)]],
       maxDPStorageDays: [null, [Validators.required, Validators.min(0)]],
-      maxRuleNodeExecutionsPerMessage: [null, [Validators.required, Validators.min(0)]]
+      maxRuleNodeExecutionsPerMessage: [null, [Validators.required, Validators.min(0)]],
+      maxEmails: [null, [Validators.required, Validators.min(0)]],
+      maxSms: [null, [Validators.required, Validators.min(0)]],
+      maxCreatedAlarms: [null, [Validators.required, Validators.min(0)]],
+      defaultStorageTtlDays: [null, [Validators.required, Validators.min(0)]],
+      alarmsTtlDays: [null, [Validators.required, Validators.min(0)]],
+      rpcTtlDays: [null, [Validators.required, Validators.min(0)]]
     });
     this.defaultTenantProfileConfigurationFormGroup.valueChanges.subscribe(() => {
       this.updateModel();

@@ -1,5 +1,5 @@
 ///
-/// Copyright © 2016-2020 The Thingsboard Authors
+/// Copyright © 2016-2021 The Thingsboard Authors
 ///
 /// Licensed under the Apache License, Version 2.0 (the "License");
 /// you may not use this file except in compliance with the License.
@@ -43,7 +43,7 @@ import { TranslateService } from '@ngx-translate/core';
 import { BaseData, HasId } from '@shared/models/base-data';
 import { ActivatedRoute } from '@angular/router';
 import {
-  CellActionDescriptor,
+  CellActionDescriptor, CellActionDescriptorType,
   EntityActionTableColumn,
   EntityColumn,
   EntityTableColumn,
@@ -55,11 +55,15 @@ import { EntityTypeTranslation } from '@shared/models/entity-type.models';
 import { DialogService } from '@core/services/dialog.service';
 import { AddEntityDialogComponent } from './add-entity-dialog.component';
 import { AddEntityDialogData, EntityAction } from '@home/models/entity/entity-component.models';
-import { DAY, historyInterval, HistoryWindowType, Timewindow } from '@shared/models/time/time.models';
+import {
+  calculateIntervalStartEndTime,
+  HistoryWindowType,
+  Timewindow
+} from '@shared/models/time/time.models';
 import { DomSanitizer, SafeHtml } from '@angular/platform-browser';
 import { TbAnchorComponent } from '@shared/components/tb-anchor.component';
 import { isDefined, isUndefined } from '@core/utils';
-import { HasUUID } from '../../../../shared/models/id/has-uuid';
+import { HasUUID } from '@shared/models/id/has-uuid';
 
 @Component({
   selector: 'tb-entities-table',
@@ -99,6 +103,8 @@ export class EntitiesTableComponent extends PageComponent implements AfterViewIn
   textSearchMode = false;
   timewindow: Timewindow;
   dataSource: EntitiesDataSource<BaseData<HasId>>;
+
+  cellActionType = CellActionDescriptorType;
 
   isDetailsOpen = false;
   detailsPanelOpened = new EventEmitter<boolean>();
@@ -202,7 +208,7 @@ export class EntitiesTableComponent extends PageComponent implements AfterViewIn
     this.pageSizeOptions = [this.defaultPageSize, this.defaultPageSize * 2, this.defaultPageSize * 3];
 
     if (this.entitiesTableConfig.useTimePageLink) {
-      this.timewindow = historyInterval(DAY);
+      this.timewindow = this.entitiesTableConfig.defaultTimewindowInterval;
       const currentTime = Date.now();
       this.pageLink = new TimePageLink(10, 0, null, sortOrder,
         currentTime - this.timewindow.history.timewindowMs, currentTime);
@@ -296,6 +302,10 @@ export class EntitiesTableComponent extends PageComponent implements AfterViewIn
         const currentTime = Date.now();
         timePageLink.startTime = currentTime - this.timewindow.history.timewindowMs;
         timePageLink.endTime = currentTime;
+      } else if (this.timewindow.history.historyType === HistoryWindowType.INTERVAL) {
+        const startEndTime = calculateIntervalStartEndTime(this.timewindow.history.quickInterval);
+        timePageLink.startTime = startEndTime[0];
+        timePageLink.endTime = startEndTime[1];
       } else {
         timePageLink.startTime = this.timewindow.history.fixedTimewindow.startTimeMs;
         timePageLink.endTime = this.timewindow.history.fixedTimewindow.endTimeMs;
@@ -446,7 +456,7 @@ export class EntitiesTableComponent extends PageComponent implements AfterViewIn
   resetSortAndFilter(update: boolean = true, preserveTimewindow: boolean = false) {
     this.pageLink.textSearch = null;
     if (this.entitiesTableConfig.useTimePageLink && !preserveTimewindow) {
-      this.timewindow = historyInterval(DAY);
+      this.timewindow = this.entitiesTableConfig.defaultTimewindowInterval;
     }
     if (this.displayPagination) {
       this.paginator.pageIndex = 0;
@@ -518,7 +528,7 @@ export class EntitiesTableComponent extends PageComponent implements AfterViewIn
       const col = this.entitiesTableConfig.columns.indexOf(column);
       const index = row * this.entitiesTableConfig.columns.length + col;
       let res = this.cellContentCache[index];
-      if (!res) {
+      if (isUndefined(res)) {
         res = this.domSanitizer.bypassSecurityTrustHtml(column.cellContentFunction(entity, column.key));
         this.cellContentCache[index] = res;
       }

@@ -1,5 +1,5 @@
 /**
- * Copyright © 2016-2020 The Thingsboard Authors
+ * Copyright © 2016-2021 The Thingsboard Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -367,6 +367,8 @@ public class SqlDatabaseUpgradeService implements DatabaseEntitiesUpgradeService
                                     " db_storage varchar(32)," +
                                     " re_exec varchar(32)," +
                                     " js_exec varchar(32)," +
+                                    " email_exec varchar(32)," +
+                                    " sms_exec varchar(32)," +
                                     " CONSTRAINT api_usage_state_unq_key UNIQUE (tenant_id, entity_id)\n" +
                                     ");");
                         } catch (Exception e) {
@@ -388,7 +390,7 @@ public class SqlDatabaseUpgradeService implements DatabaseEntitiesUpgradeService
                             pageData = tenantService.findTenants(pageLink);
                             for (Tenant tenant : pageData.getData()) {
                                 try {
-                                    apiUsageStateService.createDefaultApiUsageState(tenant.getId());
+                                    apiUsageStateService.createDefaultApiUsageState(tenant.getId(), null);
                                 } catch (Exception e) {
                                 }
                                 List<EntitySubtype> deviceTypes = deviceService.findDeviceTypesByTenantId(tenant.getId()).get();
@@ -414,6 +416,54 @@ public class SqlDatabaseUpgradeService implements DatabaseEntitiesUpgradeService
 
                         conn.createStatement().execute("UPDATE tb_schema_settings SET schema_version = 3002000;");
                     }
+                    log.info("Schema updated.");
+                } catch (Exception e) {
+                    log.error("Failed updating schema!!!", e);
+                }
+                break;
+            case "3.2.0":
+                try (Connection conn = DriverManager.getConnection(dbUrl, dbUserName, dbPassword)) {
+                    log.info("Updating schema ...");
+                    try {
+                        conn.createStatement().execute("CREATE INDEX IF NOT EXISTS idx_device_device_profile_id ON device(tenant_id, device_profile_id);");
+                        conn.createStatement().execute("ALTER TABLE dashboard ALTER COLUMN configuration TYPE varchar;");
+                        conn.createStatement().execute("UPDATE tb_schema_settings SET schema_version = 3002001;");
+                    } catch (Exception e) {
+                        log.error("Failed updating schema!!!", e);
+                    }
+                    log.info("Schema updated.");
+                }
+                break;
+            case "3.2.1":
+                try (Connection conn = DriverManager.getConnection(dbUrl, dbUserName, dbPassword)) {
+                    log.info("Updating schema ...");
+                    conn.createStatement().execute("CREATE INDEX IF NOT EXISTS idx_audit_log_tenant_id_and_created_time ON audit_log(tenant_id, created_time);");
+                    schemaUpdateFile = Paths.get(installScripts.getDataDir(), "upgrade", "3.2.1", SCHEMA_UPDATE_SQL);
+                    loadSql(schemaUpdateFile, conn);
+                    conn.createStatement().execute("UPDATE tb_schema_settings SET schema_version = 3002002;");
+                    log.info("Schema updated.");
+                } catch (Exception e) {
+                    log.error("Failed updating schema!!!", e);
+                }
+                break;
+            case "3.2.2":
+                try (Connection conn = DriverManager.getConnection(dbUrl, dbUserName, dbPassword)) {
+                    log.info("Updating schema ...");
+                    try {
+                        conn.createStatement().execute("ALTER TABLE rule_chain ADD COLUMN type varchar(255) DEFAULT 'CORE'"); //NOSONAR, ignoring because method used to execute thingsboard database upgrade script
+                    } catch (Exception ignored) {
+                    }
+                    schemaUpdateFile = Paths.get(installScripts.getDataDir(), "upgrade", "3.2.2", SCHEMA_UPDATE_SQL);
+                    loadSql(schemaUpdateFile, conn);
+                    log.info("Load Edge TTL functions ...");
+                    schemaUpdateFile = Paths.get(installScripts.getDataDir(), "upgrade", "3.2.2", "schema_update_ttl.sql");
+                    loadSql(schemaUpdateFile, conn);
+                    log.info("Edge TTL functions successfully loaded!");
+                    log.info("Updating indexes and TTL procedure for event table...");
+                    schemaUpdateFile = Paths.get(installScripts.getDataDir(), "upgrade", "3.2.2", "schema_update_event.sql");
+                    loadSql(schemaUpdateFile, conn);
+                    log.info("Updating schema settings...");
+                    conn.createStatement().execute("UPDATE tb_schema_settings SET schema_version = 3003000;");
                     log.info("Schema updated.");
                 } catch (Exception e) {
                     log.error("Failed updating schema!!!", e);

@@ -20,8 +20,7 @@
       "src/typings/jquery.flot.typings.d.ts",
       "src/typings/jquery.jstree.typings.d.ts",
       "src/typings/split.js.typings.d.ts",
-      "src/typings/add-marker.d.ts",
-      "src/typings/leaflet-editable.d.ts"
+      "src/typings/add-marker.d.ts"
     ],
     "paths": {
       "@app/*": ["src/app/*"],
@@ -34,6 +33,21 @@
       "@home/*": ["src/app/modules/home/*"],
       "jszip": [
         "node_modules/jszip/dist/jszip.min.js"
+      ],
+      "ace": [
+        "node_modules/ace-builds/src-noconflict/ace.js"
+      ],
+      "jquery": [
+        "node_modules/jquery/dist/jquery.min.js"
+      ],
+      "jquery.terminal": [
+        "node_modules/jquery.terminal/js/jquery.terminal.js"
+      ],
+      "tooltipster": [
+        "node_modules/tooltipster/dist/js/tooltipster.bundle.min.js"
+      ],
+      "jstree": [
+        "node_modules/jstree/dist/jstree.min.js"
       ]
     },
     "lib": [

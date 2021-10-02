@@ -1,6 +1,6 @@
 <!--
 
-    Copyright © 2016-2020 The Thingsboard Authors
+    Copyright © 2016-2021 The Thingsboard Authors
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -19,6 +19,7 @@
   <mat-toolbar color="primary">
     <h2 translate>device-profile.add</h2>
     <span fxFlex></span>
+    <div [tb-help]="'deviceProfiles'"></div>
     <button mat-icon-button
             (click)="cancel()"
             type="button">
@@ -45,6 +46,11 @@
               labelText="device-profile.default-rule-chain"
               formControlName="defaultRuleChainId">
             </tb-rule-chain-autocomplete>
+            <tb-dashboard-autocomplete
+              placeholder="{{'device-profile.mobile-dashboard' | translate}}"
+              formControlName="defaultDashboardId">
+              <div tb-hint>{{'device-profile.mobile-dashboard-hint' | translate}}</div>
+            </tb-dashboard-autocomplete>
             <tb-queue-type-list
               [queueType]="serviceType"
               formControlName="defaultQueueName">
@@ -60,6 +66,11 @@
                 {{ 'device-profile.type-required' | translate }}
               </mat-error>
             </mat-form-field>
+            <tb-image-input fxFlex
+                            label="{{'device-profile.image' | translate}}"
+                            maxSizeByte="524288"
+                            formControlName="image">
+            </tb-image-input>
             <mat-form-field class="mat-block">
               <mat-label translate>device-profile.description</mat-label>
               <textarea matInput formControlName="description" rows="2"></textarea>
@@ -96,7 +107,8 @@
             {count: alarmRulesFormGroup.get('alarms').value ?
                 alarmRulesFormGroup.get('alarms').value.length : 0} }}</ng-template>
           <tb-device-profile-alarms
-            formControlName="alarms">
+            formControlName="alarms"
+            [deviceProfileId]="null">
           </tb-device-profile-alarms>
         </form>
       </mat-step>

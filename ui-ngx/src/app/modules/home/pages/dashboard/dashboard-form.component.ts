@@ -1,5 +1,5 @@
 ///
-/// Copyright © 2016-2020 The Thingsboard Authors
+/// Copyright © 2016-2021 The Thingsboard Authors
 ///
 /// Licensed under the Apache License, Version 2.0 (the "License");
 /// you may not use this file except in compliance with the License.
@@ -14,7 +14,7 @@
 /// limitations under the License.
 ///
 
-import { Component, Inject } from '@angular/core';
+import { ChangeDetectorRef, Component, Inject } from '@angular/core';
 import { Store } from '@ngrx/store';
 import { AppState } from '@core/core.state';
 import { EntityComponent } from '../../components/entity/entity.component';
@@ -38,7 +38,7 @@ import { isEqual } from '@core/utils';
 })
 export class DashboardFormComponent extends EntityComponent<Dashboard> {
 
-  dashboardScope: 'tenant' | 'customer' | 'customer_user';
+  dashboardScope: 'tenant' | 'customer' | 'customer_user' | 'edge';
   customerId: string;
 
   publicLink: string;
@@ -49,8 +49,9 @@ export class DashboardFormComponent extends EntityComponent<Dashboard> {
               private dashboardService: DashboardService,
               @Inject('entity') protected entityValue: Dashboard,
               @Inject('entitiesTableConfig') protected entitiesTableConfigValue: EntityTableConfig<Dashboard>,
-              public fb: FormBuilder) {
-    super(store, fb, entityValue, entitiesTableConfigValue);
+              public fb: FormBuilder,
+              protected cd: ChangeDetectorRef) {
+    super(store, fb, entityValue, entitiesTableConfigValue, cd);
   }
 
   ngOnInit() {
@@ -80,6 +81,9 @@ export class DashboardFormComponent extends EntityComponent<Dashboard> {
     return this.fb.group(
       {
         title: [entity ? entity.title : '', [Validators.required]],
+        image: [entity ? entity.image : null],
+        mobileHide: [entity ? entity.mobileHide : false],
+        mobileOrder: [entity ? entity.mobileOrder : null, [Validators.pattern(/^-?[0-9]+$/)]],
         configuration: this.fb.group(
           {
             description: [entity && entity.configuration ? entity.configuration.description : ''],
@@ -92,6 +96,9 @@ export class DashboardFormComponent extends EntityComponent<Dashboard> {
   updateForm(entity: Dashboard) {
     this.updateFields(entity);
     this.entityForm.patchValue({title: entity.title});
+    this.entityForm.patchValue({image: entity.image});
+    this.entityForm.patchValue({mobileHide: entity.mobileHide});
+    this.entityForm.patchValue({mobileOrder: entity.mobileOrder});
     this.entityForm.patchValue({configuration: {description: entity.configuration ? entity.configuration.description : ''}});
   }
 

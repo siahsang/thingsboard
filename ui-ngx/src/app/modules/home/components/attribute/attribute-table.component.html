@@ -1,6 +1,6 @@
 <!--
 
-    Copyright © 2016-2020 The Thingsboard Authors
+    Copyright © 2016-2021 The Thingsboard Authors
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -112,8 +112,8 @@
                                     fxFlex
                                     [selectFirstBundle]="false"
                                     [selectBundleAlias]="selectedWidgetsBundleAlias"
-                                    [(ngModel)]="widgetsBundle"
-                                    (ngModelChange)="onWidgetsBundleChanged()">
+                                    [ngModel]="null"
+                                    (ngModelChange)="onWidgetsBundleChanged($event)">
           </tb-widgets-bundle-select>
         </div>
         <button mat-raised-button [fxShow]="widgetsList.length > 0"
@@ -195,7 +195,8 @@
                    [length]="dataSource.total() | async"
                    [pageIndex]="pageLink.page"
                    [pageSize]="pageLink.pageSize"
-                   [pageSizeOptions]="[10, 20, 30]"></mat-paginator>
+                   [pageSizeOptions]="[10, 20, 30]"
+                   showFirstLastButtons></mat-paginator>
     <ngx-hm-carousel fxFlex *ngIf="mode === 'widget' && widgetsList.length > 0"
                      #carousel
                      [(ngModel)]="widgetsCarouselIndex"
@@ -244,11 +245,11 @@
     </ngx-hm-carousel>
     <span translate *ngIf="mode === 'widget' && widgetsLoaded &&
                            widgetsList.length === 0 &&
-                           widgetsBundle"
+                           widgetBundleSet"
           fxFlex fxLayoutAlign="center center"
           style="display: flex;"
           class="mat-headline">widgets-bundle.empty</span>
-    <span translate *ngIf="mode === 'widget' && !widgetsBundle"
+    <span translate *ngIf="mode === 'widget' && !widgetBundleSet"
           fxFlex fxLayoutAlign="center center"
           style="display: flex;"
           class="mat-headline">widget.select-widgets-bundle</span>

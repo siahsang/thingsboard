@@ -1,5 +1,5 @@
 /**
- * Copyright © 2016-2020 The Thingsboard Authors
+ * Copyright © 2016-2021 The Thingsboard Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -55,13 +55,16 @@ public class TbKafkaProducerTemplate<T extends TbQueueMsg> implements TbQueuePro
 
     @Builder
     private TbKafkaProducerTemplate(TbKafkaSettings settings, String defaultTopic, String clientId, TbQueueAdmin admin) {
-        Properties props = settings.toProps();
-        props.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, "org.apache.kafka.common.serialization.StringSerializer");
-        props.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, "org.apache.kafka.common.serialization.ByteArraySerializer");
+        Properties props = settings.toProducerProps();
+
         if (!StringUtils.isEmpty(clientId)) {
             props.put(ProducerConfig.CLIENT_ID_CONFIG, clientId);
         }
         this.settings = settings;
+
+        // Ugly workaround to fix org.apache.kafka.common.KafkaException: javax.security.auth.login.LoginException: unable to find LoginModule class
+        // details: https://stackoverflow.com/questions/57574901/kafka-java-client-classloader-doesnt-find-sasl-scram-login-class
+        Thread.currentThread().setContextClassLoader(this.getClass().getClassLoader());
         this.producer = new KafkaProducer<>(props);
         this.defaultTopic = defaultTopic;
         this.admin = admin;
@@ -74,25 +77,34 @@ public class TbKafkaProducerTemplate<T extends TbQueueMsg> implements TbQueuePro
 
     @Override
     public void send(TopicPartitionInfo tpi, T msg, TbQueueCallback callback) {
-        createTopicIfNotExist(tpi);
-        String key = msg.getKey().toString();
-        byte[] data = msg.getData();
-        ProducerRecord<String, byte[]> record;
-        Iterable<Header> headers = msg.getHeaders().getData().entrySet().stream().map(e -> new RecordHeader(e.getKey(), e.getValue())).collect(Collectors.toList());
-        record = new ProducerRecord<>(tpi.getFullTopicName(), null, key, data, headers);
-        producer.send(record, (metadata, exception) -> {
-            if (exception == null) {
-                if (callback != null) {
-                    callback.onSuccess(new KafkaTbQueueMsgMetadata(metadata));
-                }
-            } else {
-                if (callback != null) {
-                    callback.onFailure(exception);
+        try {
+            createTopicIfNotExist(tpi);
+            String key = msg.getKey().toString();
+            byte[] data = msg.getData();
+            ProducerRecord<String, byte[]> record;
+            Iterable<Header> headers = msg.getHeaders().getData().entrySet().stream().map(e -> new RecordHeader(e.getKey(), e.getValue())).collect(Collectors.toList());
+            record = new ProducerRecord<>(tpi.getFullTopicName(), null, key, data, headers);
+            producer.send(record, (metadata, exception) -> {
+                if (exception == null) {
+                    if (callback != null) {
+                        callback.onSuccess(new KafkaTbQueueMsgMetadata(metadata));
+                    }
                 } else {
-                    log.warn("Producer template failure: {}", exception.getMessage(), exception);
+                    if (callback != null) {
+                        callback.onFailure(exception);
+                    } else {
+                        log.warn("Producer template failure: {}", exception.getMessage(), exception);
+                    }
                 }
+            });
+        } catch (Exception e) {
+            if (callback != null) {
+                callback.onFailure(e);
+            } else {
+                log.warn("Producer template failure (send method wrapper): {}", e.getMessage(), e);
             }
-        });
+            throw e;
+        }
     }
 
     private void createTopicIfNotExist(TopicPartitionInfo tpi) {

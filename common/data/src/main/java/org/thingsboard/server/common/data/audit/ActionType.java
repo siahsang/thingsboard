@@ -1,5 +1,5 @@
 /**
- * Copyright © 2016-2020 The Thingsboard Authors
+ * Copyright © 2016-2021 The Thingsboard Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -24,6 +24,7 @@ public enum ActionType {
     UPDATED(false), // log entity
     ATTRIBUTES_UPDATED(false), // log attributes/values
     ATTRIBUTES_DELETED(false), // log attributes
+    TIMESERIES_UPDATED(false), // log timeseries update
     TIMESERIES_DELETED(false), // log timeseries
     RPC_CALL(false), // log method and params
     CREDENTIALS_UPDATED(false), // log new credentials
@@ -38,13 +39,16 @@ public enum ActionType {
     RELATIONS_DELETED(false),
     ALARM_ACK(false),
     ALARM_CLEAR(false),
+    ALARM_DELETE(false),
     LOGIN(false),
     LOGOUT(false),
     LOCKOUT(false),
     ASSIGNED_FROM_TENANT(false),
     ASSIGNED_TO_TENANT(false),
     PROVISION_SUCCESS(false),
-    PROVISION_FAILURE(false);
+    PROVISION_FAILURE(false),
+    ASSIGNED_TO_EDGE(false), // log edge name
+    UNASSIGNED_FROM_EDGE(false);
 
     private final boolean isRead;
 

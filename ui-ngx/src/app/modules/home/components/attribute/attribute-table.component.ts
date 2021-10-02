@@ -1,5 +1,5 @@
 ///
-/// Copyright © 2016-2020 The Thingsboard Authors
+/// Copyright © 2016-2021 The Thingsboard Authors
 ///
 /// Licensed under the Apache License, Version 2.0 (the "License");
 /// you may not use this file except in compliance with the License.
@@ -17,11 +17,14 @@
 import {
   AfterViewInit,
   ChangeDetectionStrategy,
+  ChangeDetectorRef,
   Component,
   ElementRef,
+  Injector,
   Input,
   NgZone,
   OnInit,
+  StaticProvider,
   ViewChild,
   ViewContainerRef
 } from '@angular/core';
@@ -62,7 +65,7 @@ import {
   EditAttributeValuePanelComponent,
   EditAttributeValuePanelData
 } from './edit-attribute-value-panel.component';
-import { ComponentPortal, PortalInjector } from '@angular/cdk/portal';
+import { ComponentPortal } from '@angular/cdk/portal';
 import { TelemetryWebsocketService } from '@core/ws/telemetry-websocket.service';
 import { WidgetsBundle } from '@shared/models/widgets-bundle.model';
 import { DataKey, Datasource, DatasourceType, Widget, widgetType } from '@shared/models/widget.models';
@@ -116,7 +119,7 @@ export class AttributeTableComponent extends PageComponent implements AfterViewI
   viewsInited = false;
 
   selectedWidgetsBundleAlias: string = null;
-  widgetsBundle: WidgetsBundle = null;
+  widgetBundleSet = false;
   widgetsLoaded = false;
   widgetsCarouselIndex = 0;
   widgetsList: Array<Array<Widget>> = [];
@@ -180,7 +183,8 @@ export class AttributeTableComponent extends PageComponent implements AfterViewI
               private utils: UtilsService,
               private dashboardUtils: DashboardUtilsService,
               private widgetService: WidgetService,
-              private zone: NgZone) {
+              private zone: NgZone,
+              private cd: ChangeDetectorRef) {
     super(store);
     this.dirtyValue = !this.activeValue;
     const sortOrder: SortOrder = { property: 'key', direction: Direction.ASC };
@@ -319,13 +323,19 @@ export class AttributeTableComponent extends PageComponent implements AfterViewI
     overlayRef.backdropClick().subscribe(() => {
       overlayRef.dispose();
     });
-    const injectionTokens = new WeakMap<any, any>([
-      [EDIT_ATTRIBUTE_VALUE_PANEL_DATA, {
-        attributeValue: attribute.value
-      } as EditAttributeValuePanelData],
-      [OverlayRef, overlayRef]
-    ]);
-    const injector = new PortalInjector(this.viewContainerRef.injector, injectionTokens);
+    const providers: StaticProvider[] = [
+      {
+        provide: EDIT_ATTRIBUTE_VALUE_PANEL_DATA,
+        useValue: {
+          attributeValue: attribute.value
+        } as EditAttributeValuePanelData
+      },
+      {
+        provide: OverlayRef,
+        useValue: overlayRef
+      }
+    ];
+    const injector = Injector.create({parent: this.viewContainerRef.injector, providers});
     const componentRef = overlayRef.attach(new ComponentPortal(EditAttributeValuePanelComponent,
       this.viewContainerRef, injector));
     componentRef.onDestroy(() => {
@@ -372,8 +382,8 @@ export class AttributeTableComponent extends PageComponent implements AfterViewI
     this.widgetsList = [];
     this.widgetsListCache = [];
     this.widgetsLoaded = false;
+    this.widgetBundleSet = false;
     this.widgetsCarouselIndex = 0;
-    this.widgetsBundle = null;
     this.selectedWidgetsBundleAlias = 'cards';
 
     const entityAlias: EntityAlias = {
@@ -395,6 +405,7 @@ export class AttributeTableComponent extends PageComponent implements AfterViewI
 
     this.aliasController = new AliasController(this.utils,
       this.entityService,
+      this.translate,
       () => stateController, entitiAliases, filters);
 
     const dataKeyType: DataKeyType = this.attributeScope === LatestTelemetry.LATEST_TELEMETRY ?
@@ -431,15 +442,16 @@ export class AttributeTableComponent extends PageComponent implements AfterViewI
     }
   }
 
-  onWidgetsBundleChanged() {
+  onWidgetsBundleChanged(widgetsBundle: WidgetsBundle) {
+    this.widgetBundleSet = !!widgetsBundle;
     if (this.mode === 'widget') {
       this.widgetsList = [];
       this.widgetsListCache = [];
-      this.widgetsCarouselIndex = 0;
-      if (this.widgetsBundle) {
+      this.widgetsCarouselIndex = 0;      
+      if (widgetsBundle) {
         this.widgetsLoaded = false;
-        const bundleAlias = this.widgetsBundle.alias;
-        const isSystem = this.widgetsBundle.tenantId.id === NULL_UUID;
+        const bundleAlias = widgetsBundle.alias;
+        const isSystem = widgetsBundle.tenantId.id === NULL_UUID;
         this.widgetService.getBundleWidgetTypes(bundleAlias, isSystem).subscribe(
           (widgetTypes) => {
             widgetTypes = widgetTypes.sort((a, b) => {
@@ -477,6 +489,7 @@ export class AttributeTableComponent extends PageComponent implements AfterViewI
               }
             }
             this.widgetsLoaded = true;
+            this.cd.markForCheck();
           }
         );
       }

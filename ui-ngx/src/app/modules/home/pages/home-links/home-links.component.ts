@@ -1,5 +1,5 @@
 ///
-/// Copyright © 2016-2020 The Thingsboard Authors
+/// Copyright © 2016-2021 The Thingsboard Authors
 ///
 /// Licensed under the Apache License, Version 2.0 (the "License");
 /// you may not use this file except in compliance with the License.
@@ -14,16 +14,19 @@
 /// limitations under the License.
 ///
 
-import { Component, OnInit } from '@angular/core';
+import { ChangeDetectionStrategy, ChangeDetectorRef, Component, OnInit } from '@angular/core';
 import { MenuService } from '@core/services/menu.service';
 import { BreakpointObserver, BreakpointState } from '@angular/cdk/layout';
 import { MediaBreakpoints } from '@shared/models/constants';
 import { HomeSection } from '@core/services/menu.models';
+import { ActivatedRoute } from '@angular/router';
+import { HomeDashboard } from '@shared/models/dashboard.models';
 
 @Component({
   selector: 'tb-home-links',
   templateUrl: './home-links.component.html',
-  styleUrls: ['./home-links.component.scss']
+  styleUrls: ['./home-links.component.scss'],
+  changeDetection: ChangeDetectionStrategy.OnPush
 })
 export class HomeLinksComponent implements OnInit {
 
@@ -31,15 +34,21 @@ export class HomeLinksComponent implements OnInit {
 
   cols = 2;
 
+  homeDashboard: HomeDashboard = this.route.snapshot.data.homeDashboard;
+
   constructor(private menuService: MenuService,
-              public breakpointObserver: BreakpointObserver) {
+              public breakpointObserver: BreakpointObserver,
+              private cd: ChangeDetectorRef,
+              private route: ActivatedRoute) {
   }
 
   ngOnInit() {
-    this.updateColumnCount();
-    this.breakpointObserver
-      .observe([MediaBreakpoints.lg, MediaBreakpoints['gt-lg']])
-      .subscribe((state: BreakpointState) => this.updateColumnCount());
+    if (!this.homeDashboard) {
+      this.updateColumnCount();
+      this.breakpointObserver
+        .observe([MediaBreakpoints.lg, MediaBreakpoints['gt-lg']])
+        .subscribe((state: BreakpointState) => this.updateColumnCount());
+    }
   }
 
   private updateColumnCount() {
@@ -50,6 +59,7 @@ export class HomeLinksComponent implements OnInit {
     if (this.breakpointObserver.isMatched(MediaBreakpoints['gt-lg'])) {
       this.cols = 4;
     }
+    this.cd.detectChanges();
   }
 
   sectionColspan(section: HomeSection): number {

@@ -1,5 +1,5 @@
 /**
- * Copyright © 2016-2020 The Thingsboard Authors
+ * Copyright © 2016-2021 The Thingsboard Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -34,6 +34,7 @@ import org.junit.runner.Description;
 import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.ResponseEntity;
+import org.thingsboard.common.util.ThingsBoardThreadFactory;
 import org.thingsboard.mqtt.MqttClient;
 import org.thingsboard.mqtt.MqttClientConfig;
 import org.thingsboard.mqtt.MqttHandler;
@@ -62,7 +63,7 @@ public class MqttClientTest extends AbstractContainerTest {
     public void telemetryUpload() throws Exception {
         restClient.login("tenant@thingsboard.org", "tenant");
         Device device = createDevice("mqtt_");
-        DeviceCredentials deviceCredentials = restClient.getCredentials(device.getId());
+        DeviceCredentials deviceCredentials = restClient.getDeviceCredentialsByDeviceId(device.getId()).get();
 
         WsClient wsClient = subscribeToWebSocket(device.getId(), "LATEST_TELEMETRY", CmdsType.TS_SUB_CMDS);
         MqttClient mqttClient = getMqttClient(deviceCredentials, null);
@@ -89,7 +90,7 @@ public class MqttClientTest extends AbstractContainerTest {
 
         restClient.login("tenant@thingsboard.org", "tenant");
         Device device = createDevice("mqtt_");
-        DeviceCredentials deviceCredentials = restClient.getCredentials(device.getId());
+        DeviceCredentials deviceCredentials = restClient.getDeviceCredentialsByDeviceId(device.getId()).get();
 
         WsClient wsClient = subscribeToWebSocket(device.getId(), "LATEST_TELEMETRY", CmdsType.TS_SUB_CMDS);
         MqttClient mqttClient = getMqttClient(deviceCredentials, null);
@@ -113,7 +114,7 @@ public class MqttClientTest extends AbstractContainerTest {
     public void publishAttributeUpdateToServer() throws Exception {
         restClient.login("tenant@thingsboard.org", "tenant");
         Device device = createDevice("mqtt_");
-        DeviceCredentials deviceCredentials = restClient.getCredentials(device.getId());
+        DeviceCredentials deviceCredentials = restClient.getDeviceCredentialsByDeviceId(device.getId()).get();
 
         WsClient wsClient = subscribeToWebSocket(device.getId(), "CLIENT_SCOPE", CmdsType.ATTR_SUB_CMDS);
         MqttMessageListener listener = new MqttMessageListener();
@@ -144,7 +145,7 @@ public class MqttClientTest extends AbstractContainerTest {
     public void requestAttributeValuesFromServer() throws Exception {
         restClient.login("tenant@thingsboard.org", "tenant");
         Device device = createDevice("mqtt_");
-        DeviceCredentials deviceCredentials = restClient.getCredentials(device.getId());
+        DeviceCredentials deviceCredentials = restClient.getDeviceCredentialsByDeviceId(device.getId()).get();
 
         WsClient wsClient = subscribeToWebSocket(device.getId(), "CLIENT_SCOPE", CmdsType.ATTR_SUB_CMDS);
         MqttMessageListener listener = new MqttMessageListener();
@@ -204,7 +205,7 @@ public class MqttClientTest extends AbstractContainerTest {
     public void subscribeToAttributeUpdatesFromServer() throws Exception {
         restClient.login("tenant@thingsboard.org", "tenant");
         Device device = createDevice("mqtt_");
-        DeviceCredentials deviceCredentials = restClient.getCredentials(device.getId());
+        DeviceCredentials deviceCredentials = restClient.getDeviceCredentialsByDeviceId(device.getId()).get();
 
         MqttMessageListener listener = new MqttMessageListener();
         MqttClient mqttClient = getMqttClient(deviceCredentials, listener);
@@ -250,7 +251,7 @@ public class MqttClientTest extends AbstractContainerTest {
     public void serverSideRpc() throws Exception {
         restClient.login("tenant@thingsboard.org", "tenant");
         Device device = createDevice("mqtt_");
-        DeviceCredentials deviceCredentials = restClient.getCredentials(device.getId());
+        DeviceCredentials deviceCredentials = restClient.getDeviceCredentialsByDeviceId(device.getId()).get();
 
         MqttMessageListener listener = new MqttMessageListener();
         MqttClient mqttClient = getMqttClient(deviceCredentials, listener);
@@ -263,11 +264,11 @@ public class MqttClientTest extends AbstractContainerTest {
         JsonObject serverRpcPayload = new JsonObject();
         serverRpcPayload.addProperty("method", "getValue");
         serverRpcPayload.addProperty("params", true);
-        ListeningExecutorService service = MoreExecutors.listeningDecorator(Executors.newSingleThreadExecutor());
+        ListeningExecutorService service = MoreExecutors.listeningDecorator(Executors.newSingleThreadExecutor(ThingsBoardThreadFactory.forName(getClass().getSimpleName())));
         ListenableFuture<ResponseEntity> future = service.submit(() -> {
             try {
                 return restClient.getRestTemplate()
-                        .postForEntity(HTTPS_URL + "/api/plugins/rpc/twoway/{deviceId}",
+                        .postForEntity(HTTPS_URL + "/api/rpc/twoway/{deviceId}",
                                 mapper.readTree(serverRpcPayload.toString()), String.class,
                                 device.getId());
             } catch (IOException e) {
@@ -287,6 +288,7 @@ public class MqttClientTest extends AbstractContainerTest {
         mqttClient.publish("v1/devices/me/rpc/response/" + requestId, Unpooled.wrappedBuffer(clientResponse.toString().getBytes())).get();
 
         ResponseEntity serverResponse = future.get(5, TimeUnit.SECONDS);
+        service.shutdownNow();
         Assert.assertTrue(serverResponse.getStatusCode().is2xxSuccessful());
         Assert.assertEquals(clientResponse.toString(), serverResponse.getBody());
 
@@ -297,7 +299,7 @@ public class MqttClientTest extends AbstractContainerTest {
     public void clientSideRpc() throws Exception {
         restClient.login("tenant@thingsboard.org", "tenant");
         Device device = createDevice("mqtt_");
-        DeviceCredentials deviceCredentials = restClient.getCredentials(device.getId());
+        DeviceCredentials deviceCredentials = restClient.getDeviceCredentialsByDeviceId(device.getId()).get();
 
         MqttMessageListener listener = new MqttMessageListener();
         MqttClient mqttClient = getMqttClient(deviceCredentials, listener);

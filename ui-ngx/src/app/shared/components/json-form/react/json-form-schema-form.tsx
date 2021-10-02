@@ -1,5 +1,5 @@
 /*
- * Copyright © 2016-2020 The Thingsboard Authors
+ * Copyright © 2016-2021 The Thingsboard Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -38,6 +38,7 @@ import { JsonFormData, JsonFormProps, onChangeFn, OnColorClickFn, OnIconClickFn 
 import _ from 'lodash';
 import * as tinycolor_ from 'tinycolor2';
 import { GroupInfo } from '@shared/models/widget.models';
+import ThingsboardMarkdown from '@shared/components/json-form/react/json-form-markdown';
 
 const tinycolor = tinycolor_;
 
@@ -65,6 +66,7 @@ class ThingsboardSchemaForm extends React.Component<JsonFormProps, any> {
       json: ThingsboardJson,
       html: ThingsboardHtml,
       css: ThingsboardCss,
+      markdown: ThingsboardMarkdown,
       color: ThingsboardColor,
       'rc-select': ThingsboardRcSelect,
       fieldset: ThingsboardFieldSet,
@@ -91,7 +93,7 @@ class ThingsboardSchemaForm extends React.Component<JsonFormProps, any> {
   }
 
   onIconClick(key: (string | number)[], val: string,
-               iconSelectedFn: (icon: string) => void) {
+              iconSelectedFn: (icon: string) => void) {
     this.props.onIconClick(key, val, iconSelectedFn);
   }
 

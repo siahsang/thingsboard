@@ -1,5 +1,5 @@
 ///
-/// Copyright © 2016-2020 The Thingsboard Authors
+/// Copyright © 2016-2021 The Thingsboard Authors
 ///
 /// Licensed under the Apache License, Version 2.0 (the "License");
 /// you may not use this file except in compliance with the License.
@@ -36,10 +36,11 @@ import { EntityService } from '@core/http/entity.service';
 import { DataKeysCallbacks } from '@home/components/widget/data-keys.component.models';
 import { DataKeyType } from '@shared/models/telemetry/telemetry.models';
 import { Observable, of } from 'rxjs';
-import { map, mergeMap, tap } from 'rxjs/operators';
+import { map, mergeMap, publishReplay, refCount, tap } from 'rxjs/operators';
 import { alarmFields } from '@shared/models/alarm.models';
 import { JsFuncComponent } from '@shared/components/js-func.component';
 import { JsonFormComponentData } from '@shared/components/json-form/json-form-component.models';
+import { WidgetService } from '@core/http/widget.service';
 
 @Component({
   selector: 'tb-data-key-config',
@@ -95,16 +96,21 @@ export class DataKeyConfigComponent extends PageComponent implements OnInit, Con
 
   filteredKeys: Observable<Array<string>>;
   private latestKeySearchResult: Array<string> = null;
+  private fetchObservable$: Observable<Array<string>> = null;
 
   keySearchText = '';
+
+  functionScopeVariables: string[];
 
   constructor(protected store: Store<AppState>,
               private utils: UtilsService,
               private entityService: EntityService,
               private dialog: MatDialog,
               private translate: TranslateService,
+              private widgetService: WidgetService,
               private fb: FormBuilder) {
     super(store);
+    this.functionScopeVariables = this.widgetService.getWidgetScopeVariables();
   }
 
   ngOnInit(): void {
@@ -175,7 +181,14 @@ export class DataKeyConfigComponent extends PageComponent implements OnInit, Con
       this.modelValue.usePostProcessing = true;
     }
     this.dataKeyFormGroup.patchValue(this.modelValue, {emitEvent: false});
-    this.dataKeyFormGroup.get('name').setValidators(this.modelValue.type !== DataKeyType.function ? [Validators.required] : []);
+    this.dataKeyFormGroup.get('name').setValidators(this.modelValue.type !== DataKeyType.function &&
+                                                    this.modelValue.type !== DataKeyType.count
+                                                    ? [Validators.required] : []);
+    if (this.modelValue.type === DataKeyType.count) {
+      this.dataKeyFormGroup.get('name').disable({emitEvent: false});
+    } else {
+      this.dataKeyFormGroup.get('name').enable({emitEvent: false});
+    }
     this.dataKeyFormGroup.get('name').updateValueAndValidity({emitEvent: false});
     if (this.displayAdvanced) {
       this.dataKeySettingsData.model = this.modelValue.settings;
@@ -205,31 +218,42 @@ export class DataKeyConfigComponent extends PageComponent implements OnInit, Con
   }
 
   private fetchKeys(searchText?: string): Observable<Array<string>> {
-    if (this.latestKeySearchResult === null || this.keySearchText !== searchText) {
+    if (this.keySearchText !== searchText || this.latestKeySearchResult === null) {
       this.keySearchText = searchText;
-      let fetchObservable: Observable<Array<DataKey>> = null;
-      if (this.modelValue.type === DataKeyType.alarm) {
-        const dataKeyFilter = this.createDataKeyFilter(this.keySearchText);
-        fetchObservable = of(this.alarmKeys.filter(dataKeyFilter));
-      } else {
-        if (this.entityAliasId) {
-          const dataKeyTypes = [this.modelValue.type];
-          fetchObservable = this.callbacks.fetchEntityKeys(this.entityAliasId, this.keySearchText, dataKeyTypes);
-        } else {
-          fetchObservable = of([]);
-        }
-      }
-      return fetchObservable.pipe(
-        map((dataKeys) => dataKeys.map((dataKey) => dataKey.name)),
+      const dataKeyFilter = this.createKeyFilter(this.keySearchText);
+      return this.getKeys().pipe(
+        map(name => name.filter(dataKeyFilter)),
         tap(res => this.latestKeySearchResult = res)
       );
     }
     return of(this.latestKeySearchResult);
   }
 
-  private createDataKeyFilter(query: string): (key: DataKey) => boolean {
+  private getKeys() {
+    if (this.fetchObservable$ === null) {
+      let fetchObservable: Observable<Array<DataKey>>;
+      if (this.modelValue.type === DataKeyType.alarm) {
+        fetchObservable = of(this.alarmKeys);
+      } else {
+        if (this.entityAliasId) {
+          const dataKeyTypes = [this.modelValue.type];
+          fetchObservable = this.callbacks.fetchEntityKeys(this.entityAliasId, dataKeyTypes);
+        } else {
+          fetchObservable = of([]);
+        }
+      }
+      this.fetchObservable$ = fetchObservable.pipe(
+        map((dataKeys) => dataKeys.map((dataKey) => dataKey.name)),
+        publishReplay(1),
+        refCount()
+      );
+    }
+    return this.fetchObservable$;
+  }
+
+  private createKeyFilter(query: string): (key: string) => boolean {
     const lowercaseQuery = query.toLowerCase();
-    return key => key.name.toLowerCase().indexOf(lowercaseQuery) === 0;
+    return key => key.toLowerCase().startsWith(lowercaseQuery);
   }
 
   public validateOnSubmit() {

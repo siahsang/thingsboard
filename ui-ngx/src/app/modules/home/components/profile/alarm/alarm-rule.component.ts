@@ -1,5 +1,5 @@
 ///
-/// Copyright © 2016-2020 The Thingsboard Authors
+/// Copyright © 2016-2021 The Thingsboard Authors
 ///
 /// Licensed under the Apache License, Version 2.0 (the "License");
 /// you may not use this file except in compliance with the License.
@@ -33,6 +33,9 @@ import {
   EditAlarmDetailsDialogComponent,
   EditAlarmDetailsDialogData
 } from '@home/components/profile/alarm/edit-alarm-details-dialog.component';
+import { EntityId } from '@shared/models/id/entity-id';
+import { DashboardId } from '@shared/models/id/dashboard-id';
+import { UtilsService } from '@core/services/utils.service';
 
 @Component({
   selector: 'tb-alarm-rule',
@@ -65,6 +68,9 @@ export class AlarmRuleComponent implements ControlValueAccessor, OnInit, Validat
     this.requiredValue = coerceBooleanProperty(value);
   }
 
+  @Input()
+  deviceProfileId: EntityId;
+
   private modelValue: AlarmRule;
 
   alarmRuleFormGroup: FormGroup;
@@ -74,6 +80,7 @@ export class AlarmRuleComponent implements ControlValueAccessor, OnInit, Validat
   private propagateChange = (v: any) => { };
 
   constructor(private dialog: MatDialog,
+              private utils: UtilsService,
               private fb: FormBuilder) {
   }
 
@@ -88,7 +95,8 @@ export class AlarmRuleComponent implements ControlValueAccessor, OnInit, Validat
     this.alarmRuleFormGroup = this.fb.group({
       condition: [null, [Validators.required]],
       schedule: [null],
-      alarmDetails: [null]
+      alarmDetails: [null],
+      dashboardId: [null]
     });
     this.alarmRuleFormGroup.valueChanges.subscribe(() => {
       this.updateModel();
@@ -106,7 +114,11 @@ export class AlarmRuleComponent implements ControlValueAccessor, OnInit, Validat
 
   writeValue(value: AlarmRule): void {
     this.modelValue = value;
-    this.alarmRuleFormGroup.reset(this.modelValue || undefined, {emitEvent: false});
+    const model = this.modelValue ? {
+      ...this.modelValue,
+      dashboardId: this.modelValue.dashboardId?.id
+    } : null;
+    this.alarmRuleFormGroup.reset(model || undefined, {emitEvent: false});
   }
 
   public openEditDetailsDialog($event: Event) {
@@ -136,10 +148,15 @@ export class AlarmRuleComponent implements ControlValueAccessor, OnInit, Validat
     };
   }
 
+  get alarmDetailsText(): string {
+    const alarmType = this.alarmRuleFormGroup.get('alarmDetails').value;
+    return this.utils.customTranslation(alarmType, alarmType);
+  }
+
   private updateModel() {
     const value = this.alarmRuleFormGroup.value;
     if (this.modelValue) {
-      this.modelValue = {...this.modelValue, ...value};
+      this.modelValue = {...this.modelValue, ...value, dashboardId: value.dashboardId ? new DashboardId(value.dashboardId) : null};
       this.propagateChange(this.modelValue);
     }
   }

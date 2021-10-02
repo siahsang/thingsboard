@@ -1,5 +1,5 @@
 ///
-/// Copyright © 2016-2020 The Thingsboard Authors
+/// Copyright © 2016-2021 The Thingsboard Authors
 ///
 /// Licensed under the Apache License, Version 2.0 (the "License");
 /// you may not use this file except in compliance with the License.
@@ -84,7 +84,6 @@ export class EntitiesHierarchyWidgetComponent extends PageComponent implements O
   private widgetConfig: WidgetConfig;
   private subscription: IWidgetSubscription;
   private datasources: Array<HierarchyNodeDatasource>;
-  private data: Array<Array<DatasourceData>>;
 
   private nodesMap: {[nodeId: string]: HierarchyNavTreeNode} = {};
   private pendingUpdateNodeTasks: {[nodeId: string]: () => void} = {};
@@ -121,7 +120,6 @@ export class EntitiesHierarchyWidgetComponent extends PageComponent implements O
     this.widgetConfig = this.ctx.widgetConfig;
     this.subscription = this.ctx.defaultSubscription;
     this.datasources = this.subscription.datasources as Array<HierarchyNodeDatasource>;
-    this.data = this.subscription.dataPages[0].data;
     this.initializeConfig();
     this.ctx.updateWidgetParams();
   }
@@ -151,7 +149,8 @@ export class EntitiesHierarchyWidgetComponent extends PageComponent implements O
           entityType: EntityType.DEVICE,
           id: '123'
         },
-        name: 'TEST DEV1'
+        name: 'TEST DEV1',
+        label: ''
       },
       data: {},
       level: 2
@@ -252,12 +251,16 @@ export class EntitiesHierarchyWidgetComponent extends PageComponent implements O
   public loadNodes: LoadNodesCallback = (node, cb) => {
     if (node.id === '#') {
       const childNodes: HierarchyNavTreeNode[] = [];
+      let dataIndex = 0;
       this.datasources.forEach((childDatasource, index) => {
-        childNodes.push(this.datasourceToNode(childDatasource as HierarchyNodeDatasource, this.data[index]));
+        const datasourceData = this.subscription.data.slice(dataIndex);
+        childNodes.push(this.datasourceToNode(childDatasource as HierarchyNodeDatasource, datasourceData));
+        dataIndex += childDatasource.dataKeys.length;
       });
       cb(this.prepareNodes(childNodes));
     } else {
-      if (node.data && node.data.nodeCtx.entity && node.data.nodeCtx.entity.id && node.data.nodeCtx.entity.id.entityType !== 'function') {
+      if (node.data && node.data.nodeCtx.entity && node.data.nodeCtx.entity.id && node.data.datasource.type === DatasourceType.entity
+        && node.data.nodeCtx.entity.id.entityType !== 'function') {
         this.loadChildren(node, node.data.datasource, cb);
         /* (error) => { // TODO:
             let errorText = 'Failed to get relations!';
@@ -287,7 +290,7 @@ export class EntitiesHierarchyWidgetComponent extends PageComponent implements O
         const descriptors = this.ctx.actionsApi.getActionDescriptors('nodeSelected');
         if (descriptors.length) {
           const entity = selectedNode.data.nodeCtx.entity;
-          this.ctx.actionsApi.handleWidgetAction(event, descriptors[0], entity.id, entity.name, { nodeCtx: selectedNode.data.nodeCtx });
+          this.ctx.actionsApi.handleWidgetAction(event, descriptors[0], entity.id, entity.name,{ nodeCtx: selectedNode.data.nodeCtx }, entity.label);
         }
       }
     }
@@ -369,8 +372,8 @@ export class EntitiesHierarchyWidgetComponent extends PageComponent implements O
   }
 
   private datasourceToNode(datasource: HierarchyNodeDatasource,
-                             data: DatasourceData[],
-                             parentNodeCtx?: HierarchyNodeContext): HierarchyNavTreeNode {
+                           data: DatasourceData[],
+                           parentNodeCtx?: HierarchyNodeContext): HierarchyNavTreeNode {
     const node: HierarchyNavTreeNode = {
       id: (++this.nodeIdCounter) + ''
     };
@@ -441,7 +444,7 @@ export class EntitiesHierarchyWidgetComponent extends PageComponent implements O
             const dataPageData = subscription.dataPages[0];
             const childNodes: HierarchyNavTreeNode[] = [];
             datasourcesPageData.data.forEach((childDatasource, index) => {
-              childNodes.push(this.datasourceToNode(childDatasource as HierarchyNodeDatasource, dataPageData.data[index]));
+              childNodes.push(this.datasourceToNode(childDatasource as HierarchyNodeDatasource, dataPageData.data[index], nodeCtx));
             });
             nodeCtx.childrenNodesLoaded = true;
             childrenNodesLoadCb(this.prepareNodes(childNodes));

@@ -1,5 +1,5 @@
 /**
- * Copyright © 2016-2020 The Thingsboard Authors
+ * Copyright © 2016-2021 The Thingsboard Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -35,7 +35,7 @@ import java.util.function.Predicate;
 /**
  * Created by ashvayka on 20.03.18.
  */
-public class AbstractRuleEngineControllerTest extends AbstractControllerTest {
+public abstract class AbstractRuleEngineControllerTest extends AbstractControllerTest {
 
     @Autowired
     protected RuleChainService ruleChainService;

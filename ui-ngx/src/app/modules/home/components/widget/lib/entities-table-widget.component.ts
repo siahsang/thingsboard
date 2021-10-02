@@ -1,5 +1,5 @@
 ///
-/// Copyright © 2016-2020 The Thingsboard Authors
+/// Copyright © 2016-2021 The Thingsboard Authors
 ///
 /// Licensed under the Apache License, Version 2.0 (the "License");
 /// you may not use this file except in compliance with the License.
@@ -18,9 +18,11 @@ import {
   AfterViewInit,
   Component,
   ElementRef,
+  Injector,
   Input,
   NgZone,
   OnInit,
+  StaticProvider,
   ViewChild,
   ViewContainerRef
 } from '@angular/core';
@@ -38,7 +40,15 @@ import {
 import { IWidgetSubscription } from '@core/api/widget-api.models';
 import { UtilsService } from '@core/services/utils.service';
 import { TranslateService } from '@ngx-translate/core';
-import { createLabelFromDatasource, deepClone, hashCode, isDefined, isNumber } from '@core/utils';
+import {
+  createLabelFromDatasource,
+  deepClone,
+  hashCode,
+  isDefined,
+  isNumber,
+  isObject,
+  isUndefined
+} from '@core/utils';
 import cssjs from '@core/css/css';
 import { CollectionViewer, DataSource } from '@angular/cdk/collections';
 import { DataKeyType } from '@shared/models/telemetry/telemetry.models';
@@ -53,6 +63,7 @@ import { DomSanitizer, SafeHtml } from '@angular/platform-browser';
 import {
   CellContentInfo,
   CellStyleInfo,
+  checkHasActions,
   constructTableCssString,
   DisplayColumn,
   EntityColumn,
@@ -63,14 +74,21 @@ import {
   fromEntityColumnDef,
   getCellContentInfo,
   getCellStyleInfo,
+  getColumnDefaultVisibility,
+  getColumnSelectionAvailability,
   getColumnWidth,
   getEntityValue,
+  getRowStyleInfo,
+  getTableCellButtonActions,
+  prepareTableCellButtonActions,
+  RowStyleInfo,
+  TableCellButtonActionDescriptor,
   TableWidgetDataKeySettings,
   TableWidgetSettings,
   widthStyle
 } from '@home/components/widget/lib/table-widget.models';
 import { ConnectedPosition, Overlay, OverlayConfig, OverlayRef } from '@angular/cdk/overlay';
-import { ComponentPortal, PortalInjector } from '@angular/cdk/portal';
+import { ComponentPortal } from '@angular/cdk/portal';
 import {
   DISPLAY_COLUMNS_PANEL_DATA,
   DisplayColumnsPanelComponent,
@@ -90,6 +108,8 @@ import { DatePipe } from '@angular/common';
 
 interface EntitiesTableWidgetSettings extends TableWidgetSettings {
   entitiesTitle: string;
+  enableSelectColumnDisplay: boolean;
+  defaultSortOrder: string;
   displayEntityName: boolean;
   entityNameColumnTitle: string;
   displayEntityLabel: boolean;
@@ -112,14 +132,20 @@ export class EntitiesTableWidgetComponent extends PageComponent implements OnIni
   @ViewChild(MatSort) sort: MatSort;
 
   public displayPagination = true;
+  public enableStickyHeader = true;
+  public enableStickyAction = true;
   public pageSizeOptions;
   public pageLink: EntityDataPageLink;
   public sortOrderProperty: string;
   public textSearchMode = false;
   public columns: Array<EntityColumn> = [];
   public displayedColumns: string[] = [];
-  public actionCellDescriptors: WidgetActionDescriptor[];
   public entityDatasource: EntityDatasource;
+  public countCellButtonAction: number;
+
+  private cellContentCache: Array<any> = [];
+  private cellStyleCache: Array<any> = [];
+  private rowStyleCache: Array<any> = [];
 
   private settings: EntitiesTableWidgetSettings;
   private widgetConfig: WidgetConfig;
@@ -133,6 +159,10 @@ export class EntitiesTableWidgetComponent extends PageComponent implements OnIni
   private contentsInfo: {[key: string]: CellContentInfo} = {};
   private stylesInfo: {[key: string]: CellStyleInfo} = {};
   private columnWidth: {[key: string]: string} = {};
+  private columnDefaultVisibility: {[key: string]: boolean} = {};
+  private columnSelectionAvailability: {[key: string]: boolean} = {};
+
+  private rowStylesInfo: RowStyleInfo;
 
   private searchAction: WidgetAction = {
     name: 'action.search',
@@ -208,6 +238,8 @@ export class EntitiesTableWidgetComponent extends PageComponent implements OnIni
   public onDataUpdated() {
     this.updateTitle(true);
     this.entityDatasource.dataUpdated();
+    this.clearCache();
+    this.ctx.detectChanges();
   }
 
   public pageLinkSortDirection(): SortDirection {
@@ -217,7 +249,7 @@ export class EntitiesTableWidgetComponent extends PageComponent implements OnIni
   private initializeConfig() {
     this.ctx.widgetActions = [this.searchAction, this.columnDisplayAction];
 
-    this.actionCellDescriptors = this.ctx.actionsApi.getActionDescriptors('actionCellButton');
+    this.countCellButtonAction = this.ctx.actionsApi.getActionDescriptors('actionCellButton').length;
 
     if (this.settings.entitiesTitle && this.settings.entitiesTitle.length) {
       this.entitiesTitlePattern = this.utils.customTranslation(this.settings.entitiesTitle, this.settings.entitiesTitle);
@@ -229,7 +261,11 @@ export class EntitiesTableWidgetComponent extends PageComponent implements OnIni
 
     this.searchAction.show = isDefined(this.settings.enableSearch) ? this.settings.enableSearch : true;
     this.displayPagination = isDefined(this.settings.displayPagination) ? this.settings.displayPagination : true;
+    this.enableStickyHeader = isDefined(this.settings.enableStickyHeader) ? this.settings.enableStickyHeader : true;
+    this.enableStickyAction = isDefined(this.settings.enableStickyAction) ? this.settings.enableStickyAction : true;
     this.columnDisplayAction.show = isDefined(this.settings.enableSelectColumnDisplay) ? this.settings.enableSelectColumnDisplay : true;
+
+    this.rowStylesInfo = getRowStyleInfo(this.settings, 'entity, ctx');
 
     const pageSize = this.settings.defaultPageSize;
     if (isDefined(pageSize) && isNumber(pageSize) && pageSize > 0) {
@@ -295,6 +331,8 @@ export class EntitiesTableWidgetComponent extends PageComponent implements OnIni
         useCellStyleFunction: false
       };
       this.columnWidth.entityName = '0px';
+      this.columnDefaultVisibility.entityName = true;
+      this.columnSelectionAvailability.entityName = true;
     }
     if (displayEntityLabel) {
       this.columns.push(
@@ -316,6 +354,8 @@ export class EntitiesTableWidgetComponent extends PageComponent implements OnIni
         useCellStyleFunction: false
       };
       this.columnWidth.entityLabel = '0px';
+      this.columnDefaultVisibility.entityLabel = true;
+      this.columnSelectionAvailability.entityLabel = true;
     }
     if (displayEntityType) {
       this.columns.push(
@@ -337,6 +377,8 @@ export class EntitiesTableWidgetComponent extends PageComponent implements OnIni
         useCellStyleFunction: false
       };
       this.columnWidth.entityType = '0px';
+      this.columnDefaultVisibility.entityType = true;
+      this.columnSelectionAvailability.entityType = true;
     }
 
     const dataKeys: Array<DataKey> = [];
@@ -364,14 +406,17 @@ export class EntitiesTableWidgetComponent extends PageComponent implements OnIni
           }
         }
 
-        this.stylesInfo[dataKey.def] = getCellStyleInfo(keySettings);
+        this.stylesInfo[dataKey.def] = getCellStyleInfo(keySettings, 'value, entity, ctx');
         this.contentsInfo[dataKey.def] = getCellContentInfo(keySettings, 'value, entity, ctx');
         this.contentsInfo[dataKey.def].units = dataKey.units;
         this.contentsInfo[dataKey.def].decimals = dataKey.decimals;
         this.columnWidth[dataKey.def] = getColumnWidth(keySettings);
+        this.columnDefaultVisibility[dataKey.def] = getColumnDefaultVisibility(keySettings);
+        this.columnSelectionAvailability[dataKey.def] = getColumnSelectionAvailability(keySettings);
         this.columns.push(dataKey);
       });
-      this.displayedColumns.push(...this.columns.map(column => column.def));
+      this.displayedColumns.push(...this.columns.filter(column => this.columnDefaultVisibility[column.def])
+        .map(column => column.def));
     }
 
     if (this.settings.defaultSortOrder && this.settings.defaultSortOrder.length) {
@@ -385,11 +430,10 @@ export class EntitiesTableWidgetComponent extends PageComponent implements OnIni
     }
     this.sortOrderProperty = sortColumn ? sortColumn.def : null;
 
-    if (this.actionCellDescriptors.length) {
+    if (this.countCellButtonAction) {
       this.displayedColumns.push('actions');
     }
-    this.entityDatasource = new EntityDatasource(
-      this.translate, dataKeys, this.subscription);
+    this.entityDatasource = new EntityDatasource(this.translate, dataKeys, this.subscription, this.ngZone, this.ctx);
   }
 
   private editColumnsToDisplay($event: Event) {
@@ -418,21 +462,31 @@ export class EntitiesTableWidgetComponent extends PageComponent implements OnIni
       return {
         title: column.title,
         def: column.def,
-        display: this.displayedColumns.indexOf(column.def) > -1
+        display: this.displayedColumns.indexOf(column.def) > -1,
+        selectable: this.columnSelectionAvailability[column.def]
       };
     });
 
-    const injectionTokens = new WeakMap<any, any>([
-      [DISPLAY_COLUMNS_PANEL_DATA, {
-        columns,
-        columnsUpdated: (newColumns) => {
-          this.displayedColumns = newColumns.filter(column => column.display).map(column => column.def);
-          this.displayedColumns.push('actions');
-        }
-      } as DisplayColumnsPanelData],
-      [OverlayRef, overlayRef]
-    ]);
-    const injector = new PortalInjector(this.viewContainerRef.injector, injectionTokens);
+    const providers: StaticProvider[] = [
+      {
+        provide: DISPLAY_COLUMNS_PANEL_DATA,
+        useValue: {
+          columns,
+          columnsUpdated: (newColumns) => {
+            this.displayedColumns = newColumns.filter(column => column.display).map(column => column.def);
+            if (this.countCellButtonAction) {
+              this.displayedColumns.push('actions');
+            }
+            this.clearCache();
+          }
+        } as DisplayColumnsPanelData
+      },
+      {
+        provide: OverlayRef,
+        useValue: overlayRef
+      }
+    ];
+    const injector = Injector.create({parent: this.viewContainerRef.injector, providers});
     overlayRef.attach(new ComponentPortal(DisplayColumnsPanelComponent,
       this.viewContainerRef, injector));
     this.ctx.detectChanges();
@@ -486,8 +540,12 @@ export class EntitiesTableWidgetComponent extends PageComponent implements OnIni
     return column.def;
   }
 
-  public trackByRowIndex(index: number) {
-    return index;
+  public trackByEntityId(index: number, entity: EntityData) {
+    return entity.id.id;
+  }
+
+  public trackByActionCellDescriptionId(index: number, action: WidgetActionDescriptor) {
+    return action.id;
   }
 
   public headerStyle(key: EntityColumn): any {
@@ -495,58 +553,98 @@ export class EntitiesTableWidgetComponent extends PageComponent implements OnIni
     return widthStyle(columnWidth);
   }
 
-  public cellStyle(entity: EntityData, key: EntityColumn): any {
-    let style: any = {};
-    if (entity && key) {
-      const styleInfo = this.stylesInfo[key.def];
-      const value = getEntityValue(entity, key);
-      if (styleInfo.useCellStyleFunction && styleInfo.cellStyleFunction) {
+  public rowStyle(entity: EntityData, row: number): any {
+    let res = this.rowStyleCache[row];
+    if (!res) {
+      res = {};
+      if (entity && this.rowStylesInfo.useRowStyleFunction && this.rowStylesInfo.rowStyleFunction) {
         try {
-          style = styleInfo.cellStyleFunction(value);
+          res = this.rowStylesInfo.rowStyleFunction(entity, this.ctx);
+          if (!isObject(res)) {
+            throw new TypeError(`${res === null ? 'null' : typeof res} instead of style object`);
+          }
+          if (Array.isArray(res)) {
+            throw new TypeError(`Array instead of style object`);
+          }
         } catch (e) {
-          style = {};
+          res = {};
+          console.warn(`Row style function in widget '${this.ctx.widgetTitle}' ` +
+            `returns '${e}'. Please check your row style function.`);
         }
-      } else {
-        style = {};
       }
+      this.rowStyleCache[row] = res;
     }
-    if (!style.width) {
-      const columnWidth = this.columnWidth[key.def];
-      style = {...style, ...widthStyle(columnWidth)};
-    }
-    return style;
+    return res;
   }
 
-  public cellContent(entity: EntityData, key: EntityColumn): SafeHtml {
-    if (entity && key) {
-      const contentInfo = this.contentsInfo[key.def];
-      const value = getEntityValue(entity, key);
-      let content: string;
-      if (contentInfo.useCellContentFunction && contentInfo.cellContentFunction) {
-        try {
-          content = contentInfo.cellContentFunction(value, entity, this.ctx);
-        } catch (e) {
-            content = '' + value;
+  public cellStyle(entity: EntityData, key: EntityColumn, row: number): any {
+    const col = this.columns.indexOf(key);
+    const index = row * this.columns.length + col;
+    let res = this.cellStyleCache[index];
+    if (!res) {
+      res = {};
+      if (entity && key) {
+        const styleInfo = this.stylesInfo[key.def];
+        const value = getEntityValue(entity, key);
+        if (styleInfo.useCellStyleFunction && styleInfo.cellStyleFunction) {
+          try {
+            res = styleInfo.cellStyleFunction(value, entity, this.ctx);
+            if (!isObject(res)) {
+              throw new TypeError(`${res === null ? 'null' : typeof res} instead of style object`);
+            }
+            if (Array.isArray(res)) {
+              throw new TypeError(`Array instead of style object`);
+            }
+          } catch (e) {
+            res = {};
+            console.warn(`Cell style function for data key '${key.label}' in widget '${this.ctx.widgetTitle}' ` +
+              `returns '${e}'. Please check your cell style function.`);
+          }
         }
-      } else {
-        content = this.defaultContent(key, contentInfo, value);
+        this.cellStyleCache[index] = res;
       }
-
-      if (!isDefined(content)) {
-        return '';
-
-      } else {
-        switch (typeof content) {
-          case 'string':
-            return this.domSanitizer.bypassSecurityTrustHtml(content);
-          default:
-            return content;
-        }
-      }
-
-    } else {
-      return '';
     }
+    if (!res.width) {
+      const columnWidth = this.columnWidth[key.def];
+      res = Object.assign(res, widthStyle(columnWidth));
+    }
+    return res;
+  }
+
+  public cellContent(entity: EntityData, key: EntityColumn, row: number): SafeHtml {
+    const col = this.columns.indexOf(key);
+    const index = row * this.columns.length + col;
+    let res = this.cellContentCache[index];
+    if (isUndefined(res)) {
+      res = '';
+      if (entity && key) {
+        const contentInfo = this.contentsInfo[key.def];
+        const value = getEntityValue(entity, key);
+        let content: string;
+        if (contentInfo.useCellContentFunction && contentInfo.cellContentFunction) {
+          try {
+            content = contentInfo.cellContentFunction(value, entity, this.ctx);
+          } catch (e) {
+            content = '' + value;
+          }
+        } else {
+          content = this.defaultContent(key, contentInfo, value);
+        }
+
+        if (isDefined(content)) {
+          content = this.utils.customTranslation(content, content);
+          switch (typeof content) {
+            case 'string':
+              res = this.domSanitizer.bypassSecurityTrustHtml(content);
+              break;
+            default:
+              res = content;
+          }
+        }
+      }
+      this.cellContentCache[index] = res;
+    }
+    return res;
   }
 
   private defaultContent(key: EntityColumn, contentInfo: CellContentInfo, value: any): any {
@@ -581,7 +679,7 @@ export class EntitiesTableWidgetComponent extends PageComponent implements OnIni
         entityName = entity.entityName;
         entityLabel = entity.entityLabel;
       }
-      this.ctx.actionsApi.handleWidgetAction($event, descriptors[0], entityId, entityName, null, entityLabel);
+      this.ctx.actionsApi.handleWidgetAction($event, descriptors[0], entityId, entityName, {entity}, entityLabel);
     }
   }
 
@@ -597,7 +695,13 @@ export class EntitiesTableWidgetComponent extends PageComponent implements OnIni
       entityName = entity.entityName;
       entityLabel = entity.entityLabel;
     }
-    this.ctx.actionsApi.handleWidgetAction($event, actionDescriptor, entityId, entityName, null, entityLabel);
+    this.ctx.actionsApi.handleWidgetAction($event, actionDescriptor, entityId, entityName, {entity}, entityLabel);
+  }
+
+  private clearCache() {
+    this.cellContentCache.length = 0;
+    this.cellStyleCache.length = 0;
+    this.rowStyleCache.length = 0;
   }
 }
 
@@ -613,11 +717,18 @@ class EntityDatasource implements DataSource<EntityData> {
   private appliedPageLink: EntityDataPageLink;
   private appliedSortOrderLabel: string;
 
+  private cellButtonActions: TableCellButtonActionDescriptor[];
+  private readonly usedShowCellActionFunction: boolean;
+
   constructor(
        private translate: TranslateService,
        private dataKeys: Array<DataKey>,
-       private subscription: IWidgetSubscription
+       private subscription: IWidgetSubscription,
+       private ngZone: NgZone,
+       private widgetContext: WidgetContext
     ) {
+    this.cellButtonActions = getTableCellButtonActions(widgetContext);
+    this.usedShowCellActionFunction = this.cellButtonActions.some(action => action.useShowActionCellButtonFunction);
   }
 
   connect(collectionViewer: CollectionViewer): Observable<EntityData[] | ReadonlyArray<EntityData>> {
@@ -659,9 +770,11 @@ class EntityDatasource implements DataSource<EntityData> {
       totalElements: datasourcesPageData.totalElements,
       hasNext: datasourcesPageData.hasNext
     };
-    this.entitiesSubject.next(entities);
-    this.pageDataSubject.next(entitiesPageData);
-    this.dataLoading = false;
+    this.ngZone.run(() => {
+      this.entitiesSubject.next(entities);
+      this.pageDataSubject.next(entitiesPageData);
+      this.dataLoading = false;
+    });
   }
 
   private datasourceToEntityData(datasource: Datasource, data: DatasourceData[]): EntityData {
@@ -689,6 +802,15 @@ class EntityDatasource implements DataSource<EntityData> {
         entity[dataKey.label] = '';
       }
     });
+    if (this.cellButtonActions.length) {
+      if (this.usedShowCellActionFunction) {
+        entity.actionCellButtons = prepareTableCellButtonActions(this.widgetContext, this.cellButtonActions, entity);
+        entity.hasActions = checkHasActions(entity.actionCellButtons);
+      } else {
+        entity.actionCellButtons = this.cellButtonActions;
+        entity.hasActions = true;
+      }
+    }
     return entity;
   }
 

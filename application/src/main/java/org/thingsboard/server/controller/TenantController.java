@@ -1,5 +1,5 @@
 /**
- * Copyright © 2016-2020 The Thingsboard Authors
+ * Copyright © 2016-2021 The Thingsboard Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,6 +15,7 @@
  */
 package org.thingsboard.server.controller;
 
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
@@ -59,7 +60,11 @@ public class TenantController extends BaseController {
         checkParameter("tenantId", strTenantId);
         try {
             TenantId tenantId = new TenantId(toUUID(strTenantId));
-            return checkTenantId(tenantId, Operation.READ);
+            Tenant tenant = checkTenantId(tenantId, Operation.READ);
+            if(!tenant.getAdditionalInfo().isNull()) {
+                processDashboardIdFromAdditionalInfo((ObjectNode) tenant.getAdditionalInfo(), HOME_DASHBOARD);
+            }
+            return tenant;
         } catch (Exception e) {
             throw handleException(e);
         }
@@ -90,10 +95,11 @@ public class TenantController extends BaseController {
             tenant = checkNotNull(tenantService.saveTenant(tenant));
             if (newTenant) {
                 installScripts.createDefaultRuleChains(tenant.getId());
+                installScripts.createDefaultEdgeRuleChains(tenant.getId());
             }
             tenantProfileCache.evict(tenant.getId());
             tbClusterService.onTenantChange(tenant, null);
-            tbClusterService.onEntityStateChange(tenant.getId(), tenant.getId(),
+            tbClusterService.broadcastEntityStateChangeEvent(tenant.getId(), tenant.getId(),
                     newTenant ? ComponentLifecycleEvent.CREATED : ComponentLifecycleEvent.UPDATED);
             return tenant;
         } catch (Exception e) {
@@ -112,7 +118,7 @@ public class TenantController extends BaseController {
             tenantService.deleteTenant(tenantId);
             tenantProfileCache.evict(tenantId);
             tbClusterService.onTenantDelete(tenant, null);
-            tbClusterService.onEntityStateChange(tenantId, tenantId, ComponentLifecycleEvent.DELETED);
+            tbClusterService.broadcastEntityStateChangeEvent(tenantId, tenantId, ComponentLifecycleEvent.DELETED);
         } catch (Exception e) {
             throw handleException(e);
         }

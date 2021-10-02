@@ -1,6 +1,6 @@
 <!--
 
-    Copyright © 2016-2020 The Thingsboard Authors
+    Copyright © 2016-2021 The Thingsboard Authors
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -16,9 +16,6 @@
 
 -->
 <form [formGroup]="lwm2mDeviceTransportConfigurationFormGroup" style="padding-bottom: 16px;">
-  <!--tb-json-object-edit
-    [required]="required"
-    label="{{ 'device-profile.transport-type-lwm2m' | translate }}"
-    formControlName="configuration">
-  </tb-json-object-edit-->
+  <tb-power-mode-settings [parentForm]="lwm2mDeviceTransportConfigurationFormGroup" [isDeviceSetting]="true">
+  </tb-power-mode-settings>
 </form>

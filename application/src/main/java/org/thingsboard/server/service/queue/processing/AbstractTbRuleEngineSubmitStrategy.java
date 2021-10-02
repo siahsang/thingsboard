@@ -1,5 +1,5 @@
 /**
- * Copyright © 2016-2020 The Thingsboard Authors
+ * Copyright © 2016-2021 The Thingsboard Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -27,7 +27,7 @@ import java.util.stream.Collectors;
 public abstract class AbstractTbRuleEngineSubmitStrategy implements TbRuleEngineSubmitStrategy {
 
     protected final String queueName;
-    protected List<IdMsgPair> orderedMsgList;
+    protected List<IdMsgPair<TransportProtos.ToRuleEngineMsg>> orderedMsgList;
     private volatile boolean stopped;
 
     public AbstractTbRuleEngineSubmitStrategy(String queueName) {
@@ -38,7 +38,7 @@ public abstract class AbstractTbRuleEngineSubmitStrategy implements TbRuleEngine
 
     @Override
     public void init(List<TbProtoQueueMsg<TransportProtos.ToRuleEngineMsg>> msgs) {
-        orderedMsgList = msgs.stream().map(msg -> new IdMsgPair(UUID.randomUUID(), msg)).collect(Collectors.toList());
+        orderedMsgList = msgs.stream().map(msg -> new IdMsgPair<>(UUID.randomUUID(), msg)).collect(Collectors.toList());
     }
 
     @Override
@@ -48,8 +48,8 @@ public abstract class AbstractTbRuleEngineSubmitStrategy implements TbRuleEngine
 
     @Override
     public void update(ConcurrentMap<UUID, TbProtoQueueMsg<TransportProtos.ToRuleEngineMsg>> reprocessMap) {
-        List<IdMsgPair> newOrderedMsgList = new ArrayList<>(reprocessMap.size());
-        for (IdMsgPair pair : orderedMsgList) {
+        List<IdMsgPair<TransportProtos.ToRuleEngineMsg>> newOrderedMsgList = new ArrayList<>(reprocessMap.size());
+        for (IdMsgPair<TransportProtos.ToRuleEngineMsg> pair : orderedMsgList) {
             if (reprocessMap.containsKey(pair.uuid)) {
                 newOrderedMsgList.add(pair);
             }

@@ -1,5 +1,5 @@
 /**
- * Copyright © 2016-2020 The Thingsboard Authors
+ * Copyright © 2016-2021 The Thingsboard Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -59,7 +59,7 @@ public class SequentialTbRuleEngineSubmitStrategy extends AbstractTbRuleEngineSu
         int listSize = orderedMsgList.size();
         int idx = msgIdx.get();
         if (idx < listSize) {
-            IdMsgPair pair = orderedMsgList.get(idx);
+            IdMsgPair<TransportProtos.ToRuleEngineMsg> pair = orderedMsgList.get(idx);
             expectedMsgId = pair.uuid;
             if (log.isDebugEnabled()) {
                 log.debug("[{}] submitting [{}] message to rule engine", queueName, pair.msg);

@@ -1,5 +1,5 @@
 ///
-/// Copyright © 2016-2020 The Thingsboard Authors
+/// Copyright © 2016-2021 The Thingsboard Authors
 ///
 /// Licensed under the Apache License, Version 2.0 (the "License");
 /// you may not use this file except in compliance with the License.
@@ -14,7 +14,7 @@
 /// limitations under the License.
 ///
 
-import { NgModule } from '@angular/core';
+import { NgModule, SecurityContext } from '@angular/core';
 import { CommonModule, DatePipe } from '@angular/common';
 import { FooterComponent } from '@shared/components/footer.component';
 import { LogoComponent } from '@shared/components/logo.component';
@@ -52,6 +52,7 @@ import { MatTableModule } from '@angular/material/table';
 import { MatTabsModule } from '@angular/material/tabs';
 import { MatToolbarModule } from '@angular/material/toolbar';
 import { MatTooltipModule } from '@angular/material/tooltip';
+import { MatListModule } from '@angular/material/list';
 import { MatDatetimepickerModule, MatNativeDatetimeModule } from '@mat-datetimepicker/core';
 import { NgxDaterangepickerMd } from 'ngx-daterangepicker-material';
 import { GridsterModule } from 'angular-gridster2';
@@ -77,6 +78,7 @@ import { DatetimePeriodComponent } from '@shared/components/time/datetime-period
 import { EnumToArrayPipe } from '@shared/pipe/enum-to-array.pipe';
 import { ClipboardModule } from 'ngx-clipboard';
 import { ValueInputComponent } from '@shared/components/value-input.component';
+import { MarkdownModule, MarkedOptions } from 'ngx-markdown';
 import { FullscreenDirective } from '@shared/components/fullscreen.directive';
 import { HighlightPipe } from '@shared/pipe/highlight.pipe';
 import { DashboardAutocompleteComponent } from '@shared/components/dashboard-autocomplete.component';
@@ -132,9 +134,19 @@ import { TbJsonToStringDirective } from '@shared/components/directives/tb-json-t
 import { JsonObjectEditDialogComponent } from '@shared/components/dialog/json-object-edit-dialog.component';
 import { HistorySelectorComponent } from './components/time/history-selector/history-selector.component';
 import { EntityGatewaySelectComponent } from '@shared/components/entity/entity-gateway-select.component';
+import { DndModule } from 'ngx-drag-drop';
 import { QueueTypeListComponent } from '@shared/components/queue/queue-type-list.component';
 import { ContactComponent } from '@shared/components/contact.component';
 import { TimezoneSelectComponent } from '@shared/components/time/timezone-select.component';
+import { FileSizePipe } from '@shared/pipe/file-size.pipe';
+import { WidgetsBundleSearchComponent } from '@shared/components/widgets-bundle-search.component';
+import { SelectableColumnsPipe } from '@shared/pipe/selectable-columns.pipe';
+import { QuickTimeIntervalComponent } from '@shared/components/time/quick-time-interval.component';
+import { OtaPackageAutocompleteComponent } from '@shared/components/ota-package/ota-package-autocomplete.component';
+import { MAT_DATE_LOCALE } from '@angular/material/core';
+import { CopyButtonComponent } from '@shared/components/button/copy-button.component';
+import { TogglePasswordComponent } from '@shared/components/button/toggle-password.component';
+import { markedOptionsFactory } from '@shared/components/markdown.factory';
 
 @NgModule({
   providers: [
@@ -144,9 +156,14 @@ import { TimezoneSelectComponent } from '@shared/components/time/timezone-select
     HighlightPipe,
     TruncatePipe,
     TbJsonPipe,
+    FileSizePipe,
     {
       provide: FlowInjectionToken,
       useValue: Flow
+    },
+    {
+      provide: MAT_DATE_LOCALE,
+      useValue: 'en-GB'
     }
   ],
   declarations: [
@@ -169,6 +186,7 @@ import { TimezoneSelectComponent } from '@shared/components/time/timezone-select
     TimewindowComponent,
     TimewindowPanelComponent,
     TimeintervalComponent,
+    QuickTimeIntervalComponent,
     DashboardSelectComponent,
     DashboardSelectPanelComponent,
     DatetimePeriodComponent,
@@ -217,12 +235,18 @@ import { TimezoneSelectComponent } from '@shared/components/time/timezone-select
     HighlightPipe,
     TruncatePipe,
     TbJsonPipe,
+    FileSizePipe,
+    SelectableColumnsPipe,
     KeyboardShortcutPipe,
     TbJsonToStringDirective,
     JsonObjectEditDialogComponent,
     HistorySelectorComponent,
     EntityGatewaySelectComponent,
-    ContactComponent
+    ContactComponent,
+    OtaPackageAutocompleteComponent,
+    WidgetsBundleSearchComponent,
+    CopyButtonComponent,
+    TogglePasswordComponent
   ],
   imports: [
     CommonModule,
@@ -259,6 +283,7 @@ import { TimezoneSelectComponent } from '@shared/components/time/timezone-select
     MatStepperModule,
     MatAutocompleteModule,
     MatChipsModule,
+    MatListModule,
     GridsterModule,
     ClipboardModule,
     FlexLayoutModule.withConfig({addFlexToParent: false}),
@@ -269,8 +294,17 @@ import { TimezoneSelectComponent } from '@shared/components/time/timezone-select
     HotkeyModule,
     ColorPickerModule,
     NgxHmCarouselModule,
+    DndModule,
     NgxFlowModule,
-    NgxFlowchartModule
+    NgxFlowchartModule,
+    // ngx-markdown
+    MarkdownModule.forRoot({
+      sanitize: SecurityContext.NONE,
+      markedOptions: {
+        provide: MarkedOptions,
+        useFactory: markedOptionsFactory
+      }
+    })
   ],
   exports: [
     FooterComponent,
@@ -291,6 +325,7 @@ import { TimezoneSelectComponent } from '@shared/components/time/timezone-select
     TimewindowComponent,
     TimewindowPanelComponent,
     TimeintervalComponent,
+    QuickTimeIntervalComponent,
     DashboardSelectComponent,
     DatetimePeriodComponent,
     DatetimeComponent,
@@ -348,6 +383,7 @@ import { TimezoneSelectComponent } from '@shared/components/time/timezone-select
     MatStepperModule,
     MatAutocompleteModule,
     MatChipsModule,
+    MatListModule,
     GridsterModule,
     ClipboardModule,
     FlexLayoutModule,
@@ -358,7 +394,9 @@ import { TimezoneSelectComponent } from '@shared/components/time/timezone-select
     HotkeyModule,
     ColorPickerModule,
     NgxHmCarouselModule,
+    DndModule,
     NgxFlowchartModule,
+    MarkdownModule,
     ConfirmDialogComponent,
     AlertDialogComponent,
     TodoDialogComponent,
@@ -381,11 +419,17 @@ import { TimezoneSelectComponent } from '@shared/components/time/timezone-select
     TruncatePipe,
     TbJsonPipe,
     KeyboardShortcutPipe,
+    FileSizePipe,
+    SelectableColumnsPipe,
     TranslateModule,
     JsonObjectEditDialogComponent,
     HistorySelectorComponent,
     EntityGatewaySelectComponent,
-    ContactComponent
+    ContactComponent,
+    OtaPackageAutocompleteComponent,
+    WidgetsBundleSearchComponent,
+    CopyButtonComponent,
+    TogglePasswordComponent
   ]
 })
 export class SharedModule { }

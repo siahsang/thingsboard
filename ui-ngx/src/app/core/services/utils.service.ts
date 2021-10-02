@@ -1,5 +1,5 @@
 ///
-/// Copyright © 2016-2020 The Thingsboard Authors
+/// Copyright © 2016-2021 The Thingsboard Authors
 ///
 /// Licensed under the Apache License, Version 2.0 (the "License");
 /// you may not use this file except in compliance with the License.
@@ -21,17 +21,19 @@ import { Inject, Injectable, NgZone } from '@angular/core';
 import { WINDOW } from '@core/services/window.service';
 import { ExceptionData } from '@app/shared/models/error.models';
 import {
+  baseUrl,
   createLabelFromDatasource,
   deepClone,
   deleteNullProperties,
   guid,
   isDefined,
   isDefinedAndNotNull,
+  isString,
   isUndefined
 } from '@core/utils';
 import { WindowMessage } from '@shared/models/window-message.model';
 import { TranslateService } from '@ngx-translate/core';
-import { customTranslationsPrefix } from '@app/shared/models/constants';
+import { customTranslationsPrefix, i18nPrefix } from '@app/shared/models/constants';
 import { DataKey, Datasource, DatasourceType, KeyInfo } from '@shared/models/widget.models';
 import { EntityType } from '@shared/models/entity-type.models';
 import { DataKeyType } from '@app/shared/models/telemetry/telemetry.models';
@@ -41,6 +43,8 @@ import { WidgetInfo } from '@home/models/widget-component.models';
 import jsonSchemaDefaults from 'json-schema-defaults';
 import materialIconsCodepoints from '!raw-loader!material-design-icons/iconfont/codepoints';
 import { Observable, of, ReplaySubject } from 'rxjs';
+
+const i18nRegExp = new RegExp(`{${i18nPrefix}:[^{}]+}`, 'g');
 
 const predefinedFunctions: { [func: string]: string } = {
   Sin: 'return Math.round(1000*Math.sin(time/5000));',
@@ -107,8 +111,8 @@ export class UtilsService {
   materialIcons: Array<string> = [];
 
   constructor(@Inject(WINDOW) private window: Window,
-    private zone: NgZone,
-    private translate: TranslateService) {
+              private zone: NgZone,
+              private translate: TranslateService) {
     let frame: Element = null;
     try {
       frame = window.frameElement;
@@ -221,8 +225,31 @@ export class UtilsService {
   }
 
   public customTranslation(translationValue: string, defaultValue: string): string {
+    if (translationValue && isString(translationValue)) {
+      if (translationValue.includes(`{${i18nPrefix}`)) {
+        const matches = translationValue.match(i18nRegExp);
+        let result = translationValue;
+        for (const match of matches) {
+          const translationId = match.substring(6, match.length - 1);
+          result = result.replace(match, this.doTranslate(translationId, match));
+        }
+        return result;
+      } else {
+        return this.doTranslate(translationValue, defaultValue, customTranslationsPrefix);
+      }
+    } else {
+      return translationValue;
+    }
+  }
+
+  private doTranslate(translationValue: string, defaultValue: string, prefix?: string): string {
     let result: string;
-    const translationId = customTranslationsPrefix + translationValue;
+    let translationId;
+    if (prefix) {
+      translationId = prefix + translationValue;
+    } else {
+      translationId = translationValue;
+    }
     const translation = this.translate.instant(translationId);
     if (translation !== translationId) {
       result = translation + '';
@@ -383,9 +410,23 @@ export class UtilsService {
     return decodeURIComponent(results[2].replace(/\+/g, ' '));
   }
 
+  public removeQueryParams(keys: Array<string>) {
+    let params = this.window.location.search;
+    for (const key of keys) {
+      params = this.updateUrlQueryString(params, key, null);
+    }
+    const baseUrlPart = [baseUrl(), this.window.location.pathname].join('');
+    this.window.history.replaceState({}, '', baseUrlPart + params);
+  }
+
   public updateQueryParam(name: string, value: string | null) {
-    const baseUrl = [this.window.location.protocol, '//', this.window.location.host, this.window.location.pathname].join('');
+    const baseUrlPart = [baseUrl(), this.window.location.pathname].join('');
     const urlQueryString = this.window.location.search;
+    const params = this.updateUrlQueryString(urlQueryString, name, value);
+    this.window.history.replaceState({}, '', baseUrlPart + params);
+  }
+
+  private updateUrlQueryString(urlQueryString: string, name: string, value: string | null): string {
     let newParam = '';
     let params = '';
     if (value !== null) {
@@ -398,13 +439,20 @@ export class UtilsService {
           newParam = '$1' + newParam;
         }
         params = urlQueryString.replace(keyRegex, newParam);
+        if (params.startsWith('&')) {
+          params = '?' + params.substring(1);
+        }
       } else if (newParam) {
         params = urlQueryString + '&' + newParam;
       }
     } else if (newParam) {
       params = '?' + newParam;
     }
-    this.window.history.replaceState({}, '', baseUrl + params);
+    return params;
+  }
+
+  public baseUrl(): string {
+    return baseUrl();
   }
 
   public deepClone<T>(target: T, ignoreFields?: string[]): T {

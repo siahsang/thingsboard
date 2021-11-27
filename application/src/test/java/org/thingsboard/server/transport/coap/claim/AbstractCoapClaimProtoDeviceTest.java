@@ -16,7 +16,6 @@
 package org.thingsboard.server.transport.coap.claim;
 
 import lombok.extern.slf4j.Slf4j;
-import org.eclipse.californium.core.CoapClient;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;

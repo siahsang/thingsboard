@@ -58,7 +58,7 @@ public class InMemoryTbTransportQueueFactory implements TbTransportQueueFactory 
 
     @Override
     public TbQueueRequestTemplate<TbProtoQueueMsg<TransportApiRequestMsg>, TbProtoQueueMsg<TransportApiResponseMsg>> createTransportApiRequestTemplate() {
-        InMemoryTbQueueProducer<TbProtoQueueMsg<TransportApiRequestMsg>> producerTemplate =
+        InMemoryTbQueueProducer<TbProtoQueueMsg<TransportApiRequestMsg>> httpRequestProducer =
                 new InMemoryTbQueueProducer<>(transportApiSettings.getRequestsTopic());
 
         InMemoryTbQueueConsumer<TbProtoQueueMsg<TransportApiResponseMsg>> consumerTemplate =
@@ -75,11 +75,12 @@ public class InMemoryTbTransportQueueFactory implements TbTransportQueueFactory 
             public void destroy() {}
         });
 
-        templateBuilder.requestTemplate(producerTemplate);
+        templateBuilder.requestTemplate(httpRequestProducer);
         templateBuilder.responseTemplate(consumerTemplate);
         templateBuilder.maxPendingRequests(transportApiSettings.getMaxPendingRequests());
         templateBuilder.maxRequestTimeout(transportApiSettings.getMaxRequestsTimeout());
         templateBuilder.pollInterval(transportApiSettings.getResponsePollInterval());
+
         return templateBuilder.build();
     }
 

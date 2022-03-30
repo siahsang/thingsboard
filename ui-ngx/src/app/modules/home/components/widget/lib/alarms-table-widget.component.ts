@@ -1,5 +1,5 @@
 ///
-/// Copyright © 2016-2021 The Thingsboard Authors
+/// Copyright © 2016-2022 The Thingsboard Authors
 ///
 /// Licensed under the Apache License, Version 2.0 (the "License");
 /// you may not use this file except in compliance with the License.
@@ -16,6 +16,7 @@
 
 import {
   AfterViewInit,
+  ChangeDetectorRef,
   Component,
   ElementRef,
   EventEmitter,
@@ -48,7 +49,7 @@ import cssjs from '@core/css/css';
 import { sortItems } from '@shared/models/page/page-link';
 import { Direction } from '@shared/models/page/sort-order';
 import { CollectionViewer, DataSource, SelectionModel } from '@angular/cdk/collections';
-import { BehaviorSubject, forkJoin, fromEvent, merge, Observable } from 'rxjs';
+import { BehaviorSubject, forkJoin, fromEvent, merge, Observable, Subscription } from 'rxjs';
 import { emptyPageData, PageData } from '@shared/models/page/page-data';
 import { entityTypeTranslations } from '@shared/models/entity-type.models';
 import { debounceTime, distinctUntilChanged, map, take, tap } from 'rxjs/operators';
@@ -74,6 +75,7 @@ import {
   getColumnWidth,
   getRowStyleInfo,
   getTableCellButtonActions,
+  noDataMessage,
   prepareTableCellButtonActions,
   RowStyleInfo,
   TableCellButtonActionDescriptor,
@@ -121,6 +123,9 @@ import {
   AlarmFilterPanelData
 } from '@home/components/widget/lib/alarm-filter-panel.component';
 import { entityFields } from '@shared/models/entity.models';
+import { coerceBooleanProperty } from '@angular/cdk/coercion';
+import { ResizeObserver } from '@juggle/resize-observer';
+import { hidePageSizePixelValue } from '@shared/models/constants';
 
 interface AlarmsTableWidgetSettings extends TableWidgetSettings {
   alarmsTitle: string;
@@ -162,10 +167,12 @@ export class AlarmsTableWidgetComponent extends PageComponent implements OnInit,
   public pageLink: AlarmDataPageLink;
   public sortOrderProperty: string;
   public textSearchMode = false;
+  public hidePageSize = false;
   public columns: Array<EntityColumn> = [];
   public displayedColumns: string[] = [];
   public alarmsDatasource: AlarmsDatasource;
-  public countCellButtonAction: number;
+  public noDataDisplayMessageText: string;
+  private setCellButtonAction: boolean;
 
   private cellContentCache: Array<any> = [];
   private cellStyleCache: Array<any> = [];
@@ -174,6 +181,7 @@ export class AlarmsTableWidgetComponent extends PageComponent implements OnInit,
   private settings: AlarmsTableWidgetSettings;
   private widgetConfig: WidgetConfig;
   private subscription: IWidgetSubscription;
+  private widgetResize$: ResizeObserver;
 
   private alarmsTitlePattern: string;
 
@@ -191,6 +199,8 @@ export class AlarmsTableWidgetComponent extends PageComponent implements OnInit,
   private columnSelectionAvailability: {[key: string]: boolean} = {};
 
   private rowStylesInfo: RowStyleInfo;
+
+  private widgetTimewindowChanged$: Subscription;
 
   private searchAction: WidgetAction = {
     name: 'action.search',
@@ -230,7 +240,8 @@ export class AlarmsTableWidgetComponent extends PageComponent implements OnInit,
               private datePipe: DatePipe,
               private dialog: MatDialog,
               private dialogService: DialogService,
-              private alarmService: AlarmService) {
+              private alarmService: AlarmService,
+              private cd: ChangeDetectorRef) {
     super(store);
     this.pageLink = {
       page: 0,
@@ -247,6 +258,30 @@ export class AlarmsTableWidgetComponent extends PageComponent implements OnInit,
     this.initializeConfig();
     this.updateAlarmSource();
     this.ctx.updateWidgetParams();
+
+    if (this.displayPagination) {
+      this.widgetTimewindowChanged$ = this.ctx.defaultSubscription.widgetTimewindowChanged$.subscribe(
+        () => this.pageLink.page = 0
+      );
+      this.widgetResize$ = new ResizeObserver(() => {
+        const showHidePageSize = this.elementRef.nativeElement.offsetWidth < hidePageSizePixelValue;
+        if (showHidePageSize !== this.hidePageSize) {
+          this.hidePageSize = showHidePageSize;
+          this.cd.markForCheck();
+        }
+      });
+      this.widgetResize$.observe(this.elementRef.nativeElement);
+    }
+  }
+
+  ngOnDestroy(): void {
+    if (this.widgetTimewindowChanged$) {
+      this.widgetTimewindowChanged$.unsubscribe();
+      this.widgetTimewindowChanged$ = null;
+    }
+    if (this.widgetResize$) {
+      this.widgetResize$.disconnect();
+    }
   }
 
   ngAfterViewInit(): void {
@@ -340,6 +375,9 @@ export class AlarmsTableWidgetComponent extends PageComponent implements OnInit,
     this.pageLink.statusList = alarmStatusList;
     this.pageLink.severityList = isDefined(this.widgetConfig.alarmSeverityList) ? this.widgetConfig.alarmSeverityList : [];
     this.pageLink.typeList = isDefined(this.widgetConfig.alarmTypeList) ? this.widgetConfig.alarmTypeList : [];
+
+    this.noDataDisplayMessageText =
+      noDataMessage(this.widgetConfig.noDataDisplayMessage, 'alarm.no-alarms-prompt', this.utils, this.translate);
 
     const cssString = constructTableCssString(this.widgetConfig);
     const cssParser = new cssjs();
@@ -439,9 +477,9 @@ export class AlarmsTableWidgetComponent extends PageComponent implements OnInit,
       );
     }
 
-    this.countCellButtonAction = actionCellDescriptors.length + this.ctx.actionsApi.getActionDescriptors('actionCellButton').length;
+    this.setCellButtonAction = !!(actionCellDescriptors.length + this.ctx.actionsApi.getActionDescriptors('actionCellButton').length);
 
-    if (this.countCellButtonAction) {
+    if (this.setCellButtonAction) {
       this.displayedColumns.push('actions');
     }
 
@@ -500,7 +538,7 @@ export class AlarmsTableWidgetComponent extends PageComponent implements OnInit,
             if (this.enableSelection) {
               this.displayedColumns.unshift('select');
             }
-            if (this.countCellButtonAction) {
+            if (this.setCellButtonAction) {
               this.displayedColumns.push('actions');
             }
             this.clearCache();
@@ -987,10 +1025,12 @@ class AlarmsDatasource implements DataSource<AlarmDataInfo> {
   private currentAlarm: AlarmDataInfo = null;
 
   public dataLoading = true;
+  public countCellButtonAction = 0;
 
   private appliedPageLink: AlarmDataPageLink;
   private appliedSortOrderLabel: string;
 
+  private reserveSpaceForHiddenAction = true;
   private cellButtonActions: TableCellButtonActionDescriptor[];
   private readonly usedShowCellActionFunction: boolean;
 
@@ -1001,6 +1041,9 @@ class AlarmsDatasource implements DataSource<AlarmDataInfo> {
               actionCellDescriptors: AlarmWidgetActionDescriptor[]) {
     this.cellButtonActions = actionCellDescriptors.concat(getTableCellButtonActions(widgetContext));
     this.usedShowCellActionFunction = this.cellButtonActions.some(action => action.useShowActionCellButtonFunction);
+    if (this.widgetContext.settings.reserveSpaceForHiddenAction) {
+      this.reserveSpaceForHiddenAction = coerceBooleanProperty(this.widgetContext.settings.reserveSpaceForHiddenAction);
+    }
   }
 
   connect(collectionViewer: CollectionViewer): Observable<AlarmDataInfo[] | ReadonlyArray<AlarmDataInfo>> {
@@ -1032,10 +1075,19 @@ class AlarmsDatasource implements DataSource<AlarmDataInfo> {
   updateAlarms() {
     const subscriptionAlarms = this.subscription.alarms;
     let alarms = new Array<AlarmDataInfo>();
+    let maxCellButtonAction = 0;
     let isEmptySelection = false;
+    const dynamicWidthCellButtonActions = this.usedShowCellActionFunction && !this.reserveSpaceForHiddenAction;
     subscriptionAlarms.data.forEach((alarmData) => {
-      alarms.push(this.alarmDataToInfo(alarmData));
+      const alarm = this.alarmDataToInfo(alarmData);
+      alarms.push(alarm);
+      if (dynamicWidthCellButtonActions && alarm.actionCellButtons.length > maxCellButtonAction) {
+        maxCellButtonAction = alarm.actionCellButtons.length;
+      }
     });
+    if (!dynamicWidthCellButtonActions && this.cellButtonActions.length && alarms.length) {
+      maxCellButtonAction = alarms[0].actionCellButtons.length;
+    }
     if (this.appliedSortOrderLabel && this.appliedSortOrderLabel.length) {
       const asc = this.appliedPageLink.sortOrder.direction === Direction.ASC;
       alarms = alarms.sort((a, b) => sortItems(a, b, this.appliedSortOrderLabel, asc));
@@ -1060,6 +1112,7 @@ class AlarmsDatasource implements DataSource<AlarmDataInfo> {
       }
       this.alarmsSubject.next(alarms);
       this.pageDataSubject.next(alarmsPageData);
+      this.countCellButtonAction = maxCellButtonAction;
       this.dataLoading = false;
     });
   }
@@ -1083,7 +1136,8 @@ class AlarmsDatasource implements DataSource<AlarmDataInfo> {
     });
     if (this.cellButtonActions.length) {
       if (this.usedShowCellActionFunction) {
-        alarm.actionCellButtons = prepareTableCellButtonActions(this.widgetContext, this.cellButtonActions, alarm);
+        alarm.actionCellButtons = prepareTableCellButtonActions(this.widgetContext, this.cellButtonActions,
+                                                                alarm, this.reserveSpaceForHiddenAction);
         alarm.hasActions = checkHasActions(alarm.actionCellButtons);
       } else {
         alarm.actionCellButtons = this.cellButtonActions;

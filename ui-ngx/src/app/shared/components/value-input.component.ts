@@ -1,5 +1,5 @@
 ///
-/// Copyright © 2016-2021 The Thingsboard Authors
+/// Copyright © 2016-2022 The Thingsboard Authors
 ///
 /// Licensed under the Apache License, Version 2.0 (the "License");
 /// you may not use this file except in compliance with the License.
@@ -124,8 +124,9 @@ export class ValueInputComponent implements OnInit, ControlValueAccessor {
   onValueTypeChanged() {
     if (this.valueType === ValueType.BOOLEAN) {
       this.modelValue = false;
-    } if (this.valueType === ValueType.JSON) {
+    } else if (this.valueType === ValueType.JSON) {
       this.modelValue = {};
+      this.inputForm.form.get('value').patchValue({});
     } else {
       this.modelValue = null;
     }

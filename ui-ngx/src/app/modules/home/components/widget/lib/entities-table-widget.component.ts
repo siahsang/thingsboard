@@ -1,5 +1,5 @@
 ///
-/// Copyright © 2016-2021 The Thingsboard Authors
+/// Copyright © 2016-2022 The Thingsboard Authors
 ///
 /// Licensed under the Apache License, Version 2.0 (the "License");
 /// you may not use this file except in compliance with the License.
@@ -16,6 +16,7 @@
 
 import {
   AfterViewInit,
+  ChangeDetectorRef,
   Component,
   ElementRef,
   Injector,
@@ -80,6 +81,7 @@ import {
   getEntityValue,
   getRowStyleInfo,
   getTableCellButtonActions,
+  noDataMessage,
   prepareTableCellButtonActions,
   RowStyleInfo,
   TableCellButtonActionDescriptor,
@@ -105,6 +107,9 @@ import {
 import { sortItems } from '@shared/models/page/page-link';
 import { entityFields } from '@shared/models/entity.models';
 import { DatePipe } from '@angular/common';
+import { coerceBooleanProperty } from '@angular/cdk/coercion';
+import { ResizeObserver } from '@juggle/resize-observer';
+import { hidePageSizePixelValue } from '@shared/models/constants';
 
 interface EntitiesTableWidgetSettings extends TableWidgetSettings {
   entitiesTitle: string;
@@ -138,10 +143,12 @@ export class EntitiesTableWidgetComponent extends PageComponent implements OnIni
   public pageLink: EntityDataPageLink;
   public sortOrderProperty: string;
   public textSearchMode = false;
+  public hidePageSize = false;
   public columns: Array<EntityColumn> = [];
   public displayedColumns: string[] = [];
   public entityDatasource: EntityDatasource;
-  public countCellButtonAction: number;
+  public noDataDisplayMessageText: string;
+  private setCellButtonAction: boolean;
 
   private cellContentCache: Array<any> = [];
   private cellStyleCache: Array<any> = [];
@@ -150,6 +157,7 @@ export class EntitiesTableWidgetComponent extends PageComponent implements OnIni
   private settings: EntitiesTableWidgetSettings;
   private widgetConfig: WidgetConfig;
   private subscription: IWidgetSubscription;
+  private widgetResize$: ResizeObserver;
 
   private entitiesTitlePattern: string;
 
@@ -190,7 +198,8 @@ export class EntitiesTableWidgetComponent extends PageComponent implements OnIni
               private utils: UtilsService,
               private datePipe: DatePipe,
               private translate: TranslateService,
-              private domSanitizer: DomSanitizer) {
+              private domSanitizer: DomSanitizer,
+              private cd: ChangeDetectorRef) {
     super(store);
     this.pageLink = {
       page: 0,
@@ -208,6 +217,22 @@ export class EntitiesTableWidgetComponent extends PageComponent implements OnIni
     this.initializeConfig();
     this.updateDatasources();
     this.ctx.updateWidgetParams();
+    if (this.displayPagination) {
+      this.widgetResize$ = new ResizeObserver(() => {
+        const showHidePageSize = this.elementRef.nativeElement.offsetWidth < hidePageSizePixelValue;
+        if (showHidePageSize !== this.hidePageSize) {
+          this.hidePageSize = showHidePageSize;
+          this.cd.markForCheck();
+        }
+      });
+      this.widgetResize$.observe(this.elementRef.nativeElement);
+    }
+  }
+
+  ngOnDestroy(): void {
+    if (this.widgetResize$) {
+      this.widgetResize$.disconnect();
+    }
   }
 
   ngAfterViewInit(): void {
@@ -249,7 +274,7 @@ export class EntitiesTableWidgetComponent extends PageComponent implements OnIni
   private initializeConfig() {
     this.ctx.widgetActions = [this.searchAction, this.columnDisplayAction];
 
-    this.countCellButtonAction = this.ctx.actionsApi.getActionDescriptors('actionCellButton').length;
+    this.setCellButtonAction = !!this.ctx.actionsApi.getActionDescriptors('actionCellButton').length;
 
     if (this.settings.entitiesTitle && this.settings.entitiesTitle.length) {
       this.entitiesTitlePattern = this.utils.customTranslation(this.settings.entitiesTitle, this.settings.entitiesTitle);
@@ -273,6 +298,9 @@ export class EntitiesTableWidgetComponent extends PageComponent implements OnIni
     }
     this.pageSizeOptions = [this.defaultPageSize, this.defaultPageSize * 2, this.defaultPageSize * 3];
     this.pageLink.pageSize = this.displayPagination ? this.defaultPageSize : 1024;
+
+    this.noDataDisplayMessageText =
+      noDataMessage(this.widgetConfig.noDataDisplayMessage, 'entity.no-entities-prompt', this.utils, this.translate);
 
     const cssString = constructTableCssString(this.widgetConfig);
     const cssParser = new cssjs();
@@ -318,6 +346,7 @@ export class EntitiesTableWidgetComponent extends PageComponent implements OnIni
           label: 'entityName',
           def: 'entityName',
           title: entityNameColumnTitle,
+          sortable: true,
           entityKey: {
             key: 'name',
             type: EntityKeyType.ENTITY_FIELD
@@ -341,6 +370,7 @@ export class EntitiesTableWidgetComponent extends PageComponent implements OnIni
           label: 'entityLabel',
           def: 'entityLabel',
           title: entityLabelColumnTitle,
+          sortable: true,
           entityKey: {
             key: 'label',
             type: EntityKeyType.ENTITY_FIELD
@@ -364,6 +394,7 @@ export class EntitiesTableWidgetComponent extends PageComponent implements OnIni
           label: 'entityType',
           def: 'entityType',
           title: this.translate.instant('entity.entity-type'),
+          sortable: true,
           entityKey: {
             key: 'entityType',
             type: EntityKeyType.ENTITY_FIELD
@@ -397,6 +428,7 @@ export class EntitiesTableWidgetComponent extends PageComponent implements OnIni
         dataKey.label = this.utils.customTranslation(dataKey.label, dataKey.label);
         dataKey.title = dataKey.label;
         dataKey.def = 'def' + this.columns.length;
+        dataKey.sortable = !dataKey.usePostProcessing;
         const keySettings: TableWidgetDataKeySettings = dataKey.settings;
         if (dataKey.type === DataKeyType.entityField &&
           !isDefined(keySettings.columnWidth) || keySettings.columnWidth === '0px') {
@@ -430,7 +462,7 @@ export class EntitiesTableWidgetComponent extends PageComponent implements OnIni
     }
     this.sortOrderProperty = sortColumn ? sortColumn.def : null;
 
-    if (this.countCellButtonAction) {
+    if (this.setCellButtonAction) {
       this.displayedColumns.push('actions');
     }
     this.entityDatasource = new EntityDatasource(this.translate, dataKeys, this.subscription, this.ngZone, this.ctx);
@@ -474,7 +506,7 @@ export class EntitiesTableWidgetComponent extends PageComponent implements OnIni
           columns,
           columnsUpdated: (newColumns) => {
             this.displayedColumns = newColumns.filter(column => column.display).map(column => column.def);
-            if (this.countCellButtonAction) {
+            if (this.setCellButtonAction) {
               this.displayedColumns.push('actions');
             }
             this.clearCache();
@@ -713,10 +745,12 @@ class EntityDatasource implements DataSource<EntityData> {
   private currentEntity: EntityData = null;
 
   public dataLoading = true;
+  public countCellButtonAction = 0;
 
   private appliedPageLink: EntityDataPageLink;
   private appliedSortOrderLabel: string;
 
+  private reserveSpaceForHiddenAction = true;
   private cellButtonActions: TableCellButtonActionDescriptor[];
   private readonly usedShowCellActionFunction: boolean;
 
@@ -729,6 +763,9 @@ class EntityDatasource implements DataSource<EntityData> {
     ) {
     this.cellButtonActions = getTableCellButtonActions(widgetContext);
     this.usedShowCellActionFunction = this.cellButtonActions.some(action => action.useShowActionCellButtonFunction);
+    if (this.widgetContext.settings.reserveSpaceForHiddenAction) {
+      this.reserveSpaceForHiddenAction = coerceBooleanProperty(this.widgetContext.settings.reserveSpaceForHiddenAction);
+    }
   }
 
   connect(collectionViewer: CollectionViewer): Observable<EntityData[] | ReadonlyArray<EntityData>> {
@@ -757,12 +794,21 @@ class EntityDatasource implements DataSource<EntityData> {
     const datasourcesPageData = this.subscription.datasourcePages[0];
     const dataPageData = this.subscription.dataPages[0];
     let entities = new Array<EntityData>();
+    let maxCellButtonAction = 0;
+    const dynamicWidthCellButtonActions = this.usedShowCellActionFunction && !this.reserveSpaceForHiddenAction;
     datasourcesPageData.data.forEach((datasource, index) => {
-      entities.push(this.datasourceToEntityData(datasource, dataPageData.data[index]));
+      const entity = this.datasourceToEntityData(datasource, dataPageData.data[index]);
+      entities.push(entity);
+      if (dynamicWidthCellButtonActions && entity.actionCellButtons.length > maxCellButtonAction) {
+        maxCellButtonAction = entity.actionCellButtons.length;
+      }
     });
     if (this.appliedSortOrderLabel && this.appliedSortOrderLabel.length) {
       const asc = this.appliedPageLink.sortOrder.direction === Direction.ASC;
       entities = entities.sort((a, b) => sortItems(a, b, this.appliedSortOrderLabel, asc));
+    }
+    if (!dynamicWidthCellButtonActions && this.cellButtonActions.length && entities.length) {
+      maxCellButtonAction = entities[0].actionCellButtons.length;
     }
     const entitiesPageData: PageData<EntityData> = {
       data: entities,
@@ -773,6 +819,7 @@ class EntityDatasource implements DataSource<EntityData> {
     this.ngZone.run(() => {
       this.entitiesSubject.next(entities);
       this.pageDataSubject.next(entitiesPageData);
+      this.countCellButtonAction = maxCellButtonAction;
       this.dataLoading = false;
     });
   }
@@ -804,7 +851,8 @@ class EntityDatasource implements DataSource<EntityData> {
     });
     if (this.cellButtonActions.length) {
       if (this.usedShowCellActionFunction) {
-        entity.actionCellButtons = prepareTableCellButtonActions(this.widgetContext, this.cellButtonActions, entity);
+        entity.actionCellButtons = prepareTableCellButtonActions(this.widgetContext, this.cellButtonActions,
+                                                                 entity, this.reserveSpaceForHiddenAction);
         entity.hasActions = checkHasActions(entity.actionCellButtons);
       } else {
         entity.actionCellButtons = this.cellButtonActions;

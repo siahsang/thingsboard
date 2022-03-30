@@ -1,5 +1,5 @@
 /**
- * Copyright © 2016-2021 The Thingsboard Authors
+ * Copyright © 2016-2022 The Thingsboard Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -24,6 +24,7 @@ import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.util.concurrent.TimeUnit;
 
 @Slf4j
 @PsqlDao
@@ -31,12 +32,15 @@ import java.sql.SQLException;
 public class PsqlEventCleanupRepository extends JpaAbstractDaoListeningExecutorService implements EventCleanupRepository {
 
     @Override
-    public void cleanupEvents(long otherEventsTtl, long debugEventsTtl) {
+    public void cleanupEvents(long regularEventStartTs, long regularEventEndTs, long debugEventStartTs, long debugEventEndTs) {
         try (Connection connection = dataSource.getConnection();
-             PreparedStatement stmt = connection.prepareStatement("call cleanup_events_by_ttl(?,?,?)")) {
-            stmt.setLong(1, otherEventsTtl);
-            stmt.setLong(2, debugEventsTtl);
-            stmt.setLong(3, 0);
+             PreparedStatement stmt = connection.prepareStatement("call cleanup_events_by_ttl(?,?,?,?,?)")) {
+            stmt.setLong(1, regularEventStartTs);
+            stmt.setLong(2, regularEventEndTs);
+            stmt.setLong(3, debugEventStartTs);
+            stmt.setLong(4, debugEventEndTs);
+            stmt.setLong(5, 0);
+            stmt.setQueryTimeout((int) TimeUnit.HOURS.toSeconds(1));
             stmt.execute();
             printWarnings(stmt);
             try (ResultSet resultSet = stmt.getResultSet()){

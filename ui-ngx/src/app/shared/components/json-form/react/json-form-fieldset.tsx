@@ -1,5 +1,5 @@
 /*
- * Copyright © 2016-2021 The Thingsboard Authors
+ * Copyright © 2016-2022 The Thingsboard Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -25,7 +25,7 @@ class ThingsboardFieldSet extends React.Component<JsonFormFieldProps, JsonFormFi
     render() {
         const forms = (this.props.form.items as JsonFormData[]).map((form: JsonFormData, index) => {
             return this.props.builder(form, this.props.model, index, this.props.onChange,
-              this.props.onColorClick, this.props.onIconClick, this.props.onToggleFullscreen, this.props.mapper);
+              this.props.onColorClick, this.props.onIconClick, this.props.onToggleFullscreen, this.props.onHelpClick, this.props.mapper);
         });
 
         return (

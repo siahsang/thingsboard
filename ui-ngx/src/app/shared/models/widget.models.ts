@@ -1,5 +1,5 @@
 ///
-/// Copyright © 2016-2021 The Thingsboard Authors
+/// Copyright © 2016-2022 The Thingsboard Authors
 ///
 /// Licensed under the Apache License, Version 2.0 (the "License");
 /// you may not use this file except in compliance with the License.
@@ -24,6 +24,7 @@ import { DataKeyType } from './telemetry/telemetry.models';
 import { EntityId } from '@shared/models/id/entity-id';
 import * as moment_ from 'moment';
 import { EntityDataPageLink, EntityFilter, KeyFilter } from '@shared/models/query/query.models';
+import { PopoverPlacement } from '@shared/components/popover.models';
 
 export enum widgetType {
   timeseries = 'timeseries',
@@ -151,6 +152,7 @@ export interface WidgetTypeParameters {
   useCustomDatasources?: boolean;
   maxDatasources?: number;
   maxDataKeys?: number;
+  datasourcesOptional?: boolean;
   dataKeysOptional?: boolean;
   stateData?: boolean;
   hasDataPageLink?: boolean;
@@ -456,6 +458,13 @@ export interface WidgetActionDescriptor extends CustomActionDescriptor {
   targetDashboardStateId?: string;
   openRightLayout?: boolean;
   openNewBrowserTab?: boolean;
+  openInPopover?: boolean;
+  popoverHideDashboardToolbar?: boolean;
+  popoverPreferredPlacement?: PopoverPlacement;
+  popoverHideOnClickOutside?: boolean;
+  popoverWidth?: string;
+  popoverHeight?: string;
+  popoverStyle?: { [klass: string]: any };
   openInSeparateDialog?: boolean;
   dialogTitle?: string;
   dialogHideDashboardToolbar?: boolean;
@@ -497,9 +506,11 @@ export interface WidgetConfig {
   padding?: string;
   margin?: string;
   widgetStyle?: {[klass: string]: any};
+  widgetCss?: string;
   titleStyle?: {[klass: string]: any};
   units?: string;
   decimals?: number;
+  noDataDisplayMessage?: string;
   actions?: {[actionSourceId: string]: Array<WidgetActionDescriptor>};
   settings?: any;
   alarmSource?: Datasource;

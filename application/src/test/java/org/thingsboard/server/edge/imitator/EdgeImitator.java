@@ -1,5 +1,5 @@
 /**
- * Copyright © 2016-2021 The Thingsboard Authors
+ * Copyright © 2016-2022 The Thingsboard Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -65,6 +65,8 @@ import java.util.stream.Collectors;
 @Slf4j
 public class EdgeImitator {
 
+    public static final int TIMEOUT_IN_SECONDS = 30;
+
     private String routingKey;
     private String routingSecret;
 
@@ -85,6 +87,9 @@ public class EdgeImitator {
     private EdgeConfiguration configuration;
     @Getter
     private List<AbstractMessage> downlinkMsgs;
+
+    @Getter
+    private UplinkResponseMsg latestResponseMsg;
 
     private boolean connected = false;
 
@@ -130,6 +135,7 @@ public class EdgeImitator {
 
     private void onUplinkResponse(UplinkResponseMsg msg) {
         log.info("onUplinkResponse: {}", msg);
+        latestResponseMsg = msg;
         responsesLatch.countDown();
     }
 
@@ -293,7 +299,7 @@ public class EdgeImitator {
     }
 
     public boolean waitForMessages() throws InterruptedException {
-        return waitForMessages(5);
+        return waitForMessages(TIMEOUT_IN_SECONDS);
     }
 
     public boolean waitForMessages(int timeoutInSeconds) throws InterruptedException {
@@ -308,7 +314,7 @@ public class EdgeImitator {
     }
 
     public boolean waitForResponses() throws InterruptedException {
-        return responsesLatch.await(5, TimeUnit.SECONDS);
+        return responsesLatch.await(TIMEOUT_IN_SECONDS, TimeUnit.SECONDS);
     }
 
     public void expectResponsesAmount(int messageAmount) {

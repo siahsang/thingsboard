@@ -1,5 +1,5 @@
 ///
-/// Copyright © 2016-2021 The Thingsboard Authors
+/// Copyright © 2016-2022 The Thingsboard Authors
 ///
 /// Licensed under the Apache License, Version 2.0 (the "License");
 /// you may not use this file except in compliance with the License.
@@ -133,6 +133,9 @@ export class DashboardComponent extends PageComponent implements IDashboardCompo
   @Input()
   dashboardTimewindow: Timewindow;
 
+  @Input()
+  parentDashboard?: IDashboardComponent = null;
+
   dashboardTimewindowChangedSubject: Subject<Timewindow> = new ReplaySubject<Timewindow>();
 
   dashboardTimewindowChanged = this.dashboardTimewindowChangedSubject.asObservable().pipe(
@@ -187,6 +190,7 @@ export class DashboardComponent extends PageComponent implements IDashboardCompo
   }
 
   ngOnInit(): void {
+    this.dashboardWidgets.parentDashboard = this.parentDashboard;
     if (!this.dashboardTimewindow) {
       this.dashboardTimewindow = this.timeService.defaultTimewindow();
     }
@@ -238,6 +242,7 @@ export class DashboardComponent extends PageComponent implements IDashboardCompo
     if (this.breakpointObserverSubscription) {
       this.breakpointObserverSubscription.unsubscribe();
     }
+    this.dashboardTimewindowChangedSubject.complete();
     this.gridster = null;
   }
 

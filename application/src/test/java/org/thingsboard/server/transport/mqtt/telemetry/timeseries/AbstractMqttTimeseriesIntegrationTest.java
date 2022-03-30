@@ -1,5 +1,5 @@
 /**
- * Copyright © 2016-2021 The Thingsboard Authors
+ * Copyright © 2016-2022 The Thingsboard Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -71,6 +71,18 @@ public abstract class AbstractMqttTimeseriesIntegrationTest extends AbstractMqtt
         String payloadStr = "{\"ts\": 10000, \"values\": " + PAYLOAD_VALUES_STR + "}";
         List<String> expectedKeys = Arrays.asList("key1", "key2", "key3", "key4", "key5");
         processJsonPayloadTelemetryTest(MqttTopics.DEVICE_TELEMETRY_TOPIC, expectedKeys, payloadStr.getBytes(), true);
+    }
+
+    @Test
+    public void testPushTelemetryOnShortTopic() throws Exception {
+        List<String> expectedKeys = Arrays.asList("key1", "key2", "key3", "key4", "key5");
+        processJsonPayloadTelemetryTest(MqttTopics.DEVICE_TELEMETRY_SHORT_TOPIC, expectedKeys, PAYLOAD_VALUES_STR.getBytes(), false);
+    }
+
+    @Test
+    public void testPushTelemetryOnShortJsonTopic() throws Exception {
+        List<String> expectedKeys = Arrays.asList("key1", "key2", "key3", "key4", "key5");
+        processJsonPayloadTelemetryTest(MqttTopics.DEVICE_TELEMETRY_SHORT_JSON_TOPIC, expectedKeys, PAYLOAD_VALUES_STR.getBytes(), false);
     }
 
     @Test

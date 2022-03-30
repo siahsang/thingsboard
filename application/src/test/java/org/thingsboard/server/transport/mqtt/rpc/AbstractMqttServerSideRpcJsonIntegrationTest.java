@@ -1,5 +1,5 @@
 /**
- * Copyright © 2016-2021 The Thingsboard Authors
+ * Copyright © 2016-2022 The Thingsboard Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,6 +21,7 @@ import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
 import org.thingsboard.server.common.data.TransportPayloadType;
+import org.thingsboard.server.common.data.device.profile.MqttTopics;
 
 @Slf4j
 public abstract class AbstractMqttServerSideRpcJsonIntegrationTest extends AbstractMqttServerSideRpcIntegrationTest {
@@ -37,25 +38,45 @@ public abstract class AbstractMqttServerSideRpcJsonIntegrationTest extends Abstr
 
     @Test
     public void testServerMqttOneWayRpc() throws Exception {
-        processOneWayRpcTest();
+        processOneWayRpcTest(MqttTopics.DEVICE_RPC_REQUESTS_SUB_TOPIC);
+    }
+
+    @Test
+    public void testServerMqttOneWayRpcOnShortTopic() throws Exception {
+        processOneWayRpcTest(MqttTopics.DEVICE_RPC_REQUESTS_SUB_SHORT_TOPIC);
+    }
+
+    @Test
+    public void testServerMqttOneWayRpcOnShortJsonTopic() throws Exception {
+        processOneWayRpcTest(MqttTopics.DEVICE_RPC_REQUESTS_SUB_SHORT_JSON_TOPIC);
     }
 
     @Test
     public void testServerMqttTwoWayRpc() throws Exception {
-        processTwoWayRpcTest();
+        processJsonTwoWayRpcTest(MqttTopics.DEVICE_RPC_REQUESTS_SUB_TOPIC);
+    }
+
+    @Test
+    public void testServerMqttTwoWayRpcOnShortTopic() throws Exception {
+        processJsonTwoWayRpcTest(MqttTopics.DEVICE_RPC_REQUESTS_SUB_SHORT_TOPIC);
+    }
+
+    @Test
+    public void testServerMqttTwoWayRpcOnShortJsonTopic() throws Exception {
+        processJsonTwoWayRpcTest(MqttTopics.DEVICE_RPC_REQUESTS_SUB_SHORT_JSON_TOPIC);
     }
 
     @Test
     public void testGatewayServerMqttOneWayRpc() throws Exception {
-        processOneWayRpcTestGateway("Gateway Device OneWay RPC Json");
+        processJsonOneWayRpcTestGateway("Gateway Device OneWay RPC Json");
     }
 
     @Test
     public void testGatewayServerMqttTwoWayRpc() throws Exception {
-        processTwoWayRpcTestGateway("Gateway Device TwoWay RPC Json");
+        processJsonTwoWayRpcTestGateway("Gateway Device TwoWay RPC Json");
     }
 
-    protected void processOneWayRpcTestGateway(String deviceName) throws Exception {
+    protected void processJsonOneWayRpcTestGateway(String deviceName) throws Exception {
         MqttAsyncClient client = getMqttAsyncClient(gatewayAccessToken);
         String payload = "{\"device\": \"" + deviceName + "\", \"type\": \"" + TransportPayloadType.JSON.name() + "\"}";
         byte[] payloadBytes = payload.getBytes();

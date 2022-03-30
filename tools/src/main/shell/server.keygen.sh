@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# Copyright © 2016-2021 The Thingsboard Authors
+# Copyright © 2016-2022 The Thingsboard Authors
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -105,7 +105,7 @@ keytool -genkeypair -v \
   -keypass $SERVER_KEY_PASSWORD \
   -storepass $SERVER_KEYSTORE_PASSWORD \
   -keyalg $SERVER_KEY_ALG \
-  -keysize $SERVER_KEY_SIZE \
+  -groupname $SERVER_KEY_GROUP_NAME \
   -validity 9999 \
   $EXT
 

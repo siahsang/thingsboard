@@ -1,5 +1,5 @@
 ///
-/// Copyright © 2016-2021 The Thingsboard Authors
+/// Copyright © 2016-2022 The Thingsboard Authors
 ///
 /// Licensed under the Apache License, Version 2.0 (the "License");
 /// you may not use this file except in compliance with the License.
@@ -17,13 +17,13 @@
 import {
   ChangeDetectionStrategy,
   ChangeDetectorRef,
-  Component, ElementRef,
+  Component, ElementRef, HostBinding,
   Inject,
   Injector,
   Input,
   NgZone,
   OnDestroy,
-  OnInit,
+  OnInit, Optional,
   StaticProvider,
   ViewChild,
   ViewContainerRef,
@@ -48,7 +48,7 @@ import {
 } from '@app/shared/models/dashboard.models';
 import { WINDOW } from '@core/services/window.service';
 import { WindowMessage } from '@shared/models/window-message.model';
-import { deepClone, isDefined, isDefinedAndNotNull } from '@app/core/utils';
+import { deepClone, guid, hashCode, isDefined, isDefinedAndNotNull, isNotEmptyStr } from '@app/core/utils';
 import {
   DashboardContext,
   DashboardPageLayout,
@@ -80,7 +80,11 @@ import { Observable, of, Subscription } from 'rxjs';
 import { FooterFabButtons } from '@shared/components/footer-fab-buttons.component';
 import { DashboardUtilsService } from '@core/services/dashboard-utils.service';
 import { DashboardService } from '@core/http/dashboard.service';
-import { DashboardContextMenuItem, WidgetContextMenuItem } from '../../models/dashboard-component.models';
+import {
+  DashboardContextMenuItem,
+  IDashboardComponent,
+  WidgetContextMenuItem
+} from '../../models/dashboard-component.models';
 import { WidgetComponentService } from '../../components/widget/widget-component.service';
 import { FormBuilder } from '@angular/forms';
 import { ItemBufferService } from '@core/services/item-buffer.service';
@@ -128,6 +132,9 @@ import {
   DashboardImageDialogData, DashboardImageDialogResult
 } from '@home/components/dashboard-page/dashboard-image-dialog.component';
 import { DomSanitizer, SafeUrl } from '@angular/platform-browser';
+import cssjs from '@core/css/css';
+import { DOCUMENT } from '@angular/common';
+import { IAliasController } from '@core/api/widget-api.models';
 
 // @dynamic
 @Component({
@@ -142,6 +149,9 @@ export class DashboardPageComponent extends PageComponent implements IDashboardC
   authState: AuthState = getCurrentAuthState(this.store);
 
   authUser: AuthUser = this.authState.authUser;
+
+  @HostBinding('class')
+  dashboardPageClass: string;
 
   @Input()
   embedded = false;
@@ -167,6 +177,12 @@ export class DashboardPageComponent extends PageComponent implements IDashboardC
   dashboard: Dashboard;
   dashboardConfiguration: DashboardConfiguration;
 
+  @Input()
+  parentDashboard?: IDashboardComponent = null;
+
+  @Input()
+  parentAliasController?: IAliasController = null;
+
   @ViewChild('dashboardContainer') dashboardContainer: ElementRef<HTMLElement>;
 
   prevDashboard: Dashboard;
@@ -176,6 +192,7 @@ export class DashboardPageComponent extends PageComponent implements IDashboardC
   singlePageMode: boolean;
   forceFullscreen = this.authState.forceFullscreen;
 
+  readonly = false;
   isMobileApp = this.mobileService.isMobileApp();
   isFullscreen = false;
   isEdit = false;
@@ -201,6 +218,8 @@ export class DashboardPageComponent extends PageComponent implements IDashboardC
 
   thingsboardVersion: string = env.tbVersion;
 
+  translatedDashboardTitle: string;
+
   currentDashboardId: string;
   currentCustomerId: string;
   currentDashboardScope: DashboardPageScope;
@@ -218,6 +237,7 @@ export class DashboardPageComponent extends PageComponent implements IDashboardC
     dashboardTimewindow: null,
     state: null,
     stateController: null,
+    stateChanged: null,
     aliasController: null,
     runChangeDetection: this.runChangeDetection.bind(this)
   };
@@ -292,6 +312,7 @@ export class DashboardPageComponent extends PageComponent implements IDashboardC
 
   constructor(protected store: Store<AppState>,
               @Inject(WINDOW) private window: Window,
+              @Inject(DOCUMENT) private document: Document,
               private breakpointObserver: BreakpointObserver,
               private route: ActivatedRoute,
               private router: Router,
@@ -309,12 +330,15 @@ export class DashboardPageComponent extends PageComponent implements IDashboardC
               private dialog: MatDialog,
               private translate: TranslateService,
               private ngZone: NgZone,
+              @Optional() @Inject('embeddedValue') private embeddedValue,
               private overlay: Overlay,
               private viewContainerRef: ViewContainerRef,
               private cd: ChangeDetectorRef,
               private sanitizer: DomSanitizer) {
     super(store);
-
+    if (isDefinedAndNotNull(embeddedValue)) {
+      this.embedded = embeddedValue;
+    }
   }
 
   ngOnInit() {
@@ -332,24 +356,26 @@ export class DashboardPageComponent extends PageComponent implements IDashboardC
         this.runChangeDetection();
       }
     ));
-    this.rxSubscriptions.push(this.route.queryParamMap.subscribe(
-      (paramMap) => {
-        if (paramMap.has('reload')) {
-          this.dashboardCtx.aliasController.updateAliases();
-          setTimeout(() => {
-            this.mobileService.handleDashboardStateName(this.dashboardCtx.stateController.getCurrentStateName());
-            this.mobileService.onDashboardLoaded(this.layouts.right.show, this.isRightLayoutOpened);
-          });
+    if (this.syncStateWithQueryParam) {
+      this.rxSubscriptions.push(this.route.queryParamMap.subscribe(
+        (paramMap) => {
+          if (paramMap.has('reload')) {
+            this.dashboardCtx.aliasController.updateAliases();
+            setTimeout(() => {
+              this.mobileService.handleDashboardStateName(this.dashboardCtx.stateController.getCurrentStateName());
+              this.mobileService.onDashboardLoaded(this.layouts.right.show, this.isRightLayoutOpened);
+            });
+          }
         }
-      }
-    ));
+      ));
+    }
     this.rxSubscriptions.push(this.breakpointObserver
       .observe(MediaBreakpoints['gt-sm'])
       .subscribe((state: BreakpointState) => {
           this.isMobile = !state.matches;
         }
     ));
-    if (this.isMobileApp) {
+    if (this.isMobileApp && this.syncStateWithQueryParam) {
       this.mobileService.registerToggleLayoutFunction(() => {
         setTimeout(() => {
           this.toggleLayouts();
@@ -364,6 +390,7 @@ export class DashboardPageComponent extends PageComponent implements IDashboardC
     this.reset();
 
     this.dashboard = data.dashboard;
+    this.translatedDashboardTitle = this.getTranslatedDashboardTitle();
     if (!this.embedded && this.dashboard.id) {
       this.setStateDashboardId = true;
     }
@@ -393,12 +420,17 @@ export class DashboardPageComponent extends PageComponent implements IDashboardC
     this.widgetEditMode = data.widgetEditMode;
     this.singlePageMode = data.singlePageMode;
 
-    this.dashboardCtx.aliasController = new AliasController(this.utils,
+    this.readonly = this.embedded || (this.singlePageMode && !this.widgetEditMode && !this.route.snapshot.queryParamMap.get('edit'))
+                    || this.forceFullscreen || this.isMobileApp || this.authUser.authority === Authority.CUSTOMER_USER;
+
+    this.dashboardCtx.aliasController = this.parentAliasController ? this.parentAliasController : new AliasController(this.utils,
       this.entityService,
       this.translate,
       () => this.dashboardCtx.stateController,
       this.dashboardConfiguration.entityAliases,
       this.dashboardConfiguration.filters);
+
+    this.updateDashboardCss();
 
     if (this.widgetEditMode) {
       const message: WindowMessage = {
@@ -408,8 +440,30 @@ export class DashboardPageComponent extends PageComponent implements IDashboardC
     }
   }
 
+  private updateDashboardCss() {
+    this.cleanupDashboardCss();
+    const cssString = this.dashboardConfiguration.settings.dashboardCss;
+    if (isNotEmptyStr(cssString)) {
+      const cssParser = new cssjs();
+      cssParser.testMode = false;
+      this.dashboardPageClass  = 'tb-dashboard-page-css-' + guid();
+      cssParser.cssPreviewNamespace = this.dashboardPageClass;
+      cssParser.createStyleElement(this.dashboardPageClass, cssString);
+    }
+  }
+
+  private cleanupDashboardCss() {
+    if (this.dashboardPageClass) {
+      const el = this.document.getElementById(this.dashboardPageClass);
+      if (el) {
+        el.parentNode.removeChild(el);
+      }
+    }
+  }
+
   private reset() {
     this.dashboard = null;
+    this.translatedDashboardTitle = null;
     this.dashboardConfiguration = null;
     this.dashboardLogoCache = undefined;
     this.prevDashboard = null;
@@ -446,7 +500,8 @@ export class DashboardPageComponent extends PageComponent implements IDashboardC
   }
 
   ngOnDestroy(): void {
-    if (this.isMobileApp) {
+    this.cleanupDashboardCss();
+    if (this.isMobileApp && this.syncStateWithQueryParam) {
       this.mobileService.unregisterToggleLayoutFunction();
     }
     this.rxSubscriptions.forEach((subscription) => {
@@ -504,6 +559,10 @@ export class DashboardPageComponent extends PageComponent implements IDashboardC
     } else {
       return false;
     }
+  }
+
+  private getTranslatedDashboardTitle(): string {
+    return this.utils.customTranslation(this.dashboard.title, this.dashboard.title);
   }
 
   public displayExport(): boolean {
@@ -705,6 +764,7 @@ export class DashboardPageComponent extends PageComponent implements IDashboardC
       if (data) {
         this.dashboard.configuration.settings = data.settings;
         this.dashboardLogoCache = undefined;
+        this.updateDashboardCss();
         const newGridSettings = data.gridSettings;
         if (newGridSettings) {
           const layout = this.dashboard.configuration.states[layoutKeys.state].layouts[layoutKeys.layout];
@@ -803,6 +863,7 @@ export class DashboardPageComponent extends PageComponent implements IDashboardC
   }
 
   public saveDashboard() {
+    this.translatedDashboardTitle = this.getTranslatedDashboardTitle();
     this.setEditMode(false, false);
     this.notifyDashboardUpdated();
   }
@@ -859,6 +920,7 @@ export class DashboardPageComponent extends PageComponent implements IDashboardC
         if (revert) {
           this.dashboard = this.prevDashboard;
           this.dashboardLogoCache = undefined;
+          this.dashboardConfiguration = this.dashboard.configuration;
         }
       } else {
         this.resetHighlight();
@@ -867,6 +929,7 @@ export class DashboardPageComponent extends PageComponent implements IDashboardC
           this.dashboardLogoCache = undefined;
           this.dashboardConfiguration = this.dashboard.configuration;
           this.dashboardCtx.dashboardTimewindow = this.dashboardConfiguration.timewindow;
+          this.updateDashboardCss();
           this.entityAliasesUpdated();
           this.filtersUpdated();
           this.updateLayouts();

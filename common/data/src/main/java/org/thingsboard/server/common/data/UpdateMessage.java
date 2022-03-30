@@ -1,5 +1,5 @@
 /**
- * Copyright © 2016-2021 The Thingsboard Authors
+ * Copyright © 2016-2022 The Thingsboard Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,12 +15,17 @@
  */
 package org.thingsboard.server.common.data;
 
+import io.swagger.annotations.ApiModel;
+import io.swagger.annotations.ApiModelProperty;
 import lombok.Data;
 
+@ApiModel
 @Data
 public class UpdateMessage {
 
+    @ApiModelProperty(position = 1, value = "The message about new platform update available.")
     private final String message;
+    @ApiModelProperty(position = 1, value = "'True' if new platform update is available.")
     private final boolean isUpdateAvailable;
 
 }

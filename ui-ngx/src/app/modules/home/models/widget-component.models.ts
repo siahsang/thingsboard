@@ -1,5 +1,5 @@
 ///
-/// Copyright © 2016-2021 The Thingsboard Authors
+/// Copyright © 2016-2022 The Thingsboard Authors
 ///
 /// Licensed under the Apache License, Version 2.0 (the "License");
 /// you may not use this file except in compliance with the License.
@@ -37,7 +37,7 @@ import {
   IStateController,
   IWidgetSubscription,
   IWidgetUtils,
-  RpcApi,
+  RpcApi, StateParams,
   SubscriptionEntityInfo,
   TimewindowFunctions,
   WidgetActionsApi,
@@ -80,6 +80,8 @@ import { DomSanitizer } from '@angular/platform-browser';
 import { Router } from '@angular/router';
 import { catchError, map, mergeMap, switchMap } from 'rxjs/operators';
 import { FormattedData } from '@home/components/widget/lib/maps/map-models';
+import { TbPopoverComponent } from '@shared/components/popover.component';
+import { EntityId } from '@shared/models/id/entity-id';
 
 export interface IWidgetAction {
   name: string;
@@ -108,10 +110,11 @@ export class WidgetContext {
 
   constructor(public dashboard: IDashboardComponent,
               private dashboardWidget: IDashboardWidget,
-              private widget: Widget) {}
+              private widget: Widget,
+              public parentDashboard?: IDashboardComponent) {}
 
   get stateController(): IStateController {
-    return this.dashboard.stateController;
+    return this.parentDashboard ? this.parentDashboard.stateController : this.dashboard.stateController;
   }
 
   get aliasController(): IAliasController {
@@ -194,16 +197,18 @@ export class WidgetContext {
   };
 
   controlApi: RpcApi = {
-    sendOneWayCommand: (method, params, timeout, persistent, requestUUID) => {
+    sendOneWayCommand: (method, params, timeout, persistent,
+                        retries, additionalInfo, requestUUID) => {
       if (this.defaultSubscription) {
-        return this.defaultSubscription.sendOneWayCommand(method, params, timeout, persistent, requestUUID);
+        return this.defaultSubscription.sendOneWayCommand(method, params, timeout, persistent, retries, additionalInfo, requestUUID);
       } else {
         return of(null);
       }
     },
-    sendTwoWayCommand: (method, params, timeout, persistent, requestUUID) => {
+    sendTwoWayCommand: (method, params, timeout, persistent,
+                        retries, additionalInfo, requestUUID) => {
       if (this.defaultSubscription) {
-        return this.defaultSubscription.sendTwoWayCommand(method, params, timeout, persistent, requestUUID);
+        return this.defaultSubscription.sendTwoWayCommand(method, params, timeout, persistent, retries, additionalInfo, requestUUID);
       } else {
         return of(null);
       }
@@ -228,6 +233,7 @@ export class WidgetContext {
   $scope: IDynamicWidgetComponent;
   isEdit: boolean;
   isMobile: boolean;
+  toastTargetId: string;
 
   widgetNamespace?: string;
   subscriptionApi?: WidgetSubscriptionApi;
@@ -255,6 +261,8 @@ export class WidgetContext {
 
   store?: Store<AppState>;
 
+  private popoverComponents: TbPopoverComponent[] = [];
+
   rxjs = {
     forkJoin,
     of,
@@ -263,6 +271,28 @@ export class WidgetContext {
     switchMap,
     catchError
   };
+
+  registerPopoverComponent(popoverComponent: TbPopoverComponent) {
+    this.popoverComponents.push(popoverComponent);
+    popoverComponent.tbDestroy.subscribe(() => {
+      const index = this.popoverComponents.indexOf(popoverComponent, 0);
+      if (index > -1) {
+        this.popoverComponents.splice(index, 1);
+      }
+    });
+  }
+
+  updatePopoverPositions() {
+    this.popoverComponents.forEach(comp => {
+      comp.updatePosition();
+    });
+  }
+
+  setPopoversHidden(hidden: boolean) {
+    this.popoverComponents.forEach(comp => {
+      comp.tbHidden = hidden;
+    });
+  }
 
   showSuccessToast(message: string, duration: number = 1000,
                    verticalPosition: NotificationVerticalPosition = 'bottom',
@@ -517,4 +547,28 @@ export function toWidgetType(widgetInfo: WidgetInfo, id: WidgetTypeId, tenantId:
     name: widgetInfo.widgetName,
     descriptor
   };
+}
+
+export function updateEntityParams(params: StateParams, targetEntityParamName?: string, targetEntityId?: EntityId,
+                                   entityName?: string, entityLabel?: string) {
+  if (targetEntityId) {
+    let targetEntityParams: StateParams;
+    if (targetEntityParamName && targetEntityParamName.length) {
+      targetEntityParams = params[targetEntityParamName];
+      if (!targetEntityParams) {
+        targetEntityParams = {};
+        params[targetEntityParamName] = targetEntityParams;
+        params.targetEntityParamName = targetEntityParamName;
+      }
+    } else {
+      targetEntityParams = params;
+    }
+    targetEntityParams.entityId = targetEntityId;
+    if (entityName) {
+      targetEntityParams.entityName = entityName;
+    }
+    if (entityLabel) {
+      targetEntityParams.entityLabel = entityLabel;
+    }
+  }
 }

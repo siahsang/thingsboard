@@ -1,5 +1,5 @@
 ///
-/// Copyright © 2016-2021 The Thingsboard Authors
+/// Copyright © 2016-2022 The Thingsboard Authors
 ///
 /// Licensed under the Apache License, Version 2.0 (the "License");
 /// you may not use this file except in compliance with the License.
@@ -14,7 +14,7 @@
 /// limitations under the License.
 ///
 
-import { ChangeDetectorRef, Component, Input, OnInit } from '@angular/core';
+import { ChangeDetectorRef, Component, HostBinding, Inject, Input, OnInit, Type } from '@angular/core';
 import { PageComponent } from '@shared/components/page.component';
 import { WidgetContext } from '@home/models/widget-component.models';
 import { Store } from '@ngrx/store';
@@ -32,6 +32,8 @@ import { FormattedData } from '@home/components/widget/lib/maps/map-models';
 import { hashCode, isNotEmptyStr } from '@core/utils';
 import cssjs from '@core/css/css';
 import { UtilsService } from '@core/services/utils.service';
+import { HOME_COMPONENTS_MODULE_TOKEN } from '@home/components/tokens';
+import { EntityDataPageLink } from '@shared/models/query/query.models';
 
 interface MarkdownWidgetSettings {
   markdownTextPattern: string;
@@ -44,23 +46,25 @@ type MarkdownTextFunction = (data: FormattedData[]) => string;
 
 @Component({
   selector: 'tb-markdown-widget ',
-  templateUrl: './markdown-widget.component.html',
-  styleUrls: ['./markdown-widget.component.scss']
+  templateUrl: './markdown-widget.component.html'
 })
 export class MarkdownWidgetComponent extends PageComponent implements OnInit {
 
   settings: MarkdownWidgetSettings;
   markdownTextFunction: MarkdownTextFunction;
 
+  @HostBinding('class')
+  markdownClass: string;
+
   @Input()
   ctx: WidgetContext;
 
   markdownText: string;
 
-  markdownClass: string;
 
   constructor(protected store: Store<AppState>,
               private utils: UtilsService,
+              @Inject(HOME_COMPONENTS_MODULE_TOKEN) public homeComponentsModule: Type<any>,
               private cd: ChangeDetectorRef) {
     super(store);
   }
@@ -75,8 +79,19 @@ export class MarkdownWidgetComponent extends PageComponent implements OnInit {
       const cssParser = new cssjs();
       cssParser.testMode = false;
       this.markdownClass += '-' + hashCode(cssString);
-      cssParser.cssPreviewNamespace = 'tb-markdown-view.' + this.markdownClass;
+      cssParser.cssPreviewNamespace = this.markdownClass;
       cssParser.createStyleElement(this.markdownClass, cssString);
+    }
+    const pageLink: EntityDataPageLink = {
+      page: 0,
+      pageSize: 16384,
+      textSearch: null,
+      dynamic: true
+    };
+    if (this.ctx.widgetConfig.datasources.length) {
+      this.ctx.defaultSubscription.subscribeAllForPaginatedData(pageLink, null);
+    } else {
+      this.onDataUpdated();
     }
   }
 
@@ -95,16 +110,15 @@ export class MarkdownWidgetComponent extends PageComponent implements OnInit {
           data: []
         }
       ];
+    } else {
+      initialData = [];
     }
-    let markdownText: string;
-    if (initialData) {
-      const data = parseData(initialData);
-      markdownText = this.settings.useMarkdownTextFunction ?
-        safeExecute(this.markdownTextFunction, [data]) : this.settings.markdownTextPattern;
-      const allData = flatData(data);
-      const replaceInfo = processPattern(markdownText, allData);
-      markdownText = fillPattern(markdownText, replaceInfo, allData);
-    }
+    const data = parseData(initialData);
+    let markdownText = this.settings.useMarkdownTextFunction ?
+      safeExecute(this.markdownTextFunction, [data]) : this.settings.markdownTextPattern;
+    const allData = flatData(data);
+    const replaceInfo = processPattern(markdownText, allData);
+    markdownText = fillPattern(markdownText, replaceInfo, allData);
     if (this.markdownText !== markdownText) {
       this.markdownText = this.utils.customTranslation(markdownText, markdownText);
       this.cd.detectChanges();

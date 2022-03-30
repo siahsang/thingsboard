@@ -1,5 +1,5 @@
 /**
- * Copyright © 2016-2021 The Thingsboard Authors
+ * Copyright © 2016-2022 The Thingsboard Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -58,6 +58,18 @@ public abstract class AbstractMqttAttributesIntegrationTest extends AbstractMqtt
     public void testPushAttributes() throws Exception {
         List<String> expectedKeys = Arrays.asList("key1", "key2", "key3", "key4", "key5");
         processJsonPayloadAttributesTest(MqttTopics.DEVICE_ATTRIBUTES_TOPIC, expectedKeys, PAYLOAD_VALUES_STR.getBytes());
+    }
+
+    @Test
+    public void testPushAttributesOnShortTopic() throws Exception {
+        List<String> expectedKeys = Arrays.asList("key1", "key2", "key3", "key4", "key5");
+        processJsonPayloadAttributesTest(MqttTopics.DEVICE_ATTRIBUTES_SHORT_TOPIC, expectedKeys, PAYLOAD_VALUES_STR.getBytes());
+    }
+
+    @Test
+    public void testPushAttributesOnShortJsonTopic() throws Exception {
+        List<String> expectedKeys = Arrays.asList("key1", "key2", "key3", "key4", "key5");
+        processJsonPayloadAttributesTest(MqttTopics.DEVICE_ATTRIBUTES_SHORT_JSON_TOPIC, expectedKeys, PAYLOAD_VALUES_STR.getBytes());
     }
 
     @Test

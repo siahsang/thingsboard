@@ -1,5 +1,5 @@
 /**
- * Copyright © 2016-2021 The Thingsboard Authors
+ * Copyright © 2016-2022 The Thingsboard Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -51,12 +51,15 @@ public class StatsActor extends ContextAwareActor {
     }
 
     public void onStatsPersistMsg(StatsPersistMsg msg) {
+        if (msg.isEmpty()) {
+            return;
+        }
         Event event = new Event();
         event.setEntityId(msg.getEntityId());
         event.setTenantId(msg.getTenantId());
         event.setType(DataConstants.STATS);
         event.setBody(toBodyJson(systemContext.getServiceInfoProvider().getServiceId(), msg.getMessagesProcessed(), msg.getErrorsOccurred()));
-        systemContext.getEventService().save(event);
+        systemContext.getEventService().saveAsync(event);
     }
 
     private JsonNode toBodyJson(String serviceId, long messagesProcessed, long errorsOccurred) {

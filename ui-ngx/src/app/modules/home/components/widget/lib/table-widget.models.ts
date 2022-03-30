@@ -1,5 +1,5 @@
 ///
-/// Copyright © 2016-2021 The Thingsboard Authors
+/// Copyright © 2016-2022 The Thingsboard Authors
 ///
 /// Licensed under the Apache License, Version 2.0 (the "License");
 /// you may not use this file except in compliance with the License.
@@ -23,6 +23,8 @@ import { Direction, EntityDataSortOrder, EntityKey } from '@shared/models/query/
 import { DataKeyType } from '@shared/models/telemetry/telemetry.models';
 import { WidgetContext } from '@home/models/widget-component.models';
 import { FormattedData } from '@home/components/widget/lib/maps/map-models';
+import { UtilsService } from '@core/services/utils.service';
+import { TranslateService } from '@ngx-translate/core';
 
 const tinycolor = tinycolor_;
 
@@ -38,6 +40,7 @@ export interface TableWidgetSettings {
   defaultPageSize: number;
   useRowStyleFunction: boolean;
   rowStyleFunction?: string;
+  reserveSpaceForHiddenAction?: boolean;
 }
 
 export interface TableWidgetDataKeySettings {
@@ -70,6 +73,7 @@ export interface EntityData {
 export interface EntityColumn extends DataKey {
   def: string;
   title: string;
+  sortable: boolean;
   entityKey?: EntityKey;
 }
 
@@ -328,9 +332,13 @@ export function checkHasActions(cellButtonActions: TableCellButtonActionDescript
 }
 
 export function prepareTableCellButtonActions(widgetContext: WidgetContext, cellButtonActions: TableCellButtonActionDescriptor[],
-                                              data: EntityData | AlarmDataInfo | FormattedData): TableCellButtonActionDescriptor[] {
-  return cellButtonActions.map(action =>
-    filterTableCellButtonAction(widgetContext, action, data) ? action : { id: action.id } as TableCellButtonActionDescriptor);
+                                              data: EntityData | AlarmDataInfo | FormattedData,
+                                              reserveSpaceForHiddenAction = true): TableCellButtonActionDescriptor[] {
+  if (reserveSpaceForHiddenAction) {
+    return cellButtonActions.map(action =>
+      filterTableCellButtonAction(widgetContext, action, data) ? action : { id: action.id } as TableCellButtonActionDescriptor);
+  }
+  return cellButtonActions.filter(action => filterTableCellButtonAction(widgetContext, action, data));
 }
 
 function filterTableCellButtonAction(widgetContext: WidgetContext,
@@ -345,6 +353,14 @@ function filterTableCellButtonAction(widgetContext: WidgetContext,
   } else {
     return true;
   }
+}
+
+export function noDataMessage(noDataDisplayMessage: string, defaultMessage: string,
+                              utils: UtilsService, translate: TranslateService): string {
+  if (isNotEmptyStr(noDataDisplayMessage)) {
+    return utils.customTranslation(noDataDisplayMessage, noDataDisplayMessage);
+  }
+  return translate.instant(defaultMessage);
 }
 
 export function constructTableCssString(widgetConfig: WidgetConfig): string {

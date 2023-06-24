@@ -1,5 +1,5 @@
 /**
- * Copyright © 2016-2022 The Thingsboard Authors
+ * Copyright © 2016-2023 The Thingsboard Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,14 +17,18 @@ package org.thingsboard.server.dao.device;
 
 import com.google.common.util.concurrent.ListenableFuture;
 import org.thingsboard.server.common.data.Device;
+import org.thingsboard.server.common.data.DeviceIdInfo;
 import org.thingsboard.server.common.data.DeviceInfo;
+import org.thingsboard.server.common.data.DeviceInfoFilter;
 import org.thingsboard.server.common.data.DeviceTransportType;
 import org.thingsboard.server.common.data.EntitySubtype;
+import org.thingsboard.server.common.data.id.DeviceId;
 import org.thingsboard.server.common.data.id.TenantId;
 import org.thingsboard.server.common.data.ota.OtaPackageType;
 import org.thingsboard.server.common.data.page.PageData;
 import org.thingsboard.server.common.data.page.PageLink;
 import org.thingsboard.server.dao.Dao;
+import org.thingsboard.server.dao.ExportableEntityDao;
 import org.thingsboard.server.dao.TenantEntityDao;
 
 import java.util.List;
@@ -35,7 +39,7 @@ import java.util.UUID;
  * The Interface DeviceDao.
  *
  */
-public interface DeviceDao extends Dao<Device>, TenantEntityDao {
+public interface DeviceDao extends Dao<Device>, TenantEntityDao, ExportableEntityDao<DeviceId, Device> {
 
     /**
      * Find device info by id.
@@ -72,15 +76,6 @@ public interface DeviceDao extends Dao<Device>, TenantEntityDao {
     PageData<Device> findDevicesByTenantId(UUID tenantId, PageLink pageLink);
 
     /**
-     * Find device infos by tenantId and page link.
-     *
-     * @param tenantId the tenantId
-     * @param pageLink the page link
-     * @return the list of device info objects
-     */
-    PageData<DeviceInfo> findDeviceInfosByTenantId(UUID tenantId, PageLink pageLink);
-
-    /**
      * Find devices by tenantId, type and page link.
      *
      * @param tenantId the tenantId
@@ -98,26 +93,6 @@ public interface DeviceDao extends Dao<Device>, TenantEntityDao {
     Long countDevicesByTenantIdAndDeviceProfileIdAndEmptyOtaPackage(UUID tenantId, UUID deviceProfileId, OtaPackageType otaPackageType);
 
     /**
-     * Find device infos by tenantId, type and page link.
-     *
-     * @param tenantId the tenantId
-     * @param type the type
-     * @param pageLink the page link
-     * @return the list of device info objects
-     */
-    PageData<DeviceInfo> findDeviceInfosByTenantIdAndType(UUID tenantId, String type, PageLink pageLink);
-
-    /**
-     * Find device infos by tenantId, deviceProfileId and page link.
-     *
-     * @param tenantId the tenantId
-     * @param deviceProfileId the deviceProfileId
-     * @param pageLink the page link
-     * @return the list of device info objects
-     */
-    PageData<DeviceInfo> findDeviceInfosByTenantIdAndDeviceProfileId(UUID tenantId, UUID deviceProfileId, PageLink pageLink);
-
-    /**
      * Find devices by tenantId and devices Ids.
      *
      * @param tenantId the tenantId
@@ -125,6 +100,22 @@ public interface DeviceDao extends Dao<Device>, TenantEntityDao {
      * @return the list of device objects
      */
     ListenableFuture<List<Device>> findDevicesByTenantIdAndIdsAsync(UUID tenantId, List<UUID> deviceIds);
+
+    /**
+     * Find devices by devices Ids.
+     *
+     * @param deviceIds the device Ids
+     * @return the list of device objects
+     */
+    List<Device> findDevicesByIds(List<UUID> deviceIds);
+
+    /**
+     * Find devices by devices Ids.
+     *
+     * @param deviceIds the device Ids
+     * @return the list of device objects
+     */
+    ListenableFuture<List<Device>> findDevicesByIdsAsync(List<UUID> deviceIds);
 
     /**
      * Find devices by tenantId, customerId and page link.
@@ -137,16 +128,6 @@ public interface DeviceDao extends Dao<Device>, TenantEntityDao {
     PageData<Device> findDevicesByTenantIdAndCustomerId(UUID tenantId, UUID customerId, PageLink pageLink);
 
     /**
-     * Find device infos by tenantId, customerId and page link.
-     *
-     * @param tenantId the tenantId
-     * @param customerId the customerId
-     * @param pageLink the page link
-     * @return the list of device info objects
-     */
-    PageData<DeviceInfo> findDeviceInfosByTenantIdAndCustomerId(UUID tenantId, UUID customerId, PageLink pageLink);
-
-    /**
      * Find devices by tenantId, customerId, type and page link.
      *
      * @param tenantId the tenantId
@@ -156,28 +137,6 @@ public interface DeviceDao extends Dao<Device>, TenantEntityDao {
      * @return the list of device objects
      */
     PageData<Device> findDevicesByTenantIdAndCustomerIdAndType(UUID tenantId, UUID customerId, String type, PageLink pageLink);
-
-    /**
-     * Find device infos by tenantId, customerId, type and page link.
-     *
-     * @param tenantId the tenantId
-     * @param customerId the customerId
-     * @param type the type
-     * @param pageLink the page link
-     * @return the list of device info objects
-     */
-    PageData<DeviceInfo> findDeviceInfosByTenantIdAndCustomerIdAndType(UUID tenantId, UUID customerId, String type, PageLink pageLink);
-
-    /**
-     * Find device infos by tenantId, customerId, deviceProfileId and page link.
-     *
-     * @param tenantId the tenantId
-     * @param customerId the customerId
-     * @param deviceProfileId the deviceProfileId
-     * @param pageLink the page link
-     * @return the list of device info objects
-     */
-    PageData<DeviceInfo> findDeviceInfosByTenantIdAndCustomerIdAndDeviceProfileId(UUID tenantId, UUID customerId, UUID deviceProfileId, PageLink pageLink);
 
     /**
      * Find devices by tenantId, customerId and devices Ids.
@@ -255,4 +214,8 @@ public interface DeviceDao extends Dao<Device>, TenantEntityDao {
      * @return the list of device objects
      */
     PageData<Device> findDevicesByTenantIdAndEdgeIdAndType(UUID tenantId, UUID edgeId, String type, PageLink pageLink);
+
+    PageData<DeviceIdInfo> findDeviceIdInfos(PageLink pageLink);
+
+    PageData<DeviceInfo> findDeviceInfosByFilter(DeviceInfoFilter filter, PageLink pageLink);
 }

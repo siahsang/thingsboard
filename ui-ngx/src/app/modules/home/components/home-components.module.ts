@@ -1,5 +1,5 @@
 ///
-/// Copyright © 2016-2022 The Thingsboard Authors
+/// Copyright © 2016-2023 The Thingsboard Authors
 ///
 /// Licensed under the Apache License, Version 2.0 (the "License");
 /// you may not use this file except in compliance with the License.
@@ -117,6 +117,7 @@ import { DefaultTenantProfileConfigurationComponent } from '@home/components/pro
 import { TenantProfileConfigurationComponent } from '@home/components/profile/tenant/tenant-profile-configuration.component';
 import { SmsProviderConfigurationComponent } from '@home/components/sms/sms-provider-configuration.component';
 import { AwsSnsProviderConfigurationComponent } from '@home/components/sms/aws-sns-provider-configuration.component';
+import { SmppSmsProviderConfigurationComponent } from '@home/components/sms/smpp-sms-provider-configuration.component';
 import { TwilioSmsProviderConfigurationComponent } from '@home/components/sms/twilio-sms-provider-configuration.component';
 import { Lwm2mProfileComponentsModule } from '@home/components/profile/device/lwm2m/lwm2m-profile-components.module';
 import { DashboardPageComponent } from '@home/components/dashboard-page/dashboard-page.component';
@@ -147,11 +148,45 @@ import {
   HOME_COMPONENTS_MODULE_TOKEN
 } from '@home/components/tokens';
 import { DashboardStateComponent } from '@home/components/dashboard-page/dashboard-state.component';
+import { AlarmDynamicValue } from '@home/components/profile/alarm/alarm-dynamic-value.component';
 import { EntityDetailsPageComponent } from '@home/components/entity/entity-details-page.component';
+import { TenantProfileQueuesComponent } from '@home/components/profile/queue/tenant-profile-queues.component';
+import { QueueFormComponent } from '@home/components/queue/queue-form.component';
+import { WidgetSettingsModule } from '@home/components/widget/lib/settings/widget-settings.module';
+import { WidgetSettingsComponent } from '@home/components/widget/widget-settings.component';
+import { RepositorySettingsComponent } from '@home/components/vc/repository-settings.component';
+import { VersionControlComponent } from '@home/components/vc/version-control.component';
+import { EntityVersionsTableComponent } from '@home/components/vc/entity-versions-table.component';
+import { EntityVersionCreateComponent } from '@home/components/vc/entity-version-create.component';
+import { EntityVersionRestoreComponent } from '@home/components/vc/entity-version-restore.component';
+import { EntityVersionDiffComponent } from '@home/components/vc/entity-version-diff.component';
+import { ComplexVersionCreateComponent } from '@home/components/vc/complex-version-create.component';
+import { EntityTypesVersionCreateComponent } from '@home/components/vc/entity-types-version-create.component';
+import { EntityTypesVersionLoadComponent } from '@home/components/vc/entity-types-version-load.component';
+import { ComplexVersionLoadComponent } from '@home/components/vc/complex-version-load.component';
+import { RemoveOtherEntitiesConfirmComponent } from '@home/components/vc/remove-other-entities-confirm.component';
+import { AutoCommitSettingsComponent } from '@home/components/vc/auto-commit-settings.component';
+import { RateLimitsListComponent } from '@home/components/profile/tenant/rate-limits/rate-limits-list.component';
+import { RateLimitsComponent } from '@home/components/profile/tenant/rate-limits/rate-limits.component';
+import { RateLimitsTextComponent } from '@home/components/profile/tenant/rate-limits/rate-limits-text.component';
+import { RateLimitsDetailsDialogComponent } from '@home/components/profile/tenant/rate-limits/rate-limits-details-dialog.component';
+import { AssetProfileComponent } from '@home/components/profile/asset-profile.component';
+import { AssetProfileDialogComponent } from '@home/components/profile/asset-profile-dialog.component';
+import { AssetProfileAutocompleteComponent } from '@home/components/profile/asset-profile-autocomplete.component';
+import { MODULES_MAP } from '@shared/models/constants';
+import { modulesMap } from '@modules/common/modules-map';
+import { AlarmAssigneePanelComponent } from '@home/components/alarm/alarm-assignee-panel.component';
+import { RouterTabsComponent } from '@home/components/router-tabs.component';
+import { SendNotificationButtonComponent } from '@home/components/notification/send-notification-button.component';
+import { AlarmFilterConfigComponent } from '@home/components/alarm/alarm-filter-config.component';
+import { AlarmAssigneeSelectPanelComponent } from '@home/components/alarm/alarm-assignee-select-panel.component';
+import { AlarmAssigneeSelectComponent } from '@home/components/alarm/alarm-assignee-select.component';
+import { DeviceInfoFilterComponent } from '@home/components/device/device-info-filter.component';
 
 @NgModule({
   declarations:
     [
+      RouterTabsComponent,
       EntitiesTableComponent,
       AddEntityDialogComponent,
       DetailsPanelComponent,
@@ -170,6 +205,10 @@ import { EntityDetailsPageComponent } from '@home/components/entity/entity-detai
       RelationFiltersComponent,
       AlarmTableHeaderComponent,
       AlarmTableComponent,
+      AlarmAssigneePanelComponent,
+      AlarmAssigneeSelectComponent,
+      AlarmAssigneeSelectPanelComponent,
+      AlarmFilterConfigComponent,
       AttributeTableComponent,
       AddAttributeDialogComponent,
       EditAttributeValuePanelComponent,
@@ -182,6 +221,7 @@ import { EntityDetailsPageComponent } from '@home/components/entity/entity-detai
       WidgetContainerComponent,
       WidgetComponent,
       LegendComponent,
+      WidgetSettingsComponent,
       WidgetConfigComponent,
       EntityFilterViewComponent,
       EntityFilterComponent,
@@ -243,16 +283,22 @@ import { EntityDetailsPageComponent } from '@home/components/entity/entity-detai
       DeviceProfileComponent,
       DeviceProfileDialogComponent,
       AddDeviceProfileDialogComponent,
+      DeviceInfoFilterComponent,
+      AssetProfileComponent,
+      AssetProfileDialogComponent,
+      AssetProfileAutocompleteComponent,
       RuleChainAutocompleteComponent,
       AlarmScheduleInfoComponent,
       DeviceProfileProvisionConfigurationComponent,
       AlarmScheduleComponent,
+      AlarmDynamicValue,
       AlarmDurationPredicateValueComponent,
       DeviceWizardDialogComponent,
       AlarmScheduleDialogComponent,
       EditAlarmDetailsDialogComponent,
       SmsProviderConfigurationComponent,
       AwsSnsProviderConfigurationComponent,
+      SmppSmsProviderConfigurationComponent,
       TwilioSmsProviderConfigurationComponent,
       DashboardToolbarComponent,
       DashboardPageComponent,
@@ -267,12 +313,32 @@ import { EntityDetailsPageComponent } from '@home/components/entity/entity-detai
       DashboardStateDialogComponent,
       DashboardImageDialogComponent,
       EmbedDashboardDialogComponent,
-      DisplayWidgetTypesPanelComponent
+      DisplayWidgetTypesPanelComponent,
+      TenantProfileQueuesComponent,
+      QueueFormComponent,
+      RepositorySettingsComponent,
+      VersionControlComponent,
+      EntityVersionsTableComponent,
+      EntityVersionCreateComponent,
+      EntityVersionRestoreComponent,
+      EntityVersionDiffComponent,
+      ComplexVersionCreateComponent,
+      EntityTypesVersionCreateComponent,
+      EntityTypesVersionLoadComponent,
+      ComplexVersionLoadComponent,
+      RemoveOtherEntitiesConfirmComponent,
+      AutoCommitSettingsComponent,
+      RateLimitsListComponent,
+      RateLimitsComponent,
+      RateLimitsTextComponent,
+      RateLimitsDetailsDialogComponent,
+      SendNotificationButtonComponent
     ],
   imports: [
     CommonModule,
     SharedModule,
     SharedHomeComponentsModule,
+    WidgetSettingsModule,
     Lwm2mProfileComponentsModule,
     SnmpDeviceProfileTransportModule,
     StatesControllerModule,
@@ -280,6 +346,7 @@ import { EntityDetailsPageComponent } from '@home/components/entity/entity-detai
     DeviceProfileCommonModule
   ],
   exports: [
+    RouterTabsComponent,
     EntitiesTableComponent,
     AddEntityDialogComponent,
     DetailsPanelComponent,
@@ -292,6 +359,10 @@ import { EntityDetailsPageComponent } from '@home/components/entity/entity-detai
     RelationTableComponent,
     RelationFiltersComponent,
     AlarmTableComponent,
+    AlarmAssigneePanelComponent,
+    AlarmAssigneeSelectComponent,
+    AlarmAssigneeSelectPanelComponent,
+    AlarmFilterConfigComponent,
     AttributeTableComponent,
     AliasesEntitySelectComponent,
     AliasesEntityAutocompleteComponent,
@@ -301,6 +372,7 @@ import { EntityDetailsPageComponent } from '@home/components/entity/entity-detai
     WidgetContainerComponent,
     WidgetComponent,
     LegendComponent,
+    WidgetSettingsComponent,
     WidgetConfigComponent,
     EntityFilterViewComponent,
     EntityFilterComponent,
@@ -355,17 +427,22 @@ import { EntityDetailsPageComponent } from '@home/components/entity/entity-detai
     DeviceProfileComponent,
     DeviceProfileDialogComponent,
     AddDeviceProfileDialogComponent,
+    DeviceInfoFilterComponent,
     RuleChainAutocompleteComponent,
     DeviceWizardDialogComponent,
+    AssetProfileComponent,
+    AssetProfileDialogComponent,
+    AssetProfileAutocompleteComponent,
     AlarmScheduleInfoComponent,
     AlarmScheduleComponent,
+    AlarmDynamicValue,
     AlarmScheduleDialogComponent,
     AlarmDurationPredicateValueComponent,
     EditAlarmDetailsDialogComponent,
     DeviceProfileProvisionConfigurationComponent,
-    AlarmScheduleComponent,
     SmsProviderConfigurationComponent,
     AwsSnsProviderConfigurationComponent,
+    SmppSmsProviderConfigurationComponent,
     TwilioSmsProviderConfigurationComponent,
     DashboardToolbarComponent,
     DashboardPageComponent,
@@ -380,7 +457,26 @@ import { EntityDetailsPageComponent } from '@home/components/entity/entity-detai
     DashboardStateDialogComponent,
     DashboardImageDialogComponent,
     EmbedDashboardDialogComponent,
-    DisplayWidgetTypesPanelComponent
+    DisplayWidgetTypesPanelComponent,
+    TenantProfileQueuesComponent,
+    QueueFormComponent,
+    RepositorySettingsComponent,
+    VersionControlComponent,
+    EntityVersionsTableComponent,
+    EntityVersionCreateComponent,
+    EntityVersionRestoreComponent,
+    EntityVersionDiffComponent,
+    ComplexVersionCreateComponent,
+    EntityTypesVersionCreateComponent,
+    EntityTypesVersionLoadComponent,
+    ComplexVersionLoadComponent,
+    RemoveOtherEntitiesConfirmComponent,
+    AutoCommitSettingsComponent,
+    RateLimitsListComponent,
+    RateLimitsComponent,
+    RateLimitsTextComponent,
+    RateLimitsDetailsDialogComponent,
+    SendNotificationButtonComponent
   ],
   providers: [
     WidgetComponentService,
@@ -389,7 +485,8 @@ import { EntityDetailsPageComponent } from '@home/components/entity/entity-detai
     {provide: EMBED_DASHBOARD_DIALOG_TOKEN, useValue: EmbedDashboardDialogComponent},
     {provide: COMPLEX_FILTER_PREDICATE_DIALOG_COMPONENT_TOKEN, useValue: ComplexFilterPredicateDialogComponent},
     {provide: DASHBOARD_PAGE_COMPONENT_TOKEN, useValue: DashboardPageComponent},
-    {provide: HOME_COMPONENTS_MODULE_TOKEN, useValue: HomeComponentsModule }
+    {provide: HOME_COMPONENTS_MODULE_TOKEN, useValue: HomeComponentsModule },
+    {provide: MODULES_MAP, useValue: modulesMap}
   ]
 })
 export class HomeComponentsModule { }

@@ -1,5 +1,5 @@
 ///
-/// Copyright © 2016-2022 The Thingsboard Authors
+/// Copyright © 2016-2023 The Thingsboard Authors
 ///
 /// Licensed under the Apache License, Version 2.0 (the "License");
 /// you may not use this file except in compliance with the License.
@@ -21,10 +21,9 @@ import {
   AttributeSourceProperty,
   ColorLevelSetting,
   DigitalGaugeSettings,
-  digitalGaugeSettingsSchema,
   FixedLevelColors
 } from '@home/components/widget/lib/digital-gauge.models';
-import * as tinycolor_ from 'tinycolor2';
+import tinycolor from 'tinycolor2';
 import { isDefined, isDefinedAndNotNull } from '@core/utils';
 import { prepareFontSettings } from '@home/components/widget/lib/settings.models';
 import { CanvasDigitalGauge, CanvasDigitalGaugeOptions } from '@home/components/widget/lib/canvas-digital-gauge';
@@ -42,16 +41,8 @@ import { DataKeyType } from '@shared/models/telemetry/telemetry.models';
 import { EMPTY, Observable } from 'rxjs';
 import GenericOptions = CanvasGauges.GenericOptions;
 
-const tinycolor = tinycolor_;
-
-const digitalGaugeSettingsSchemaValue = digitalGaugeSettingsSchema;
-
 // @dynamic
 export class TbCanvasDigitalGauge {
-
-  static get settingsSchema(): JsonSettingsSchema {
-    return digitalGaugeSettingsSchemaValue;
-  }
 
   constructor(protected ctx: WidgetContext, canvasId: string) {
     const gaugeElement = $('#' + canvasId, ctx.$container)[0];
@@ -72,6 +63,7 @@ export class TbCanvasDigitalGauge {
       (settings.unitTitle && settings.unitTitle.length > 0 ?
         settings.unitTitle : dataKey.label) : '');
 
+    this.localSettings.showUnitTitle = settings.showUnitTitle === true;
     this.localSettings.showTimestamp = settings.showTimestamp === true;
     this.localSettings.timestampFormat = settings.timestampFormat && settings.timestampFormat.length ?
       settings.timestampFormat : 'yyyy-MM-dd HH:mm:ss';
@@ -188,7 +180,8 @@ export class TbCanvasDigitalGauge {
       roundedLineCap: this.localSettings.roundedLineCap,
 
       symbol: this.localSettings.units,
-      label: this.localSettings.unitTitle,
+      unitTitle: this.localSettings.unitTitle,
+      showUnitTitle: this.localSettings.showUnitTitle,
       showTimestamp: this.localSettings.showTimestamp,
       hideValue: this.localSettings.hideValue,
       hideMinMax: this.localSettings.hideMinMax,
@@ -407,10 +400,10 @@ export class TbCanvasDigitalGauge {
         if (this.localSettings.showTimestamp) {
           timestamp = tvPair[0];
           const filter = this.ctx.$injector.get(DatePipe);
-          (this.gauge.options as CanvasDigitalGaugeOptions).label =
+          (this.gauge.options as CanvasDigitalGaugeOptions).labelTimestamp =
             filter.transform(timestamp, this.localSettings.timestampFormat);
         }
-        const value = tvPair[1];
+        const value = parseFloat(tvPair[1]);
         if (value !== this.gauge.value) {
           if (!this.gauge.options.animation) {
             this.gauge._value = value;

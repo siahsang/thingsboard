@@ -1,5 +1,5 @@
 /**
- * Copyright © 2016-2022 The Thingsboard Authors
+ * Copyright © 2016-2023 The Thingsboard Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,6 +21,7 @@ import org.junit.After;
 import org.junit.Assert;
 import org.junit.Before;
 import org.junit.Test;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.thingsboard.server.common.data.EntityView;
 import org.thingsboard.server.common.data.Tenant;
 import org.thingsboard.server.common.data.id.DeviceId;
@@ -35,10 +36,13 @@ import org.thingsboard.server.common.data.kv.DoubleDataEntry;
 import org.thingsboard.server.common.data.kv.KvEntry;
 import org.thingsboard.server.common.data.kv.LongDataEntry;
 import org.thingsboard.server.common.data.kv.ReadTsKvQuery;
+import org.thingsboard.server.common.data.kv.ReadTsKvQueryResult;
 import org.thingsboard.server.common.data.kv.StringDataEntry;
 import org.thingsboard.server.common.data.kv.TsKvEntry;
 import org.thingsboard.server.common.data.objects.TelemetryEntityView;
+import org.thingsboard.server.dao.entityview.EntityViewService;
 import org.thingsboard.server.dao.service.AbstractServiceTest;
+import org.thingsboard.server.dao.timeseries.TimeseriesService;
 
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -48,6 +52,7 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
 
@@ -57,6 +62,13 @@ import static org.junit.Assert.assertNotNull;
 
 @Slf4j
 public abstract class BaseTimeseriesServiceTest extends AbstractServiceTest {
+
+    @Autowired
+    TimeseriesService tsService;
+
+    @Autowired
+    EntityViewService entityViewService;
+
     static final int MAX_TIMEOUT = 30;
 
     private static final String STRING_KEY = "stringKey";
@@ -185,6 +197,140 @@ public abstract class BaseTimeseriesServiceTest extends AbstractServiceTest {
     }
 
     @Test
+    public void testFindByQuery_whenPeriodEqualsOneMilisecondPeriod() throws Exception {
+        DeviceId deviceId = new DeviceId(Uuids.timeBased());
+        saveEntries(deviceId, TS - 1L);
+        saveEntries(deviceId, TS);
+        saveEntries(deviceId, TS + 1L);
+
+        List<ReadTsKvQuery> queries = List.of(new BaseReadTsKvQuery(LONG_KEY, TS, TS, 1, 1, Aggregation.COUNT, DESC_ORDER));
+
+        List<TsKvEntry> entries = tsService.findAll(tenantId, deviceId, queries).get();
+        Assert.assertEquals(1, entries.size());
+        Assert.assertEquals(toTsEntry(TS, new LongDataEntry(LONG_KEY, 1L)), entries.get(0));
+
+        EntityView entityView = saveAndCreateEntityView(deviceId, List.of(LONG_KEY));
+
+        entries = tsService.findAll(tenantId, entityView.getId(), queries).get();
+        Assert.assertEquals(1, entries.size());
+        Assert.assertEquals(toTsEntry(TS, new LongDataEntry(LONG_KEY, 1L)), entries.get(0));
+    }
+
+    @Test
+    public void testFindByQuery_whenPeriodEqualsInterval() throws Exception {
+        DeviceId deviceId = new DeviceId(Uuids.timeBased());
+        saveEntries(deviceId, TS - 1L);
+        for (long i = TS; i <= TS + 100L; i += 10L) {
+            saveEntries(deviceId, i);
+        }
+        saveEntries(deviceId, TS + 100L + 1L);
+
+        List<ReadTsKvQuery> queries = List.of(new BaseReadTsKvQuery(LONG_KEY, TS, TS + 100, 100, 1, Aggregation.COUNT, DESC_ORDER));
+
+        List<TsKvEntry> entries = tsService.findAll(tenantId, deviceId, queries).get();
+        Assert.assertEquals(1, entries.size());
+        Assert.assertEquals(toTsEntry(TS + 50, new LongDataEntry(LONG_KEY, 10L)), entries.get(0));
+
+        EntityView entityView = saveAndCreateEntityView(deviceId, List.of(LONG_KEY));
+
+        entries = tsService.findAll(tenantId, entityView.getId(), queries).get();
+        Assert.assertEquals(1, entries.size());
+        Assert.assertEquals(toTsEntry(TS + 50, new LongDataEntry(LONG_KEY, 10L)), entries.get(0));
+    }
+
+    @Test
+    public void testFindByQuery_whenPeriodHaveTwoIntervalWithEqualsLength() throws Exception {
+        DeviceId deviceId = new DeviceId(Uuids.timeBased());
+        saveEntries(deviceId, TS - 1L);
+        for (long i = TS; i <= TS + 100000L; i += 10000L) {
+            saveEntries(deviceId, i);
+        }
+        saveEntries(deviceId, TS + 100000L + 1L);
+
+        List<ReadTsKvQuery> queries = List.of(new BaseReadTsKvQuery(LONG_KEY, TS, TS + 99999, 50000, 1, Aggregation.COUNT, DESC_ORDER));
+
+        List<TsKvEntry> entries = tsService.findAll(tenantId, deviceId, queries).get();
+        Assert.assertEquals(2, entries.size());
+        Assert.assertEquals(toTsEntry(TS + 25000, new LongDataEntry(LONG_KEY, 5L)), entries.get(0));
+        Assert.assertEquals(toTsEntry(TS + 75000 - 1, new LongDataEntry(LONG_KEY, 5L)), entries.get(1));
+
+        EntityView entityView = saveAndCreateEntityView(deviceId, List.of(LONG_KEY));
+
+        entries = tsService.findAll(tenantId, entityView.getId(), queries).get();
+        Assert.assertEquals(2, entries.size());
+        Assert.assertEquals(toTsEntry(TS + 25000, new LongDataEntry(LONG_KEY, 5L)), entries.get(0));
+        Assert.assertEquals(toTsEntry(TS + 75000 - 1, new LongDataEntry(LONG_KEY, 5L)), entries.get(1));
+    }
+
+    @Test
+    public void testFindByQuery_whenPeriodHaveTwoInterval_whereSecondShorterThanFirst() throws Exception {
+        DeviceId deviceId = new DeviceId(Uuids.timeBased());
+        saveEntries(deviceId, TS - 1L);
+        for (long i = TS; i <= TS + 80000L; i += 10000L) {
+            saveEntries(deviceId, i);
+        }
+        saveEntries(deviceId, TS + 80000L + 1L);
+
+        List<ReadTsKvQuery> queries = List.of(new BaseReadTsKvQuery(LONG_KEY, TS, TS + 80000, 50000, 1, Aggregation.COUNT, DESC_ORDER));
+
+        List<TsKvEntry> entries = tsService.findAll(tenantId, deviceId, queries).get();
+        Assert.assertEquals(2, entries.size());
+        Assert.assertEquals(toTsEntry(TS + 25000, new LongDataEntry(LONG_KEY, 5L)), entries.get(0));
+        Assert.assertEquals(toTsEntry(TS + 65000, new LongDataEntry(LONG_KEY, 3L)), entries.get(1));
+
+        EntityView entityView = saveAndCreateEntityView(deviceId, List.of(LONG_KEY));
+
+        entries = tsService.findAll(tenantId, entityView.getId(), queries).get();
+        Assert.assertEquals(2, entries.size());
+        Assert.assertEquals(toTsEntry(TS + 25000, new LongDataEntry(LONG_KEY, 5L)), entries.get(0));
+        Assert.assertEquals(toTsEntry(TS + 65000, new LongDataEntry(LONG_KEY, 3L)), entries.get(1));
+    }
+
+    @Test
+    public void testFindByQuery_whenPeriodHaveTwoIntervalWithEqualsLength_whereNotAllEntriesInRange() throws Exception {
+        DeviceId deviceId = new DeviceId(Uuids.timeBased());
+        for (long i = TS - 1L; i <= TS + 100000L + 1L; i += 10000) {
+            saveEntries(deviceId, i);
+        }
+
+        List<ReadTsKvQuery> queries = List.of(new BaseReadTsKvQuery(LONG_KEY, TS, TS + 99999, 50000, 1, Aggregation.COUNT, DESC_ORDER));
+
+        List<TsKvEntry> entries = tsService.findAll(tenantId, deviceId, queries).get();
+        Assert.assertEquals(2, entries.size());
+        Assert.assertEquals(toTsEntry(TS + 25000, new LongDataEntry(LONG_KEY, 5L)), entries.get(0));
+        Assert.assertEquals(toTsEntry(TS + 75000 - 1, new LongDataEntry(LONG_KEY, 4L)), entries.get(1));
+
+        EntityView entityView = saveAndCreateEntityView(deviceId, List.of(LONG_KEY));
+
+        entries = tsService.findAll(tenantId, entityView.getId(), queries).get();
+        Assert.assertEquals(2, entries.size());
+        Assert.assertEquals(toTsEntry(TS + 25000, new LongDataEntry(LONG_KEY, 5L)), entries.get(0));
+        Assert.assertEquals(toTsEntry(TS + 75000 - 1, new LongDataEntry(LONG_KEY, 4L)), entries.get(1));
+    }
+
+    @Test
+    public void testFindByQuery_whenPeriodHaveTwoInterval_whereSecondShorterThanFirst_andNotAllEntriesInRange() throws Exception {
+        DeviceId deviceId = new DeviceId(Uuids.timeBased());
+        for (long i = TS - 1L; i <= TS + 100000L + 1L; i += 10000L) {
+            saveEntries(deviceId, i);
+        }
+
+        List<ReadTsKvQuery> queries = List.of(new BaseReadTsKvQuery(LONG_KEY, TS, TS + 80000, 50000, 1, Aggregation.COUNT, DESC_ORDER));
+
+        List<TsKvEntry> entries = tsService.findAll(tenantId, deviceId, queries).get();
+        Assert.assertEquals(2, entries.size());
+        Assert.assertEquals(toTsEntry(TS + 25000, new LongDataEntry(LONG_KEY, 5L)), entries.get(0));
+        Assert.assertEquals(toTsEntry(TS + 65000, new LongDataEntry(LONG_KEY, 3L)), entries.get(1));
+
+        EntityView entityView = saveAndCreateEntityView(deviceId, List.of(LONG_KEY));
+
+        entries = tsService.findAll(tenantId, entityView.getId(), queries).get();
+        Assert.assertEquals(2, entries.size());
+        Assert.assertEquals(toTsEntry(TS + 25000, new LongDataEntry(LONG_KEY, 5L)), entries.get(0));
+        Assert.assertEquals(toTsEntry(TS + 65000, new LongDataEntry(LONG_KEY, 3L)), entries.get(1));
+    }
+
+    @Test
     public void testFindByQueryDescOrder() throws Exception {
         DeviceId deviceId = new DeviceId(Uuids.timeBased());
 
@@ -208,6 +354,36 @@ public abstract class BaseTimeseriesServiceTest extends AbstractServiceTest {
         Assert.assertEquals(toTsEntry(TS - 1, stringKvEntry), entries.get(0));
         Assert.assertEquals(toTsEntry(TS - 2, stringKvEntry), entries.get(1));
         Assert.assertEquals(toTsEntry(TS - 3, stringKvEntry), entries.get(2));
+    }
+
+    @Test
+    public void testFindAllByQueries_verifyQueryId() throws Exception {
+        DeviceId deviceId = new DeviceId(Uuids.timeBased());
+        saveEntries(deviceId, TS);
+        saveEntries(deviceId, TS - 2);
+        saveEntries(deviceId, TS - 10);
+
+        BaseReadTsKvQuery query = new BaseReadTsKvQuery(STRING_KEY, TS - 10, TS + 1, 0, 1000, Aggregation.NONE, "DESC");
+        findAndVerifyQueryId(deviceId, query);
+    }
+
+    @Test
+    public void testFindAllByQueries_verifyQueryId_forEntityView() throws Exception {
+        DeviceId deviceId = new DeviceId(Uuids.timeBased());
+        saveEntries(deviceId, TS);
+        saveEntries(deviceId, TS - 2);
+        saveEntries(deviceId, TS - 12);
+
+        EntityView entityView = saveAndCreateEntityView(deviceId, List.of(LONG_KEY));
+
+        BaseReadTsKvQuery query = new BaseReadTsKvQuery(LONG_KEY, TS - 10, TS + 1, 0, 1000, Aggregation.NONE, "DESC");
+        findAndVerifyQueryId(entityView.getId(), query);
+    }
+
+    private void findAndVerifyQueryId(EntityId entityId, ReadTsKvQuery query) throws InterruptedException, ExecutionException, TimeoutException {
+        List<ReadTsKvQueryResult> results = tsService.findAllByQueries(tenantId, entityId, List.of(query)).get(MAX_TIMEOUT, TimeUnit.SECONDS);
+        assertThat(results).isNotEmpty();
+        assertThat(results).extracting(ReadTsKvQueryResult::getQueryId).containsOnly(query.getId());
     }
 
     @Test
@@ -470,6 +646,31 @@ public abstract class BaseTimeseriesServiceTest extends AbstractServiceTest {
 
         assertEquals(50000, list.get(2).getTs());
         assertEquals(java.util.Optional.of(2L), list.get(2).getLongValue());
+    }
+
+    @Test
+    public void testSaveTs_RemoveTs_AndSaveTsAgain() throws Exception {
+        DeviceId deviceId = new DeviceId(Uuids.timeBased());
+
+        save(deviceId, 2000000L, 95);
+        save(deviceId, 4000000L, 100);
+        save(deviceId, 6000000L, 105);
+        List<TsKvEntry> list = tsService.findAll(tenantId, deviceId, Collections.singletonList(new BaseReadTsKvQuery(LONG_KEY, 0L,
+                8000000L, 200000, 3, Aggregation.NONE))).get(MAX_TIMEOUT, TimeUnit.SECONDS);
+        assertEquals(3, list.size());
+
+        tsService.remove(tenantId, deviceId, Collections.singletonList(
+                new BaseDeleteTsKvQuery(LONG_KEY, 0L, 8000000L, false))).get(MAX_TIMEOUT, TimeUnit.SECONDS);
+        list = tsService.findAll(tenantId, deviceId, Collections.singletonList(new BaseReadTsKvQuery(LONG_KEY, 0L,
+                8000000L, 200000, 3, Aggregation.NONE))).get(MAX_TIMEOUT, TimeUnit.SECONDS);
+        assertEquals(0, list.size());
+
+        save(deviceId, 2000000L, 99);
+        save(deviceId, 4000000L, 104);
+        save(deviceId, 6000000L, 109);
+        list = tsService.findAll(tenantId, deviceId, Collections.singletonList(new BaseReadTsKvQuery(LONG_KEY, 0L,
+                8000000L, 200000, 3, Aggregation.NONE))).get(MAX_TIMEOUT, TimeUnit.SECONDS);
+        assertEquals(3, list.size());
     }
 
     private TsKvEntry save(DeviceId deviceId, long ts, long value) throws Exception {

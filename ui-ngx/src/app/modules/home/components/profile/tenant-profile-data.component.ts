@@ -1,5 +1,5 @@
 ///
-/// Copyright © 2016-2022 The Thingsboard Authors
+/// Copyright © 2016-2023 The Thingsboard Authors
 ///
 /// Licensed under the Apache License, Version 2.0 (the "License");
 /// you may not use this file except in compliance with the License.
@@ -14,12 +14,13 @@
 /// limitations under the License.
 ///
 
-import { Component, forwardRef, Input, OnInit } from '@angular/core';
-import { ControlValueAccessor, FormBuilder, FormGroup, NG_VALUE_ACCESSOR, Validators } from '@angular/forms';
+import { Component, forwardRef, Input, OnDestroy, OnInit } from '@angular/core';
+import { ControlValueAccessor, UntypedFormBuilder, UntypedFormGroup, NG_VALUE_ACCESSOR, Validators } from '@angular/forms';
 import { Store } from '@ngrx/store';
 import { AppState } from '@app/core/core.state';
 import { coerceBooleanProperty } from '@angular/cdk/coercion';
 import { TenantProfileData } from '@shared/models/tenant.model';
+import { Subscription } from 'rxjs';
 
 @Component({
   selector: 'tb-tenant-profile-data',
@@ -31,9 +32,9 @@ import { TenantProfileData } from '@shared/models/tenant.model';
     multi: true
   }]
 })
-export class TenantProfileDataComponent implements ControlValueAccessor, OnInit {
+export class TenantProfileDataComponent implements ControlValueAccessor, OnInit, OnDestroy {
 
-  tenantProfileDataFormGroup: FormGroup;
+  tenantProfileDataFormGroup: UntypedFormGroup;
 
   private requiredValue: boolean;
   get required(): boolean {
@@ -47,10 +48,11 @@ export class TenantProfileDataComponent implements ControlValueAccessor, OnInit 
   @Input()
   disabled: boolean;
 
+  private valueChange$: Subscription = null;
   private propagateChange = (v: any) => { };
 
   constructor(private store: Store<AppState>,
-              private fb: FormBuilder) {
+              private fb: UntypedFormBuilder) {
   }
 
   registerOnChange(fn: any): void {
@@ -64,9 +66,15 @@ export class TenantProfileDataComponent implements ControlValueAccessor, OnInit 
     this.tenantProfileDataFormGroup = this.fb.group({
       configuration: [null, Validators.required]
     });
-    this.tenantProfileDataFormGroup.valueChanges.subscribe(() => {
+    this.valueChange$ = this.tenantProfileDataFormGroup.valueChanges.subscribe(() => {
       this.updateModel();
     });
+  }
+
+  ngOnDestroy() {
+    if (this.valueChange$) {
+      this.valueChange$.unsubscribe();
+    }
   }
 
   setDisabledState(isDisabled: boolean): void {
@@ -79,7 +87,7 @@ export class TenantProfileDataComponent implements ControlValueAccessor, OnInit 
   }
 
   writeValue(value: TenantProfileData | null): void {
-    this.tenantProfileDataFormGroup.patchValue({configuration: value?.configuration}, {emitEvent: false});
+    this.tenantProfileDataFormGroup.patchValue({configuration: value}, {emitEvent: false});
   }
 
   private updateModel() {
@@ -87,7 +95,7 @@ export class TenantProfileDataComponent implements ControlValueAccessor, OnInit 
     if (this.tenantProfileDataFormGroup.valid) {
       tenantProfileData = this.tenantProfileDataFormGroup.getRawValue();
     }
-    this.propagateChange(tenantProfileData);
+    this.propagateChange(tenantProfileData?.configuration);
   }
 
 }

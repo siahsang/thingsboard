@@ -1,5 +1,5 @@
 ///
-/// Copyright © 2016-2022 The Thingsboard Authors
+/// Copyright © 2016-2023 The Thingsboard Authors
 ///
 /// Licensed under the Apache License, Version 2.0 (the "License");
 /// you may not use this file except in compliance with the License.
@@ -69,6 +69,7 @@ import {
   AddEntitiesToEdgeDialogComponent,
   AddEntitiesToEdgeDialogData
 } from '@home/dialogs/add-entities-to-edge-dialog.component';
+import { HomeDialogsService } from '@home/dialogs/home-dialogs.service';
 
 @Injectable()
 export class DashboardsTableConfigResolver implements Resolve<EntityTableConfig<DashboardInfo | Dashboard>> {
@@ -80,6 +81,7 @@ export class DashboardsTableConfigResolver implements Resolve<EntityTableConfig<
               private customerService: CustomerService,
               private edgeService: EdgeService,
               private dialogService: DialogService,
+              private homeDialogs: HomeDialogsService,
               private importExport: ImportExportService,
               private translate: TranslateService,
               private datePipe: DatePipe,
@@ -91,6 +93,8 @@ export class DashboardsTableConfigResolver implements Resolve<EntityTableConfig<
     this.config.entityTabsComponent = DashboardTabsComponent;
     this.config.entityTranslations = entityTypeTranslations.get(EntityType.DASHBOARD);
     this.config.entityResources = entityTypeResources.get(EntityType.DASHBOARD);
+
+    this.config.rowPointer = true;
 
     this.config.deleteEntityTitle = dashboard =>
       this.translate.instant('dashboard.delete-dashboard-title', {dashboardTitle: dashboard.title});
@@ -105,6 +109,15 @@ export class DashboardsTableConfigResolver implements Resolve<EntityTableConfig<
     this.config.onEntityAction = action => this.onDashboardAction(action);
     this.config.detailsReadonly = () => (this.config.componentsData.dashboardScope === 'customer_user' ||
       this.config.componentsData.dashboardScope === 'edge_customer_user');
+
+    this.config.handleRowClick = ($event, dashboard) => {
+      if (this.config.isDetailsOpen()) {
+        this.config.toggleEntityDetails($event, dashboard);
+      } else {
+        this.openDashboard($event, dashboard);
+      }
+      return true;
+    };
   }
 
   resolve(route: ActivatedRouteSnapshot): Observable<EntityTableConfig<DashboardInfo | Dashboard>> {
@@ -195,14 +208,6 @@ export class DashboardsTableConfigResolver implements Resolve<EntityTableConfig<
 
   configureCellActions(dashboardScope: string): Array<CellActionDescriptor<DashboardInfo>> {
     const actions: Array<CellActionDescriptor<DashboardInfo>> = [];
-    actions.push(
-      {
-        name: this.translate.instant('dashboard.open-dashboard'),
-        icon: 'dashboard',
-        isEnabled: () => true,
-        onAction: ($event, entity) => this.openDashboard($event, entity)
-      }
-    );
     if (dashboardScope === 'tenant') {
       actions.push(
         {
@@ -269,6 +274,14 @@ export class DashboardsTableConfigResolver implements Resolve<EntityTableConfig<
         }
       );
     }
+    actions.push(
+      {
+        name: this.translate.instant('dashboard.dashboard-details'),
+        icon: 'edit',
+        isEnabled: () => true,
+        onAction: ($event, entity) => this.config.toggleEntityDetails($event, entity)
+      }
+    );
     return actions;
   }
 

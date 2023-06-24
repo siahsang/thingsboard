@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# Copyright © 2016-2022 The Thingsboard Authors
+# Copyright © 2016-2023 The Thingsboard Authors
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -26,4 +26,5 @@ source "${CONF_FOLDER}/${configfile}"
 
 cd ${pkg.installFolder}
 
-exec /bin/sh -c "node server.js"
+# This will forward this PID 1 to the node.js and forward SIGTERM for graceful shutdown as well
+exec node --no-compilation-cache server.js

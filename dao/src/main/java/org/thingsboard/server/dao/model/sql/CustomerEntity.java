@@ -1,5 +1,5 @@
 /**
- * Copyright © 2016-2022 The Thingsboard Authors
+ * Copyright © 2016-2023 The Thingsboard Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -77,6 +77,9 @@ public final class CustomerEntity extends BaseSqlEntity<Customer> implements Sea
     @Column(name = ModelConstants.CUSTOMER_ADDITIONAL_INFO_PROPERTY)
     private JsonNode additionalInfo;
 
+    @Column(name = ModelConstants.EXTERNAL_ID_PROPERTY)
+    private UUID externalId;
+
     public CustomerEntity() {
         super();
     }
@@ -97,6 +100,9 @@ public final class CustomerEntity extends BaseSqlEntity<Customer> implements Sea
         this.phone = customer.getPhone();
         this.email = customer.getEmail();
         this.additionalInfo = customer.getAdditionalInfo();
+        if (customer.getExternalId() != null) {
+            this.externalId = customer.getExternalId().getId();
+        }
     }
 
     @Override
@@ -124,6 +130,9 @@ public final class CustomerEntity extends BaseSqlEntity<Customer> implements Sea
         customer.setPhone(phone);
         customer.setEmail(email);
         customer.setAdditionalInfo(additionalInfo);
+        if (externalId != null) {
+            customer.setExternalId(new CustomerId(externalId));
+        }
         return customer;
     }
 

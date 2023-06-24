@@ -1,5 +1,5 @@
 ///
-/// Copyright © 2016-2022 The Thingsboard Authors
+/// Copyright © 2016-2023 The Thingsboard Authors
 ///
 /// Licensed under the Apache License, Version 2.0 (the "License");
 /// you may not use this file except in compliance with the License.
@@ -24,6 +24,7 @@ import {
   NodeScriptTestDialogData
 } from '@shared/components/dialog/node-script-test-dialog.component';
 import { sortObjectKeys } from '@core/utils';
+import { ScriptLanguage } from '@shared/models/rule-node.models';
 
 @Injectable({
   providedIn: 'root'
@@ -35,7 +36,8 @@ export class NodeScriptTestService {
   }
 
   testNodeScript(script: string, scriptType: string, functionTitle: string,
-                 functionName: string, argNames: string[], ruleNodeId: string, helpId?: string): Observable<string> {
+                 functionName: string, argNames: string[], ruleNodeId: string, helpId?: string,
+                 scriptLang?: ScriptLanguage): Observable<string> {
     if (ruleNodeId) {
       return this.ruleChainService.getLatestRuleNodeDebugInput(ruleNodeId).pipe(
         switchMap((debugIn) => {
@@ -44,26 +46,31 @@ export class NodeScriptTestService {
           let msgType: string;
           if (debugIn) {
             if (debugIn.data) {
-              msg = JSON.parse(debugIn.data);
+              try {
+                msg = JSON.parse(debugIn.data);
+              } catch (e) {}
             }
             if (debugIn.metadata) {
-              metadata = JSON.parse(debugIn.metadata);
+              try {
+                metadata = JSON.parse(debugIn.metadata);
+              } catch (e) {}
             }
             msgType = debugIn.msgType;
           }
           return this.openTestScriptDialog(script, scriptType, functionTitle,
-            functionName, argNames, msg, metadata, msgType, helpId);
+            functionName, argNames, msg, metadata, msgType, helpId, scriptLang);
         })
       );
     } else {
       return this.openTestScriptDialog(script, scriptType, functionTitle,
-        functionName, argNames, null, null, null, helpId);
+        functionName, argNames, null, null, null, helpId, scriptLang);
     }
   }
 
   private openTestScriptDialog(script: string, scriptType: string,
                                functionTitle: string, functionName: string, argNames: string[],
-                               msg?: any, metadata?: {[key: string]: string}, msgType?: string, helpId?: string): Observable<string> {
+                               msg?: any, metadata?: {[key: string]: string}, msgType?: string, helpId?: string,
+                               scriptLang?: ScriptLanguage): Observable<string> {
     if (!msg) {
       msg = {
         temperature: 22.4,
@@ -85,7 +92,7 @@ export class NodeScriptTestService {
     return this.dialog.open<NodeScriptTestDialogComponent, NodeScriptTestDialogData, string>(NodeScriptTestDialogComponent,
       {
         disableClose: true,
-        panelClass: ['tb-dialog', 'tb-fullscreen-dialog', 'tb-fullscreen-dialog-gt-sm'],
+        panelClass: ['tb-dialog', 'tb-fullscreen-dialog', 'tb-fullscreen-dialog-gt-xs'],
         data: {
           msg,
           metadata,
@@ -95,7 +102,8 @@ export class NodeScriptTestService {
           script,
           scriptType,
           argNames,
-          helpId
+          helpId,
+          scriptLang
         }
       }).afterClosed();
   }

@@ -1,5 +1,5 @@
 ///
-/// Copyright © 2016-2022 The Thingsboard Authors
+/// Copyright © 2016-2023 The Thingsboard Authors
 ///
 /// Licensed under the Apache License, Version 2.0 (the "License");
 /// you may not use this file except in compliance with the License.
@@ -15,6 +15,7 @@
 ///
 
 import {
+  ChangeDetectorRef,
   Component,
   ElementRef,
   forwardRef,
@@ -24,7 +25,7 @@ import {
   ViewChild,
   ViewEncapsulation
 } from '@angular/core';
-import { ControlValueAccessor, FormControl, NG_VALIDATORS, NG_VALUE_ACCESSOR, Validator } from '@angular/forms';
+import { ControlValueAccessor, UntypedFormControl, NG_VALIDATORS, NG_VALUE_ACCESSOR, Validator } from '@angular/forms';
 import { Ace } from 'ace-builds';
 import { getAce } from '@shared/models/ace/ace.models';
 import { coerceBooleanProperty } from '@angular/cdk/coercion';
@@ -91,7 +92,8 @@ export class CssComponent implements OnInit, OnDestroy, ControlValueAccessor, Va
               private utils: UtilsService,
               private translate: TranslateService,
               protected store: Store<AppState>,
-              private raf: RafService) {
+              private raf: RafService,
+              private cd: ChangeDetectorRef) {
   }
 
   ngOnInit(): void {
@@ -128,6 +130,7 @@ export class CssComponent implements OnInit, OnDestroy, ControlValueAccessor, Va
           if (this.hasErrors !== hasErrors) {
             this.hasErrors = hasErrors;
             this.propagateChange(this.modelValue);
+            this.cd.markForCheck();
           }
         });
         this.editorResize$ = new ResizeObserver(() => {
@@ -141,6 +144,9 @@ export class CssComponent implements OnInit, OnDestroy, ControlValueAccessor, Va
   ngOnDestroy(): void {
     if (this.editorResize$) {
       this.editorResize$.disconnect();
+    }
+    if (this.cssEditor) {
+      this.cssEditor.destroy();
     }
   }
 
@@ -169,7 +175,7 @@ export class CssComponent implements OnInit, OnDestroy, ControlValueAccessor, Va
     }
   }
 
-  public validate(c: FormControl) {
+  public validate(c: UntypedFormControl) {
     return (!this.hasErrors) ? null : {
       css: {
         valid: false,
@@ -202,6 +208,7 @@ export class CssComponent implements OnInit, OnDestroy, ControlValueAccessor, Va
     if (this.modelValue !== editorValue) {
       this.modelValue = editorValue;
       this.propagateChange(this.modelValue);
+      this.cd.markForCheck();
     }
   }
 }

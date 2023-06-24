@@ -1,5 +1,5 @@
 /**
- * Copyright © 2016-2022 The Thingsboard Authors
+ * Copyright © 2016-2023 The Thingsboard Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -38,5 +38,9 @@ public class CassandraTsPartitionsCache {
 
     public void put(CassandraPartitionCacheKey key) {
         partitionsCache.put(key, CompletableFuture.completedFuture(true));
+    }
+
+    public void invalidate(CassandraPartitionCacheKey key) {
+        partitionsCache.synchronous().invalidate(key);
     }
 }

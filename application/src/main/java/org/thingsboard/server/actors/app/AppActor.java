@@ -1,5 +1,5 @@
 /**
- * Copyright © 2016-2022 The Thingsboard Authors
+ * Copyright © 2016-2023 The Thingsboard Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -30,39 +30,33 @@ import org.thingsboard.server.actors.service.DefaultActorService;
 import org.thingsboard.server.actors.tenant.TenantActor;
 import org.thingsboard.server.common.data.EntityType;
 import org.thingsboard.server.common.data.Tenant;
-import org.thingsboard.server.common.data.TenantProfile;
-import org.thingsboard.server.common.data.id.EntityId;
 import org.thingsboard.server.common.data.id.TenantId;
 import org.thingsboard.server.common.data.page.PageDataIterable;
 import org.thingsboard.server.common.data.plugin.ComponentLifecycleEvent;
 import org.thingsboard.server.common.msg.MsgType;
 import org.thingsboard.server.common.msg.TbActorMsg;
 import org.thingsboard.server.common.msg.aware.TenantAwareMsg;
-import org.thingsboard.server.common.msg.edge.EdgeEventUpdateMsg;
+import org.thingsboard.server.common.msg.edge.EdgeSessionMsg;
 import org.thingsboard.server.common.msg.plugin.ComponentLifecycleMsg;
 import org.thingsboard.server.common.msg.queue.QueueToRuleEngineMsg;
 import org.thingsboard.server.common.msg.queue.RuleEngineException;
 import org.thingsboard.server.common.msg.queue.ServiceType;
 import org.thingsboard.server.dao.model.ModelConstants;
 import org.thingsboard.server.dao.tenant.TenantService;
-import org.thingsboard.server.dao.tenant.TbTenantProfileCache;
 import org.thingsboard.server.service.transport.msg.TransportToDeviceActorMsgWrapper;
 
 import java.util.HashSet;
-import java.util.Optional;
 import java.util.Set;
 
 @Slf4j
 public class AppActor extends ContextAwareActor {
 
-    private final TbTenantProfileCache tenantProfileCache;
     private final TenantService tenantService;
     private final Set<TenantId> deletedTenants;
     private volatile boolean ruleChainsInitialized;
 
     private AppActor(ActorSystemContext systemContext) {
         super(systemContext);
-        this.tenantProfileCache = systemContext.getTenantProfileCache();
         this.tenantService = systemContext.getTenantService();
         this.deletedTenants = new HashSet<>();
     }
@@ -111,7 +105,9 @@ public class AppActor extends ContextAwareActor {
                 onToDeviceActorMsg((TenantAwareMsg) msg, true);
                 break;
             case EDGE_EVENT_UPDATE_TO_EDGE_SESSION_MSG:
-                onToTenantActorMsg((EdgeEventUpdateMsg) msg);
+            case EDGE_SYNC_REQUEST_TO_EDGE_SESSION_MSG:
+            case EDGE_SYNC_RESPONSE_FROM_EDGE_SESSION_MSG:
+                onToEdgeSessionMsg((EdgeSessionMsg) msg);
                 break;
             case SESSION_TIMEOUT_MSG:
                 ctx.broadcastToChildrenByType(msg, EntityType.TENANT);
@@ -125,28 +121,12 @@ public class AppActor extends ContextAwareActor {
     private void initTenantActors() {
         log.info("Starting main system actor.");
         try {
-            // This Service may be started for specific tenant only.
-            Optional<TenantId> isolatedTenantId = systemContext.getServiceInfoProvider().getIsolatedTenant();
-            if (isolatedTenantId.isPresent()) {
-                Tenant tenant = systemContext.getTenantService().findTenantById(isolatedTenantId.get());
-                if (tenant != null) {
+            if (systemContext.isTenantComponentsInitEnabled()) {
+                PageDataIterable<Tenant> tenantIterator = new PageDataIterable<>(tenantService::findTenants, ENTITY_PACK_LIMIT);
+                for (Tenant tenant : tenantIterator) {
                     log.debug("[{}] Creating tenant actor", tenant.getId());
                     getOrCreateTenantActor(tenant.getId());
-                    log.debug("Tenant actor created.");
-                } else {
-                    log.error("[{}] Tenant with such ID does not exist", isolatedTenantId.get());
-                }
-            } else if (systemContext.isTenantComponentsInitEnabled()) {
-                PageDataIterable<Tenant> tenantIterator = new PageDataIterable<>(tenantService::findTenants, ENTITY_PACK_LIMIT);
-                boolean isRuleEngine = systemContext.getServiceInfoProvider().isService(ServiceType.TB_RULE_ENGINE);
-                boolean isCore = systemContext.getServiceInfoProvider().isService(ServiceType.TB_CORE);
-                for (Tenant tenant : tenantIterator) {
-                    TenantProfile tenantProfile = tenantProfileCache.get(tenant.getTenantProfileId());
-                    if (isCore || (isRuleEngine && !tenantProfile.isIsolatedTbRuleEngine())) {
-                        log.debug("[{}] Creating tenant actor", tenant.getId());
-                        getOrCreateTenantActor(tenant.getId());
-                        log.debug("[{}] Tenant actor created.", tenant.getId());
-                    }
+                    log.debug("[{}] Tenant actor created.", tenant.getId());
                 }
             }
             log.info("Main system actor started.");
@@ -215,7 +195,7 @@ public class AppActor extends ContextAwareActor {
                 () -> new TenantActor.ActorCreator(systemContext, tenantId));
     }
 
-    private void onToTenantActorMsg(EdgeEventUpdateMsg msg) {
+    private void onToEdgeSessionMsg(EdgeSessionMsg msg) {
         TbActorRef target = null;
         if (ModelConstants.SYSTEM_TENANT.equals(msg.getTenantId())) {
             log.warn("Message has system tenant id: {}", msg);
@@ -225,7 +205,7 @@ public class AppActor extends ContextAwareActor {
         if (target != null) {
             target.tellWithHighPriority(msg);
         } else {
-            log.debug("[{}] Invalid edge event update msg: {}", msg.getTenantId(), msg);
+            log.debug("[{}] Invalid edge session msg: {}", msg.getTenantId(), msg);
         }
     }
 

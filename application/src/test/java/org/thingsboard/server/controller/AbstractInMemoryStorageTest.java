@@ -1,5 +1,5 @@
 /**
- * Copyright © 2016-2022 The Thingsboard Authors
+ * Copyright © 2016-2023 The Thingsboard Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,27 +16,8 @@
 package org.thingsboard.server.controller;
 
 import lombok.extern.slf4j.Slf4j;
-import org.junit.After;
-import org.junit.Before;
-import org.thingsboard.server.queue.memory.InMemoryStorage;
 
 @Slf4j
 public abstract class AbstractInMemoryStorageTest {
-
-    @Before
-    public void setUpInMemoryStorage() {
-        log.info("set up InMemoryStorage");
-        cleanupInMemStorage();
-    }
-
-    @After
-    public void tearDownInMemoryStorage() {
-        log.info("tear down InMemoryStorage");
-        cleanupInMemStorage();
-    }
-
-    public static void cleanupInMemStorage() {
-        InMemoryStorage.getInstance().cleanup();
-    }
 
 }

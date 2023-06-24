@@ -1,5 +1,5 @@
 /**
- * Copyright © 2016-2022 The Thingsboard Authors
+ * Copyright © 2016-2023 The Thingsboard Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,7 +17,6 @@ package org.thingsboard.rule.engine.mail;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.commons.lang3.StringUtils;
 import org.springframework.mail.javamail.JavaMailSenderImpl;
 import org.thingsboard.rule.engine.api.RuleNode;
 import org.thingsboard.rule.engine.api.TbContext;
@@ -26,6 +25,8 @@ import org.thingsboard.rule.engine.api.TbNode;
 import org.thingsboard.rule.engine.api.TbNodeConfiguration;
 import org.thingsboard.rule.engine.api.TbNodeException;
 import org.thingsboard.rule.engine.api.util.TbNodeUtils;
+import org.thingsboard.rule.engine.external.TbAbstractExternalNode;
+import org.thingsboard.server.common.data.StringUtils;
 import org.thingsboard.server.common.data.plugin.ComponentType;
 import org.thingsboard.server.common.msg.TbMsg;
 
@@ -44,10 +45,10 @@ import static org.thingsboard.common.util.DonAsynchron.withCallback;
                 " where created using <code>to Email</code> transformation Node, please connect this Node " +
                 "with <code>to Email</code> Node using <code>Successful</code> chain.",
         uiResources = {"static/rulenode/rulenode-core-config.js"},
-        configDirective = "tbActionNodeSendEmailConfig",
+        configDirective = "tbExternalNodeSendEmailConfig",
         icon = "send"
 )
-public class TbSendEmailNode implements TbNode {
+public class TbSendEmailNode extends TbAbstractExternalNode {
 
     private static final String MAIL_PROP = "mail.";
     static final String SEND_EMAIL_TYPE = "SEND_EMAIL";
@@ -58,8 +59,9 @@ public class TbSendEmailNode implements TbNode {
 
     @Override
     public void init(TbContext ctx, TbNodeConfiguration configuration) throws TbNodeException {
+        super.init(ctx);
+        this.config = TbNodeUtils.convert(configuration, TbSendEmailNodeConfiguration.class);
         try {
-            this.config = TbNodeUtils.convert(configuration, TbSendEmailNodeConfiguration.class);
             if (!this.config.isUseSystemSmtpSettings()) {
                 mailSender = createMailSender();
             }
@@ -77,8 +79,9 @@ public class TbSendEmailNode implements TbNode {
                         sendEmail(ctx, msg, email);
                         return null;
                     }),
-                    ok -> ctx.tellSuccess(msg),
-                    fail -> ctx.tellFailure(msg, fail));
+                    ok -> tellSuccess(ctx, msg),
+                    fail -> tellFailure(ctx, msg, fail));
+            ackIfNeeded(ctx, msg);
         } catch (Exception ex) {
             ctx.tellFailure(msg, ex);
         }
@@ -88,7 +91,7 @@ public class TbSendEmailNode implements TbNode {
         if (this.config.isUseSystemSmtpSettings()) {
             ctx.getMailService(true).send(ctx.getTenantId(), msg.getCustomerId(), email);
         } else {
-            ctx.getMailService(false).send(ctx.getTenantId(), msg.getCustomerId(), email, this.mailSender);
+            ctx.getMailService(false).send(ctx.getTenantId(), msg.getCustomerId(), email, this.mailSender, config.getTimeout());
         }
     }
 
@@ -105,10 +108,6 @@ public class TbSendEmailNode implements TbNode {
             log.warn("Not expected msg type [{}] for SendEmail Node", type);
             throw new IllegalStateException("Not expected msg type " + type + " for SendEmail Node");
         }
-    }
-
-    @Override
-    public void destroy() {
     }
 
     private JavaMailSenderImpl createMailSender() {

@@ -1,5 +1,5 @@
 #
-# Copyright © 2016-2022 The Thingsboard Authors
+# Copyright © 2016-2023 The Thingsboard Authors
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -14,12 +14,12 @@
 # limitations under the License.
 #
 
-version: '2.2'
+version: '3.0'
 
 services:
   kafka:
     restart: always
-    image: "wurstmeister/kafka:2.13-2.6.0"
+    image: "bitnami/kafka:3.2.0"
     ports:
       - "9092:9092"
     env_file:
@@ -36,25 +36,21 @@ services:
       - queue-kafka.env
     depends_on:
       - kafka
-      - redis
   tb-core2:
     env_file:
       - queue-kafka.env
     depends_on:
       - kafka
-      - redis
   tb-rule-engine1:
     env_file:
       - queue-kafka.env
     depends_on:
       - kafka
-      - redis
   tb-rule-engine2:
     env_file:
       - queue-kafka.env
     depends_on:
       - kafka
-      - redis
   tb-mqtt-transport1:
     env_file:
       - queue-kafka.env
@@ -86,6 +82,16 @@ services:
     depends_on:
       - kafka
   tb-snmp-transport:
+    env_file:
+      - queue-kafka.env
+    depends_on:
+      - kafka
+  tb-vc-executor1:
+    env_file:
+      - queue-kafka.env
+    depends_on:
+      - kafka
+  tb-vc-executor2:
     env_file:
       - queue-kafka.env
     depends_on:

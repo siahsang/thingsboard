@@ -1,5 +1,5 @@
 ///
-/// Copyright © 2016-2022 The Thingsboard Authors
+/// Copyright © 2016-2023 The Thingsboard Authors
 ///
 /// Licensed under the Apache License, Version 2.0 (the "License");
 /// you may not use this file except in compliance with the License.
@@ -42,6 +42,7 @@ import {
   AddDeviceProfileDialogData
 } from '@home/components/profile/add-device-profile-dialog.component';
 import { ImportExportService } from '@home/components/import-export/import-export.service';
+import { HomeDialogsService } from '@home/dialogs/home-dialogs.service';
 
 @Injectable()
 export class DeviceProfilesTableConfigResolver implements Resolve<EntityTableConfig<DeviceProfile>> {
@@ -50,6 +51,7 @@ export class DeviceProfilesTableConfigResolver implements Resolve<EntityTableCon
 
   constructor(private deviceProfileService: DeviceProfileService,
               private importExport: ImportExportService,
+              private homeDialogs: HomeDialogsService,
               private translate: TranslateService,
               private datePipe: DatePipe,
               private dialogService: DialogService,
@@ -183,7 +185,7 @@ export class DeviceProfilesTableConfigResolver implements Resolve<EntityTableCon
     if ($event) {
       $event.stopPropagation();
     }
-    const url = this.router.createUrlTree(['deviceProfiles', deviceProfile.id.id]);
+    const url = this.router.createUrlTree(['profiles', 'deviceProfiles', deviceProfile.id.id]);
     this.router.navigateByUrl(url);
   }
 

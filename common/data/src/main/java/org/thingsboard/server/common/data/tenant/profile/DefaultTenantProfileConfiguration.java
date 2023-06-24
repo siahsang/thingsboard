@@ -1,5 +1,5 @@
 /**
- * Copyright © 2016-2022 The Thingsboard Authors
+ * Copyright © 2016-2023 The Thingsboard Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,13 +15,12 @@
  */
 package org.thingsboard.server.common.data.tenant.profile;
 
-import io.swagger.annotations.ApiModel;
-import io.swagger.annotations.ApiModelProperty;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 import org.thingsboard.server.common.data.ApiUsageRecordKey;
+import org.thingsboard.server.common.data.EntityType;
 import org.thingsboard.server.common.data.TenantProfileType;
 
 @AllArgsConstructor
@@ -46,6 +45,11 @@ public class DefaultTenantProfileConfiguration implements TenantProfileConfigura
     private String transportDeviceTelemetryMsgRateLimit;
     private String transportDeviceTelemetryDataPointsRateLimit;
 
+    private String tenantEntityExportRateLimit;
+    private String tenantEntityImportRateLimit;
+    private String tenantNotificationRequestsRateLimit;
+    private String tenantNotificationRequestsPerRuleRateLimit;
+
     private long maxTransportMessages;
     private long maxTransportDataPoints;
     private long maxREExecutions;
@@ -55,6 +59,22 @@ public class DefaultTenantProfileConfiguration implements TenantProfileConfigura
     private long maxEmails;
     private long maxSms;
     private long maxCreatedAlarms;
+
+    private String tenantServerRestLimitsConfiguration;
+    private String customerServerRestLimitsConfiguration;
+
+    private int maxWsSessionsPerTenant;
+    private int maxWsSessionsPerCustomer;
+    private int maxWsSessionsPerRegularUser;
+    private int maxWsSessionsPerPublicUser;
+    private int wsMsgQueueLimitPerSession;
+    private long maxWsSubscriptionsPerTenant;
+    private long maxWsSubscriptionsPerCustomer;
+    private long maxWsSubscriptionsPerRegularUser;
+    private long maxWsSubscriptionsPerPublicUser;
+    private String wsUpdatesPerSessionRateLimit;
+
+    private String cassandraQueryTenantRateLimitsConfiguration;
 
     private int defaultStorageTtlDays;
     private int alarmsTtlDays;
@@ -88,6 +108,25 @@ public class DefaultTenantProfileConfiguration implements TenantProfileConfigura
     @Override
     public long getWarnThreshold(ApiUsageRecordKey key) {
         return (long) (getProfileThreshold(key) * (warnThreshold > 0.0 ? warnThreshold : 0.8));
+    }
+
+    public long getEntitiesLimit(EntityType entityType) {
+        switch (entityType) {
+            case DEVICE:
+                return maxDevices;
+            case ASSET:
+                return maxAssets;
+            case CUSTOMER:
+                return maxCustomers;
+            case USER:
+                return maxUsers;
+            case DASHBOARD:
+                return maxDashboards;
+            case RULE_CHAIN:
+                return maxRuleChains;
+            default:
+                return 0;
+        }
     }
 
     @Override

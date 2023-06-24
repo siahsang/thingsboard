@@ -1,5 +1,5 @@
 /**
- * Copyright © 2016-2022 The Thingsboard Authors
+ * Copyright © 2016-2023 The Thingsboard Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,8 +17,8 @@ package org.thingsboard.server.coapserver;
 
 import lombok.extern.slf4j.Slf4j;
 import org.eclipse.californium.core.CoapServer;
-import org.eclipse.californium.core.network.CoapEndpoint;
 import org.eclipse.californium.core.config.CoapConfig;
+import org.eclipse.californium.core.network.CoapEndpoint;
 import org.eclipse.californium.core.server.resources.Resource;
 import org.eclipse.californium.elements.config.Configuration;
 import org.eclipse.californium.scandium.DTLSConnector;
@@ -86,6 +86,11 @@ public class DefaultCoapServerService implements CoapServerService {
     @Override
     public long getTimeout() {
         return coapServerContext.getTimeout();
+    }
+
+    @Override
+    public long getPiggybackTimeout() {
+        return coapServerContext.getPiggybackTimeout();
     }
 
     private CoapServer createCoapServer() throws UnknownHostException {

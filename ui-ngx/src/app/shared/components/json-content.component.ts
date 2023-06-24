@@ -1,5 +1,5 @@
 ///
-/// Copyright © 2016-2022 The Thingsboard Authors
+/// Copyright © 2016-2023 The Thingsboard Authors
 ///
 /// Licensed under the Apache License, Version 2.0 (the "License");
 /// you may not use this file except in compliance with the License.
@@ -15,6 +15,7 @@
 ///
 
 import {
+  ChangeDetectorRef,
   Component,
   ElementRef,
   forwardRef,
@@ -23,9 +24,9 @@ import {
   OnDestroy,
   OnInit,
   SimpleChanges,
-  ViewChild
+  ViewChild, ViewEncapsulation
 } from '@angular/core';
-import { ControlValueAccessor, FormControl, NG_VALIDATORS, NG_VALUE_ACCESSOR, Validator } from '@angular/forms';
+import { ControlValueAccessor, UntypedFormControl, NG_VALIDATORS, NG_VALUE_ACCESSOR, Validator } from '@angular/forms';
 import { Ace } from 'ace-builds';
 import { coerceBooleanProperty } from '@angular/cdk/coercion';
 import { ActionNotificationHide, ActionNotificationShow } from '@core/notification/notification.actions';
@@ -53,7 +54,8 @@ import { beautifyJs } from '@shared/models/beautify.models';
       useExisting: forwardRef(() => JsonContentComponent),
       multi: true,
     }
-  ]
+  ],
+  encapsulation: ViewEncapsulation.None
 })
 export class JsonContentComponent implements OnInit, ControlValueAccessor, Validator, OnChanges, OnDestroy {
 
@@ -104,6 +106,15 @@ export class JsonContentComponent implements OnInit, ControlValueAccessor, Valid
     this.validateOnChangeValue = coerceBooleanProperty(value);
   }
 
+  private requiredValue: boolean;
+  get required(): boolean {
+    return this.requiredValue;
+  }
+  @Input()
+  set required(value: boolean) {
+    this.requiredValue = coerceBooleanProperty(value);
+  }
+
   fullscreen = false;
 
   contentBody: string;
@@ -116,7 +127,8 @@ export class JsonContentComponent implements OnInit, ControlValueAccessor, Valid
 
   constructor(public elementRef: ElementRef,
               protected store: Store<AppState>,
-              private raf: RafService) {
+              private raf: RafService,
+              private cd: ChangeDetectorRef) {
   }
 
   ngOnInit(): void {
@@ -151,9 +163,12 @@ export class JsonContentComponent implements OnInit, ControlValueAccessor, Valid
             this.updateView();
           }
         });
-        this.jsonEditor.on('blur', () => {
-          this.contentValid = !this.validateContent || this.doValidate(true);
-        });
+        if (this.validateContent) {
+          this.jsonEditor.on('blur', () => {
+            this.contentValid = this.doValidate(true);
+            this.cd.markForCheck();
+          });
+        }
         this.editorResize$ = new ResizeObserver(() => {
           this.onAceEditorResize();
         });
@@ -165,6 +180,9 @@ export class JsonContentComponent implements OnInit, ControlValueAccessor, Valid
   ngOnDestroy(): void {
     if (this.editorResize$) {
       this.editorResize$.disconnect();
+    }
+    if (this.jsonEditor) {
+      this.jsonEditor.destroy();
     }
   }
 
@@ -210,7 +228,7 @@ export class JsonContentComponent implements OnInit, ControlValueAccessor, Valid
     }
   }
 
-  public validate(c: FormControl) {
+  public validate(c: UntypedFormControl) {
     return (this.contentValid) ? null : {
       contentBody: {
         valid: false,
@@ -225,12 +243,13 @@ export class JsonContentComponent implements OnInit, ControlValueAccessor, Valid
       this.propagateChange(this.contentBody);
       this.contentValid = this.doValidate(true);
       this.propagateChange(this.contentBody);
+      this.cd.markForCheck();
     }
   }
 
   private doValidate(showErrorToast = false): boolean {
     try {
-      if (this.validateContent && this.contentType === ContentType.JSON) {
+      if (this.contentType === ContentType.JSON) {
         JSON.parse(this.contentBody);
       }
       return true;
@@ -283,6 +302,7 @@ export class JsonContentComponent implements OnInit, ControlValueAccessor, Valid
       this.contentBody = editorValue;
       this.contentValid = !this.validateOnChange || this.doValidate();
       this.propagateChange(this.contentBody);
+      this.cd.markForCheck();
     }
   }
 

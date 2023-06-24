@@ -1,5 +1,5 @@
 ///
-/// Copyright © 2016-2022 The Thingsboard Authors
+/// Copyright © 2016-2023 The Thingsboard Authors
 ///
 /// Licensed under the Apache License, Version 2.0 (the "License");
 /// you may not use this file except in compliance with the License.
@@ -16,8 +16,12 @@
 
 import {
   ComponentFactory,
-  ComponentFactoryResolver, ElementRef, Inject,
-  Injectable, Injector,
+  ComponentFactoryResolver,
+  ComponentRef,
+  ElementRef,
+  Inject,
+  Injectable,
+  Injector,
   Renderer2,
   Type,
   ViewContainerRef
@@ -26,6 +30,7 @@ import { PopoverPlacement, PopoverWithTrigger } from '@shared/components/popover
 import { TbPopoverComponent } from '@shared/components/popover.component';
 import { ComponentType } from '@angular/cdk/portal';
 import { HELP_MARKDOWN_COMPONENT_TOKEN } from '@shared/components/tokens';
+import { CdkOverlayOrigin } from '@angular/cdk/overlay';
 
 @Injectable()
 export class TbPopoverService {
@@ -53,10 +58,23 @@ export class TbPopoverService {
     }
   }
 
+  createPopoverRef(hostView: ViewContainerRef): ComponentRef<TbPopoverComponent> {
+    return hostView.createComponent(this.componentFactory);
+  }
+
   displayPopover<T>(trigger: Element, renderer: Renderer2, hostView: ViewContainerRef,
                     componentType: Type<T>, preferredPlacement: PopoverPlacement = 'top', hideOnClickOutside = true,
-                    injector?: Injector, context?: any, overlayStyle: any = {}, popoverStyle: any = {}, style?: any): TbPopoverComponent {
-    const componentRef = hostView.createComponent(this.componentFactory);
+                    injector?: Injector, context?: any, overlayStyle: any = {}, popoverStyle: any = {}, style?: any,
+                    showCloseButton = true): TbPopoverComponent {
+    const componentRef = this.createPopoverRef(hostView);
+    return this.displayPopoverWithComponentRef(componentRef, trigger, renderer, componentType, preferredPlacement, hideOnClickOutside,
+      injector, context, overlayStyle, popoverStyle, style, showCloseButton);
+  }
+
+  displayPopoverWithComponentRef<T>(componentRef: ComponentRef<TbPopoverComponent>, trigger: Element, renderer: Renderer2,
+                                    componentType: Type<T>, preferredPlacement: PopoverPlacement = 'top',
+                                    hideOnClickOutside = true, injector?: Injector, context?: any, overlayStyle: any = {},
+                                    popoverStyle: any = {}, style?: any, showCloseButton = true): TbPopoverComponent {
     const component = componentRef.instance;
     this.popoverWithTriggers.push({
       trigger,
@@ -67,7 +85,7 @@ export class TbPopoverService {
       componentRef.location.nativeElement
     );
     const originElementRef = new ElementRef(trigger);
-    component.setOverlayOrigin({ elementRef: originElementRef });
+    component.setOverlayOrigin(new CdkOverlayOrigin(originElementRef));
     component.tbPlacement = preferredPlacement;
     component.tbComponentFactory = this.resolver.resolveComponentFactory(componentType);
     component.tbComponentInjector = injector;
@@ -76,11 +94,10 @@ export class TbPopoverService {
     component.tbPopoverInnerStyle = popoverStyle;
     component.tbComponentStyle = style;
     component.tbHideOnClickOutside = hideOnClickOutside;
+    component.tbShowCloseButton = showCloseButton;
     component.tbVisibleChange.subscribe((visible: boolean) => {
       if (!visible) {
-        component.tbAnimationDone.subscribe(() => {
-          componentRef.destroy();
-        });
+        componentRef.destroy();
       }
     });
     component.tbDestroy.subscribe(() => {
@@ -116,7 +133,7 @@ export class TbPopoverService {
       const originElementRef = new ElementRef(trigger);
       component.tbAnimationState = 'void';
       component.tbOverlayStyle = {...overlayStyle, opacity: '0' };
-      component.setOverlayOrigin({ elementRef: originElementRef });
+      component.setOverlayOrigin(new CdkOverlayOrigin(originElementRef));
       component.tbPlacement = preferredPlacement;
       component.tbComponentFactory = this.resolver.resolveComponentFactory(this.helpMarkdownComponent);
       component.tbComponentInjector = injector;
@@ -130,9 +147,7 @@ export class TbPopoverService {
       component.tbVisibleChange.subscribe((visible: boolean) => {
         if (!visible) {
           visibleFn(false);
-          component.tbAnimationDone.subscribe(() => {
-            componentRef.destroy();
-          });
+          componentRef.destroy();
         }
       });
       component.tbDestroy.subscribe(() => {

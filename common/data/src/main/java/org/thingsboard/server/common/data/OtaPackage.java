@@ -1,5 +1,5 @@
 /**
- * Copyright © 2016-2022 The Thingsboard Authors
+ * Copyright © 2016-2023 The Thingsboard Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -30,7 +30,7 @@ public class OtaPackage extends OtaPackageInfo {
 
     private static final long serialVersionUID = 3091601761339422546L;
 
-    @ApiModelProperty(position = 16, value = "OTA Package data.", readOnly = true)
+    @ApiModelProperty(position = 16, value = "OTA Package data.", accessMode = ApiModelProperty.AccessMode.READ_ONLY)
     private transient ByteBuffer data;
 
     public OtaPackage() {

@@ -1,5 +1,5 @@
 /**
- * Copyright © 2016-2022 The Thingsboard Authors
+ * Copyright © 2016-2023 The Thingsboard Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -75,6 +75,9 @@ public class RuleChainEntity extends BaseSqlEntity<RuleChain> implements SearchT
     @Column(name = ModelConstants.ADDITIONAL_INFO_PROPERTY)
     private JsonNode additionalInfo;
 
+    @Column(name = ModelConstants.EXTERNAL_ID_PROPERTY)
+    private UUID externalId;
+
     public RuleChainEntity() {
     }
 
@@ -94,6 +97,9 @@ public class RuleChainEntity extends BaseSqlEntity<RuleChain> implements SearchT
         this.debugMode = ruleChain.isDebugMode();
         this.configuration = ruleChain.getConfiguration();
         this.additionalInfo = ruleChain.getAdditionalInfo();
+        if (ruleChain.getExternalId() != null) {
+            this.externalId = ruleChain.getExternalId().getId();
+        }
     }
 
     @Override
@@ -120,6 +126,9 @@ public class RuleChainEntity extends BaseSqlEntity<RuleChain> implements SearchT
         ruleChain.setDebugMode(debugMode);
         ruleChain.setConfiguration(configuration);
         ruleChain.setAdditionalInfo(additionalInfo);
+        if (externalId != null) {
+            ruleChain.setExternalId(new RuleChainId(externalId));
+        }
         return ruleChain;
     }
 }

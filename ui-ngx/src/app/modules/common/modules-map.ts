@@ -1,5 +1,5 @@
 ///
-/// Copyright © 2016-2022 The Thingsboard Authors
+/// Copyright © 2016-2023 The Thingsboard Authors
 ///
 /// Licensed under the Apache License, Version 2.0 (the "License");
 /// you may not use this file except in compliance with the License.
@@ -93,12 +93,15 @@ import * as NospacePipe from '@shared/pipe/nospace.pipe';
 import * as SelectableColumnsPipe from '@shared/pipe/selectable-columns.pipe';
 import * as KeyboardShortcutPipe from '@shared/pipe/keyboard-shortcut.pipe';
 
+import * as coercion from '@shared/decorators/coercion';
+import * as enumerable from '@shared/decorators/enumerable';
+import * as TbInject from '@shared/decorators/tb-inject';
+
 import * as FooterComponent from '@shared/components/footer.component';
 import * as LogoComponent from '@shared/components/logo.component';
 import * as FooterFabButtonsComponent from '@shared/components/footer-fab-buttons.component';
 import * as FullscreenDirective from '@shared/components/fullscreen.directive';
 import * as CircularProgressDirective from '@shared/components/circular-progress.directive';
-import * as MatChipDraggableDirective from '@shared/components/mat-chip-draggable.directive';
 import * as TbHotkeysDirective from '@shared/components/hotkeys.directive';
 import * as TbAnchorComponent from '@shared/components/tb-anchor.component';
 import * as TbPopoverComponent from '@shared/components/popover.component';
@@ -135,13 +138,14 @@ import * as EntitySelectComponent from '@shared/components/entity/entity-select.
 import * as EntityKeysListComponent from '@shared/components/entity/entity-keys-list.component';
 import * as EntityListSelectComponent from '@shared/components/entity/entity-list-select.component';
 import * as EntityTypeListComponent from '@shared/components/entity/entity-type-list.component';
-import * as QueueTypeListComponent from '@shared/components/queue/queue-type-list.component';
+import * as QueueAutocompleteComponent from '@shared/components/queue/queue-autocomplete.component';
 import * as RelationTypeAutocompleteComponent from '@shared/components/relation/relation-type-autocomplete.component';
 import * as SocialSharePanelComponent from '@shared/components/socialshare-panel.component';
 import * as JsonObjectEditComponent from '@shared/components/json-object-edit.component';
 import * as JsonObjectViewComponent from '@shared/components/json-object-view.component';
 import * as JsonContentComponent from '@shared/components/json-content.component';
 import * as JsFuncComponent from '@shared/components/js-func.component';
+import * as TbScriptLangComponent from '@shared/components/script-lang.component';
 import * as FabToolbarComponent from '@shared/components/fab-toolbar.component';
 import * as WidgetsBundleSelectComponent from '@shared/components/widgets-bundle-select.component';
 import * as ConfirmDialogComponent from '@shared/components/dialog/confirm-dialog.component';
@@ -153,10 +157,13 @@ import * as ColorInputComponent from '@shared/components/color-input.component';
 import * as MaterialIconSelectComponent from '@shared/components/material-icon-select.component';
 import * as NodeScriptTestDialogComponent from '@shared/components/dialog/node-script-test-dialog.component';
 import * as JsonFormComponent from '@shared/components/json-form/json-form.component';
+import * as NotificationComponent from '@shared/components/notification/notification.component';
+import * as TemplateAutocompleteComponent from '@shared/components/notification/template-autocomplete.component';
 import * as ImageInputComponent from '@shared/components/image-input.component';
 import * as FileInputComponent from '@shared/components/file-input.component';
 import * as MessageTypeAutocompleteComponent from '@shared/components/message-type-autocomplete.component';
 import * as KeyValMapComponent from '@shared/components/kv-map.component';
+import * as MultipleImageInputComponent from '@shared/components/multiple-image-input.component';
 import * as NavTreeComponent from '@shared/components/nav-tree.component';
 import * as LedLightComponent from '@shared/components/led-light.component';
 import * as TbJsonToStringDirective from '@shared/components/directives/tb-json-to-string.directive';
@@ -169,6 +176,7 @@ import * as WidgetsBundleSearchComponent from '@shared/components/widgets-bundle
 import * as CopyButtonComponent from '@shared/components/button/copy-button.component';
 import * as TogglePasswordComponent from '@shared/components/button/toggle-password.component';
 import * as ProtobufContentComponent from '@shared/components/protobuf-content.component';
+import * as SlackConversationAutocompleteComponent from '@shared/components/slack-conversation-autocomplete.component';
 
 import * as AddEntityDialogComponent from '@home/components/entity/add-entity-dialog.component';
 import * as EntitiesTableComponent from '@home/components/entity/entities-table.component';
@@ -239,7 +247,7 @@ import * as FilterPredicateValueComponent from '@home/components/filter/filter-p
 import * as TenantProfileComponent from '@home/components/profile/tenant-profile.component';
 import * as TenantProfileDialogComponent from '@home/components/profile/tenant-profile-dialog.component';
 import * as TenantProfileDataComponent from '@home/components/profile/tenant-profile-data.component';
-// tslint:disable-next-line:max-line-length
+// eslint-disable-next-line max-len
 import * as DefaultDeviceProfileConfigurationComponent from '@home/components/profile/device/default-device-profile-configuration.component';
 import * as DeviceProfileConfigurationComponent from '@home/components/profile/device/device-profile-configuration.component';
 import * as DeviceProfileComponent from '@home/components/profile/device-profile.component';
@@ -264,7 +272,7 @@ import * as AlarmScheduleInfoComponent from '@home/components/profile/alarm/alar
 import * as AlarmScheduleDialogComponent from '@home/components/profile/alarm/alarm-schedule-dialog.component';
 import * as EditAlarmDetailsDialogComponent from '@home/components/profile/alarm/edit-alarm-details-dialog.component';
 import * as AlarmRuleConditionDialogComponent from '@home/components/profile/alarm/alarm-rule-condition-dialog.component';
-// tslint:disable-next-line:max-line-length
+// eslint-disable-next-line max-len
 import * as DefaultTenantProfileConfigurationComponent from '@home/components/profile/tenant/default-tenant-profile-configuration.component';
 import * as TenantProfileConfigurationComponent from '@home/components/profile/tenant/tenant-profile-configuration.component';
 import * as SmsProviderConfigurationComponent from '@home/components/sms/sms-provider-configuration.component';
@@ -287,6 +295,11 @@ import * as DisplayWidgetTypesPanelComponent from '@home/components/dashboard-pa
 import * as AlarmDurationPredicateValueComponent from '@home/components/profile/alarm/alarm-duration-predicate-value.component';
 import * as DashboardImageDialogComponent from '@home/components/dashboard-page/dashboard-image-dialog.component';
 import * as WidgetContainerComponent from '@home/components/widget/widget-container.component';
+import * as TenantProfileQueuesComponent from '@home/components/profile/queue/tenant-profile-queues.component';
+import * as QueueFormComponent from '@home/components/queue/queue-form.component';
+import * as AssetProfileComponent from '@home/components/profile/asset-profile.component';
+import * as AssetProfileDialogComponent from '@home/components/profile/asset-profile-dialog.component';
+import * as AssetProfileAutocompleteComponent from '@home/components/profile/asset-profile-autocomplete.component';
 
 import { IModulesMap } from '@modules/common/modules-map.models';
 
@@ -375,12 +388,15 @@ class ModulesMap implements IModulesMap {
     '@shared/pipe/selectable-columns.pipe': SelectableColumnsPipe,
     '@shared/pipe/keyboard-shortcut.pipe': KeyboardShortcutPipe,
 
+    '@shared/decorators/coercion': coercion,
+    '@shared/decorators/enumerable': enumerable,
+    '@shared/decorators/tb-inject': TbInject,
+
     '@shared/components/footer.component': FooterComponent,
     '@shared/components/logo.component': LogoComponent,
     '@shared/components/footer-fab-buttons.component': FooterFabButtonsComponent,
     '@shared/components/fullscreen.directive': FullscreenDirective,
     '@shared/components/circular-progress.directive': CircularProgressDirective,
-    '@shared/components/mat-chip-draggable.directive': MatChipDraggableDirective,
     '@shared/components/hotkeys.directive': TbHotkeysDirective,
     '@shared/components/tb-anchor.component': TbAnchorComponent,
     '@shared/components/popover.component': TbPopoverComponent,
@@ -417,13 +433,14 @@ class ModulesMap implements IModulesMap {
     '@shared/components/entity/entity-keys-list.component': EntityKeysListComponent,
     '@shared/components/entity/entity-list-select.component': EntityListSelectComponent,
     '@shared/components/entity/entity-type-list.component': EntityTypeListComponent,
-    '@shared/components/queue/queue-type-list.component': QueueTypeListComponent,
+    '@shared/components/queue/queue-autocomplete.component': QueueAutocompleteComponent,
     '@shared/components/relation/relation-type-autocomplete.component': RelationTypeAutocompleteComponent,
     '@shared/components/socialshare-panel.component': SocialSharePanelComponent,
     '@shared/components/json-object-edit.component': JsonObjectEditComponent,
     '@shared/components/json-object-view.component': JsonObjectViewComponent,
     '@shared/components/json-content.component': JsonContentComponent,
     '@shared/components/js-func.component': JsFuncComponent,
+    '@shared/components/script-lang.component': TbScriptLangComponent,
     '@shared/components/fab-toolbar.component': FabToolbarComponent,
     '@shared/components/widgets-bundle-select.component': WidgetsBundleSelectComponent,
     '@shared/components/dialog/confirm-dialog.component': ConfirmDialogComponent,
@@ -435,10 +452,13 @@ class ModulesMap implements IModulesMap {
     '@shared/components/material-icon-select.component': MaterialIconSelectComponent,
     '@shared/components/dialog/node-script-test-dialog.component': NodeScriptTestDialogComponent,
     '@shared/components/json-form/json-form.component': JsonFormComponent,
+    '@shared/components/notification/notification.component': NotificationComponent,
+    '@shared/components/notification/template-autocomplete.component': TemplateAutocompleteComponent,
     '@shared/components/image-input.component': ImageInputComponent,
     '@shared/components/file-input.component': FileInputComponent,
     '@shared/components/message-type-autocomplete.component': MessageTypeAutocompleteComponent,
     '@shared/components/kv-map.component': KeyValMapComponent,
+    '@shared/components/multiple-image-input.component': MultipleImageInputComponent,
     '@shared/components/nav-tree.component': NavTreeComponent,
     '@shared/components/led-light.component': LedLightComponent,
     '@shared/components/directives/tb-json-to-string.directive': TbJsonToStringDirective,
@@ -451,6 +471,7 @@ class ModulesMap implements IModulesMap {
     '@shared/components/button/copy-button.component': CopyButtonComponent,
     '@shared/components/button/toggle-password.component': TogglePasswordComponent,
     '@shared/components/protobuf-content.component': ProtobufContentComponent,
+    '@shared/components/slack-conversation-autocomplete.component': SlackConversationAutocompleteComponent,
 
     '@home/components/entity/add-entity-dialog.component': AddEntityDialogComponent,
     '@home/components/entity/entities-table.component': EntitiesTableComponent,
@@ -533,6 +554,9 @@ class ModulesMap implements IModulesMap {
     MqttDeviceProfileTransportConfigurationComponent,
     '@home/components/profile/device/coap-device-profile-transport-configuration.component':
     CoapDeviceProfileTransportConfigurationComponent,
+    '@home/components/profile/asset-profile.component': AssetProfileComponent,
+    '@home/components/profile/asset-profile-dialog.component': AssetProfileDialogComponent,
+    '@home/components/profile/asset-profile-autocomplete.component': AssetProfileAutocompleteComponent,
     '@home/components/profile/alarm/device-profile-alarms.component': DeviceProfileAlarmsComponent,
     '@home/components/profile/alarm/device-profile-alarm.component': DeviceProfileAlarmComponent,
     '@home/components/profile/alarm/create-alarm-rules.component': CreateAlarmRulesComponent,
@@ -570,6 +594,8 @@ class ModulesMap implements IModulesMap {
     '@home/components/profile/alarm/alarm-duration-predicate-value.component': AlarmDurationPredicateValueComponent,
     '@home/components/dashboard-page/dashboard-image-dialog.component': DashboardImageDialogComponent,
     '@home/components/widget/widget-container.component': WidgetContainerComponent,
+    '@home/components/profile/queue/tenant-profile-queues.component': TenantProfileQueuesComponent,
+    '@home/components/queue/queue-form.component': QueueFormComponent
   };
 
   init() {

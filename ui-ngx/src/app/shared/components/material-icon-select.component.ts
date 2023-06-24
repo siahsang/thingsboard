@@ -1,5 +1,5 @@
 ///
-/// Copyright © 2016-2022 The Thingsboard Authors
+/// Copyright © 2016-2023 The Thingsboard Authors
 ///
 /// Licensed under the Apache License, Version 2.0 (the "License");
 /// you may not use this file except in compliance with the License.
@@ -18,8 +18,10 @@ import { Component, forwardRef, Input, OnInit } from '@angular/core';
 import { PageComponent } from '@shared/components/page.component';
 import { Store } from '@ngrx/store';
 import { AppState } from '@core/core.state';
-import { ControlValueAccessor, FormBuilder, FormGroup, NG_VALUE_ACCESSOR } from '@angular/forms';
+import { ControlValueAccessor, UntypedFormBuilder, UntypedFormGroup, NG_VALUE_ACCESSOR } from '@angular/forms';
 import { DialogService } from '@core/services/dialog.service';
+import { coerceBooleanProperty } from '@angular/cdk/coercion';
+import { TranslateService } from '@ngx-translate/core';
 
 @Component({
   selector: 'tb-material-icon-select',
@@ -36,17 +38,42 @@ import { DialogService } from '@core/services/dialog.service';
 export class MaterialIconSelectComponent extends PageComponent implements OnInit, ControlValueAccessor {
 
   @Input()
+  label = this.translate.instant('icon.icon');
+
+  @Input()
   disabled: boolean;
+
+  private iconClearButtonValue: boolean;
+  get iconClearButton(): boolean {
+    return this.iconClearButtonValue;
+  }
+  @Input()
+  set iconClearButton(value: boolean) {
+    const newVal = coerceBooleanProperty(value);
+    if (this.iconClearButtonValue !== newVal) {
+      this.iconClearButtonValue = newVal;
+    }
+  }
+
+  private requiredValue: boolean;
+  get required(): boolean {
+    return this.requiredValue;
+  }
+  @Input()
+  set required(value: boolean) {
+    this.requiredValue = coerceBooleanProperty(value);
+  }
 
   private modelValue: string;
 
   private propagateChange = null;
 
-  public materialIconFormGroup: FormGroup;
+  public materialIconFormGroup: UntypedFormGroup;
 
   constructor(protected store: Store<AppState>,
               private dialogs: DialogService,
-              private fb: FormBuilder) {
+              private translate: TranslateService,
+              private fb: UntypedFormBuilder) {
     super(store);
   }
 
@@ -103,5 +130,9 @@ export class MaterialIconSelectComponent extends PageComponent implements OnInit
         }
       );
     }
+  }
+
+  clear() {
+    this.materialIconFormGroup.get('icon').patchValue(null, {emitEvent: true});
   }
 }

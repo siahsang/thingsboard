@@ -1,5 +1,5 @@
 /**
- * Copyright © 2016-2022 The Thingsboard Authors
+ * Copyright © 2016-2023 The Thingsboard Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,7 +18,6 @@ package org.thingsboard.server.dao;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
-
 import org.thingsboard.server.common.data.id.UUIDBased;
 import org.thingsboard.server.common.data.page.PageData;
 import org.thingsboard.server.common.data.page.PageLink;
@@ -32,6 +31,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.function.Consumer;
+import java.util.function.Function;
 
 public abstract class DaoUtil {
 
@@ -51,7 +52,7 @@ public abstract class DaoUtil {
         return toPageable(pageLink, Collections.emptyMap());
     }
 
-    public static Pageable toPageable(PageLink pageLink, Map<String,String> columnMap) {
+    public static Pageable toPageable(PageLink pageLink, Map<String, String> columnMap) {
         return PageRequest.of(pageLink.getPage(), pageLink.getPageSize(), pageLink.toSort(pageLink.getSortOrder(), columnMap));
     }
 
@@ -59,7 +60,7 @@ public abstract class DaoUtil {
         return toPageable(pageLink, Collections.emptyMap(), sortOrders);
     }
 
-    public static Pageable toPageable(PageLink pageLink, Map<String,String> columnMap, List<SortOrder> sortOrders) {
+    public static Pageable toPageable(PageLink pageLink, Map<String, String> columnMap, List<SortOrder> sortOrders) {
         return PageRequest.of(pageLink.getPage(), pageLink.getPageSize(), pageLink.toSort(sortOrders, columnMap));
     }
 
@@ -108,4 +109,29 @@ public abstract class DaoUtil {
         return ids;
     }
 
+    public static <T> void processInBatches(Function<PageLink, PageData<T>> finder, int batchSize, Consumer<T> processor) {
+        processBatches(finder, batchSize, batch -> batch.getData().forEach(processor));
+    }
+
+    public static <T> void processBatches(Function<PageLink, PageData<T>> finder, int batchSize, Consumer<PageData<T>> processor) {
+        PageLink pageLink = new PageLink(batchSize);
+        PageData<T> batch;
+
+        boolean hasNextBatch;
+        do {
+            batch = finder.apply(pageLink);
+            processor.accept(batch);
+
+            hasNextBatch = batch.hasNext();
+            pageLink = pageLink.nextPageLink();
+        } while (hasNextBatch);
+    }
+
+    public static String getStringId(UUIDBased id) {
+        if (id != null) {
+            return id.toString();
+        } else {
+            return null;
+        }
+    }
 }

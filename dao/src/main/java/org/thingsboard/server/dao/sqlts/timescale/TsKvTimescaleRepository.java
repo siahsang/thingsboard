@@ -1,5 +1,5 @@
 /**
- * Copyright © 2016-2022 The Thingsboard Authors
+ * Copyright © 2016-2023 The Thingsboard Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,9 +16,9 @@
 package org.thingsboard.server.dao.sqlts.timescale;
 
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
-import org.springframework.data.repository.CrudRepository;
 import org.springframework.data.repository.query.Param;
 import org.springframework.transaction.annotation.Transactional;
 import org.thingsboard.server.dao.model.sqlts.timescale.ts.TimescaleTsKvCompositeKey;
@@ -29,16 +29,15 @@ import java.util.List;
 import java.util.UUID;
 
 @TimescaleDBTsOrTsLatestDao
-public interface TsKvTimescaleRepository extends CrudRepository<TimescaleTsKvEntity, TimescaleTsKvCompositeKey> {
+public interface TsKvTimescaleRepository extends JpaRepository<TimescaleTsKvEntity, TimescaleTsKvCompositeKey> {
 
-    @Query("SELECT tskv FROM TimescaleTsKvEntity tskv WHERE tskv.entityId = :entityId " +
-            "AND tskv.key = :entityKey " +
-            "AND tskv.ts >= :startTs AND tskv.ts < :endTs")
-    List<TimescaleTsKvEntity> findAllWithLimit(
-            @Param("entityId") UUID entityId,
-            @Param("entityKey") int key,
-            @Param("startTs") long startTs,
-            @Param("endTs") long endTs, Pageable pageable);
+    @Query(value = "SELECT * FROM ts_kv WHERE entity_id = :entityId " +
+            "AND key = :entityKey AND ts >= :startTs AND ts < :endTs", nativeQuery = true)
+    List<TimescaleTsKvEntity> findAllWithLimit(@Param("entityId") UUID entityId,
+                                               @Param("entityKey") int key,
+                                               @Param("startTs") long startTs,
+                                               @Param("endTs") long endTs,
+                                               Pageable pageable);
 
     @Transactional
     @Modifying

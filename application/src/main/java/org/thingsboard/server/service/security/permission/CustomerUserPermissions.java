@@ -1,5 +1,5 @@
 /**
- * Copyright © 2016-2022 The Thingsboard Authors
+ * Copyright © 2016-2023 The Thingsboard Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -42,6 +42,8 @@ public class CustomerUserPermissions extends AbstractPermissions {
         put(Resource.WIDGET_TYPE, widgetsPermissionChecker);
         put(Resource.EDGE, customerEntityPermissionChecker);
         put(Resource.RPC, rpcPermissionChecker);
+        put(Resource.DEVICE_PROFILE, profilePermissionChecker);
+        put(Resource.ASSET_PROFILE, profilePermissionChecker);
     }
 
     private static final PermissionChecker customerAlarmPermissionChecker = new PermissionChecker() {
@@ -117,6 +119,15 @@ public class CustomerUserPermissions extends AbstractPermissions {
             if (!Authority.CUSTOMER_USER.equals(userEntity.getAuthority())) {
                 return false;
             }
+
+            if (!user.getCustomerId().equals(userEntity.getCustomerId())) {
+                return false;
+            }
+
+            if (Operation.READ.equals(operation)) {
+                return true;
+            }
+
             return user.getId().equals(userId);
         }
 
@@ -139,6 +150,21 @@ public class CustomerUserPermissions extends AbstractPermissions {
     };
 
     private static final PermissionChecker rpcPermissionChecker = new PermissionChecker.GenericPermissionChecker(Operation.READ) {
+
+        @Override
+        @SuppressWarnings("unchecked")
+        public boolean hasPermission(SecurityUser user, Operation operation, EntityId entityId, HasTenantId entity) {
+            if (!super.hasPermission(user, operation, entityId, entity)) {
+                return false;
+            }
+            if (entity.getTenantId() == null || entity.getTenantId().isNullUid()) {
+                return true;
+            }
+            return user.getTenantId().equals(entity.getTenantId());
+        }
+    };
+
+    private static final PermissionChecker profilePermissionChecker = new PermissionChecker.GenericPermissionChecker(Operation.READ) {
 
         @Override
         @SuppressWarnings("unchecked")

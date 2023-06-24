@@ -1,5 +1,5 @@
 /**
- * Copyright © 2016-2022 The Thingsboard Authors
+ * Copyright © 2016-2023 The Thingsboard Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,15 +17,16 @@ package org.thingsboard.server.service.edge.rpc.fetch;
 
 import com.datastax.oss.driver.api.core.uuid.Uuids;
 import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import freemarker.template.Configuration;
 import freemarker.template.Template;
 import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.lang3.text.WordUtils;
+import org.thingsboard.common.util.JacksonUtil;
 import org.thingsboard.server.common.data.AdminSettings;
+import org.thingsboard.server.common.data.EdgeUtils;
+import org.thingsboard.server.common.data.StringUtils;
 import org.thingsboard.server.common.data.edge.Edge;
 import org.thingsboard.server.common.data.edge.EdgeEvent;
 import org.thingsboard.server.common.data.edge.EdgeEventActionType;
@@ -35,7 +36,6 @@ import org.thingsboard.server.common.data.id.TenantId;
 import org.thingsboard.server.common.data.page.PageData;
 import org.thingsboard.server.common.data.page.PageLink;
 import org.thingsboard.server.dao.settings.AdminSettingsService;
-import org.thingsboard.server.service.edge.rpc.EdgeEventUtils;
 
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -49,15 +49,13 @@ import java.util.regex.Pattern;
 @Slf4j
 public class AdminSettingsEdgeEventFetcher implements EdgeEventFetcher {
 
-    private static final ObjectMapper mapper = new ObjectMapper();
-
     private final AdminSettingsService adminSettingsService;
     private final Configuration freemarkerConfig;
 
-    private static Pattern startPattern = Pattern.compile("<div class=\"content\".*?>");
-    private static Pattern endPattern = Pattern.compile("<div class=\"footer\".*?>");
+    private static final Pattern startPattern = Pattern.compile("<div class=\"content\".*?>");
+    private static final Pattern endPattern = Pattern.compile("<div class=\"footer\".*?>");
 
-    private static List<String> templatesNames = Arrays.asList(
+    private static final List<String> templatesNames = Arrays.asList(
             "account.activated.ftl",
             "account.lockout.ftl",
             "activation.ftl",
@@ -65,7 +63,7 @@ public class AdminSettingsEdgeEventFetcher implements EdgeEventFetcher {
             "reset.password.ftl",
             "test.ftl");
 
-    // TODO: fix format of next templates
+    // TODO: @voba fix format of next templates
     // "state.disabled.ftl",
     // "state.enabled.ftl",
     // "state.warning.ftl",
@@ -80,22 +78,22 @@ public class AdminSettingsEdgeEventFetcher implements EdgeEventFetcher {
         List<EdgeEvent> result = new ArrayList<>();
 
         AdminSettings systemMailSettings = adminSettingsService.findAdminSettingsByKey(TenantId.SYS_TENANT_ID, "mail");
-        result.add(EdgeEventUtils.constructEdgeEvent(tenantId, edge.getId(), EdgeEventType.ADMIN_SETTINGS,
-                EdgeEventActionType.UPDATED, null, mapper.valueToTree(systemMailSettings)));
+        result.add(EdgeUtils.constructEdgeEvent(tenantId, edge.getId(), EdgeEventType.ADMIN_SETTINGS,
+                EdgeEventActionType.UPDATED, null, JacksonUtil.OBJECT_MAPPER.valueToTree(systemMailSettings)));
 
-        AdminSettings tenantMailSettings = convertToTenantAdminSettings(systemMailSettings.getKey(), (ObjectNode) systemMailSettings.getJsonValue());
-        result.add(EdgeEventUtils.constructEdgeEvent(tenantId, edge.getId(), EdgeEventType.ADMIN_SETTINGS,
-                EdgeEventActionType.UPDATED, null, mapper.valueToTree(tenantMailSettings)));
+        AdminSettings tenantMailSettings = convertToTenantAdminSettings(tenantId, systemMailSettings.getKey(), (ObjectNode) systemMailSettings.getJsonValue());
+        result.add(EdgeUtils.constructEdgeEvent(tenantId, edge.getId(), EdgeEventType.ADMIN_SETTINGS,
+                EdgeEventActionType.UPDATED, null, JacksonUtil.OBJECT_MAPPER.valueToTree(tenantMailSettings)));
 
         AdminSettings systemMailTemplates = loadMailTemplates();
-        result.add(EdgeEventUtils.constructEdgeEvent(tenantId, edge.getId(), EdgeEventType.ADMIN_SETTINGS,
-                EdgeEventActionType.UPDATED, null, mapper.valueToTree(systemMailTemplates)));
+        result.add(EdgeUtils.constructEdgeEvent(tenantId, edge.getId(), EdgeEventType.ADMIN_SETTINGS,
+                EdgeEventActionType.UPDATED, null, JacksonUtil.OBJECT_MAPPER.valueToTree(systemMailTemplates)));
 
-        AdminSettings tenantMailTemplates = convertToTenantAdminSettings(systemMailTemplates.getKey(), (ObjectNode) systemMailTemplates.getJsonValue());
-        result.add(EdgeEventUtils.constructEdgeEvent(tenantId, edge.getId(), EdgeEventType.ADMIN_SETTINGS,
-                EdgeEventActionType.UPDATED, null, mapper.valueToTree(tenantMailTemplates)));
+        AdminSettings tenantMailTemplates = convertToTenantAdminSettings(tenantId, systemMailTemplates.getKey(), (ObjectNode) systemMailTemplates.getJsonValue());
+        result.add(EdgeUtils.constructEdgeEvent(tenantId, edge.getId(), EdgeEventType.ADMIN_SETTINGS,
+                EdgeEventActionType.UPDATED, null, JacksonUtil.OBJECT_MAPPER.valueToTree(tenantMailTemplates)));
 
-        // @voba - returns PageData object to be in sync with other fetchers
+        // return PageData object to be in sync with other fetchers
         return new PageData<>(result, 1, result.size(), false);
     }
 
@@ -116,7 +114,7 @@ public class AdminSettingsEdgeEventFetcher implements EdgeEventFetcher {
         AdminSettings adminSettings = new AdminSettings();
         adminSettings.setId(new AdminSettingsId(Uuids.timeBased()));
         adminSettings.setKey("mailTemplates");
-        adminSettings.setJsonValue(mapper.convertValue(mailTemplates, JsonNode.class));
+        adminSettings.setJsonValue(JacksonUtil.OBJECT_MAPPER.convertValue(mailTemplates, JsonNode.class));
         return adminSettings;
     }
 
@@ -151,8 +149,9 @@ public class AdminSettingsEdgeEventFetcher implements EdgeEventFetcher {
         }
     }
 
-    private AdminSettings convertToTenantAdminSettings(String key, ObjectNode jsonValue) {
+    private AdminSettings convertToTenantAdminSettings(TenantId tenantId, String key, ObjectNode jsonValue) {
         AdminSettings tenantMailSettings = new AdminSettings();
+        tenantMailSettings.setTenantId(tenantId);
         jsonValue.put("useSystemMailSettings", true);
         tenantMailSettings.setJsonValue(jsonValue);
         tenantMailSettings.setKey(key);

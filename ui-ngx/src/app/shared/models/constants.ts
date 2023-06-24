@@ -1,5 +1,5 @@
 ///
-/// Copyright © 2016-2022 The Thingsboard Authors
+/// Copyright © 2016-2023 The Thingsboard Authors
 ///
 /// Licensed under the Apache License, Version 2.0 (the "License");
 /// you may not use this file except in compliance with the License.
@@ -16,6 +16,7 @@
 
 import { InjectionToken } from '@angular/core';
 import { IModulesMap } from '@modules/common/modules-map.models';
+import { EntityType } from '@shared/models/entity-type.models';
 
 export const Constants = {
   serverErrorCode: {
@@ -38,6 +39,20 @@ export const Constants = {
   }
 };
 
+export const serverErrorCodesTranslations = new Map<number, string>([
+  [Constants.serverErrorCode.general, 'server-error.general'],
+  [Constants.serverErrorCode.authentication, 'server-error.authentication'],
+  [Constants.serverErrorCode.jwtTokenExpired, 'server-error.jwt-token-expired'],
+  [Constants.serverErrorCode.tenantTrialExpired, 'server-error.tenant-trial-expired'],
+  [Constants.serverErrorCode.credentialsExpired, 'server-error.credentials-expired'],
+  [Constants.serverErrorCode.permissionDenied, 'server-error.permission-denied'],
+  [Constants.serverErrorCode.invalidArguments, 'server-error.invalid-arguments'],
+  [Constants.serverErrorCode.badRequestParams, 'server-error.bad-request-params'],
+  [Constants.serverErrorCode.itemNotFound, 'server-error.item-not-found'],
+  [Constants.serverErrorCode.tooManyRequests, 'server-error.too-many-requests'],
+  [Constants.serverErrorCode.tooManyUpdates, 'server-error.too-many-updates'],
+]);
+
 export const MediaBreakpoints = {
   xs: 'screen and (max-width: 599px)',
   sm: 'screen and (min-width: 600px) and (max-width: 959px)',
@@ -52,7 +67,8 @@ export const MediaBreakpoints = {
   'gt-sm': 'screen and (min-width: 960px)',
   'gt-md': 'screen and (min-width: 1280px)',
   'gt-lg': 'screen and (min-width: 1920px)',
-  'gt-xl': 'screen and (min-width: 5001px)'
+  'gt-xl': 'screen and (min-width: 5001px)',
+  'md-lg': 'screen and (min-width: 960px) and (max-width: 1819px)'
 };
 
 export const helpBaseUrl = 'https://thingsboard.io';
@@ -61,14 +77,19 @@ export const HelpLinks = {
   linksMap: {
     outgoingMailSettings: helpBaseUrl + '/docs/user-guide/ui/mail-settings',
     smsProviderSettings: helpBaseUrl + '/docs/user-guide/ui/sms-provider-settings',
+    slackSettings: helpBaseUrl + '/docs/user-guide/ui/slack-settings',
     securitySettings: helpBaseUrl + '/docs/user-guide/ui/security-settings',
     oauth2Settings: helpBaseUrl + '/docs/user-guide/oauth-2-support/',
+    twoFactorAuthSettings: helpBaseUrl + '/docs/',
     ruleEngine: helpBaseUrl + '/docs/user-guide/rule-engine-2-0/overview/',
     ruleNodeCheckRelation: helpBaseUrl + '/docs/user-guide/rule-engine-2-0/filter-nodes/#check-relation-filter-node',
     ruleNodeCheckExistenceFields: helpBaseUrl + '/docs/user-guide/rule-engine-2-0/filter-nodes/#check-existence-fields-node',
     ruleNodeGpsGeofencingFilter: helpBaseUrl + '/docs/user-guide/rule-engine-2-0/filter-nodes/#gps-geofencing-filter-node',
     ruleNodeJsFilter: helpBaseUrl + '/docs/user-guide/rule-engine-2-0/filter-nodes/#script-filter-node',
     ruleNodeJsSwitch: helpBaseUrl + '/docs/user-guide/rule-engine-2-0/filter-nodes/#switch-node',
+    ruleNodeAssetProfileSwitch: helpBaseUrl + '/docs/user-guide/rule-engine-2-0/filter-nodes/#asset-profile-switch',
+    ruleNodeDeviceProfileSwitch: helpBaseUrl + '/docs/user-guide/rule-engine-2-0/filter-nodes/#device-profile-switch',
+    ruleNodeCheckAlarmStatus: helpBaseUrl + '/docs/user-guide/rule-engine-2-0/filter-nodes/#check-alarm-status',
     ruleNodeMessageTypeFilter: helpBaseUrl + '/docs/user-guide/rule-engine-2-0/filter-nodes/#message-type-filter-node',
     ruleNodeMessageTypeSwitch: helpBaseUrl + '/docs/user-guide/rule-engine-2-0/filter-nodes/#message-type-switch-node',
     ruleNodeOriginatorTypeFilter: helpBaseUrl + '/docs/user-guide/rule-engine-2-0/filter-nodes/#originator-type-filter-node',
@@ -111,18 +132,21 @@ export const HelpLinks = {
     ruleNodeRestApiCall: helpBaseUrl + '/docs/user-guide/rule-engine-2-0/external-nodes/#rest-api-call-node',
     ruleNodeSendEmail: helpBaseUrl + '/docs/user-guide/rule-engine-2-0/external-nodes/#send-email-node',
     ruleNodeSendSms: helpBaseUrl + '/docs/user-guide/rule-engine-2-0/external-nodes/#send-sms-node',
+    ruleNodeMath: helpBaseUrl + '/docs/user-guide/rule-engine-2-0/action-nodes/#math-function-node',
+    ruleNodeCalculateDelta: helpBaseUrl + '/docs/user-guide/rule-engine-2-0/enrichment-nodes/#calculate-delta',
     tenants: helpBaseUrl + '/docs/user-guide/ui/tenants',
     tenantProfiles: helpBaseUrl + '/docs/user-guide/ui/tenant-profiles',
     customers: helpBaseUrl + '/docs/user-guide/ui/customers',
     users: helpBaseUrl + '/docs/user-guide/ui/users',
     devices: helpBaseUrl + '/docs/user-guide/ui/devices',
     deviceProfiles: helpBaseUrl + '/docs/user-guide/ui/device-profiles',
+    assetProfiles: helpBaseUrl + '/docs/user-guide/ui/asset-profiles',
     edges: helpBaseUrl + '/docs/user-guide/ui/edges',
     assets: helpBaseUrl + '/docs/user-guide/ui/assets',
     entityViews: helpBaseUrl + '/docs/user-guide/ui/entity-views',
     entitiesImport: helpBaseUrl + '/docs/user-guide/bulk-provisioning',
     rulechains: helpBaseUrl + '/docs/user-guide/ui/rule-chains',
-    resources: helpBaseUrl + '/docs/user-guide/ui/resources',
+    lwm2mResourceLibrary: helpBaseUrl + '/docs/reference/lwm2m-api',
     dashboards: helpBaseUrl + '/docs/user-guide/ui/dashboards',
     otaUpdates: helpBaseUrl + '/docs/user-guide/ota-updates',
     widgetsBundles: helpBaseUrl + '/docs/user-guide/ui/widget-library#bundles',
@@ -133,7 +157,16 @@ export const HelpLinks = {
     widgetsConfigAlarm: helpBaseUrl +  '/docs/user-guide/ui/dashboards#alarm',
     widgetsConfigStatic: helpBaseUrl +  '/docs/user-guide/ui/dashboards#static',
     ruleNodePushToCloud: helpBaseUrl + '/docs/user-guide/rule-engine-2-0/action-nodes/#push-to-cloud',
-    ruleNodePushToEdge: helpBaseUrl + '/docs/user-guide/rule-engine-2-0/action-nodes/#push-to-edge'
+    ruleNodePushToEdge: helpBaseUrl + '/docs/user-guide/rule-engine-2-0/action-nodes/#push-to-edge',
+    queue: helpBaseUrl + '/docs/user-guide/queue',
+    repositorySettings: helpBaseUrl + '/docs/user-guide/version-control/#git-settings-configuration',
+    autoCommitSettings: helpBaseUrl + '/docs/user-guide/version-control/#auto-commit',
+    twoFactorAuthentication: helpBaseUrl + '/docs/user-guide/two-factor-authentication',
+    sentNotification: helpBaseUrl + '/docs/user-guide/notifications/#send-notification',
+    templateNotifications: helpBaseUrl + '/docs/user-guide/notifications/#templates',
+    recipientNotifications: helpBaseUrl + '/docs/user-guide/notifications/#recipients',
+    ruleNotifications: helpBaseUrl + '/docs/user-guide/notifications/#rules',
+    jwtSecuritySettings: helpBaseUrl + '/docs/user-guide/ui/jwt-security-settings/',
   }
 };
 
@@ -200,7 +233,7 @@ export const valueTypesMap = new Map<ValueType, ValueTypeData>(
       ValueType.JSON,
       {
         name: 'value.json',
-        icon: 'mdi:json'
+        icon: 'mdi:code-json'
       }
     ]
   ]

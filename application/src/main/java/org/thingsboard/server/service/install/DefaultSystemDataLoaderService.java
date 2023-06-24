@@ -1,5 +1,5 @@
 /**
- * Copyright © 2016-2022 The Thingsboard Authors
+ * Copyright © 2016-2023 The Thingsboard Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,10 +21,12 @@ import com.google.common.util.concurrent.FutureCallback;
 import com.google.common.util.concurrent.Futures;
 import com.google.common.util.concurrent.ListenableFuture;
 import lombok.Getter;
+import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.context.annotation.Profile;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -61,6 +63,7 @@ import org.thingsboard.server.common.data.kv.BasicTsKvEntry;
 import org.thingsboard.server.common.data.kv.BooleanDataEntry;
 import org.thingsboard.server.common.data.kv.DoubleDataEntry;
 import org.thingsboard.server.common.data.kv.LongDataEntry;
+import org.thingsboard.server.common.data.page.PageDataIterable;
 import org.thingsboard.server.common.data.page.PageLink;
 import org.thingsboard.server.common.data.query.BooleanFilterPredicate;
 import org.thingsboard.server.common.data.query.DynamicValue;
@@ -68,12 +71,18 @@ import org.thingsboard.server.common.data.query.DynamicValueSourceType;
 import org.thingsboard.server.common.data.query.EntityKeyValueType;
 import org.thingsboard.server.common.data.query.FilterPredicateValue;
 import org.thingsboard.server.common.data.query.NumericFilterPredicate;
+import org.thingsboard.server.common.data.queue.ProcessingStrategy;
+import org.thingsboard.server.common.data.queue.ProcessingStrategyType;
+import org.thingsboard.server.common.data.queue.Queue;
+import org.thingsboard.server.common.data.queue.SubmitStrategy;
+import org.thingsboard.server.common.data.queue.SubmitStrategyType;
 import org.thingsboard.server.common.data.rule.RuleChainType;
 import org.thingsboard.server.common.data.security.Authority;
 import org.thingsboard.server.common.data.security.DeviceCredentials;
 import org.thingsboard.server.common.data.security.UserCredentials;
 import org.thingsboard.server.common.data.tenant.profile.DefaultTenantProfileConfiguration;
 import org.thingsboard.server.common.data.tenant.profile.TenantProfileData;
+import org.thingsboard.server.common.data.tenant.profile.TenantProfileQueueConfiguration;
 import org.thingsboard.server.common.data.widget.WidgetsBundle;
 import org.thingsboard.server.dao.attributes.AttributesService;
 import org.thingsboard.server.dao.customer.CustomerService;
@@ -81,6 +90,9 @@ import org.thingsboard.server.dao.device.DeviceCredentialsService;
 import org.thingsboard.server.dao.device.DeviceProfileService;
 import org.thingsboard.server.dao.device.DeviceService;
 import org.thingsboard.server.dao.exception.DataValidationException;
+import org.thingsboard.server.dao.notification.NotificationSettingsService;
+import org.thingsboard.server.dao.notification.NotificationTargetService;
+import org.thingsboard.server.dao.queue.QueueService;
 import org.thingsboard.server.dao.rule.RuleChainService;
 import org.thingsboard.server.dao.settings.AdminSettingsService;
 import org.thingsboard.server.dao.tenant.TenantProfileService;
@@ -88,6 +100,7 @@ import org.thingsboard.server.dao.tenant.TenantService;
 import org.thingsboard.server.dao.timeseries.TimeseriesService;
 import org.thingsboard.server.dao.user.UserService;
 import org.thingsboard.server.dao.widget.WidgetsBundleService;
+import org.thingsboard.server.service.security.auth.jwt.settings.JwtSettingsService;
 
 import javax.annotation.Nullable;
 import javax.annotation.PostConstruct;
@@ -98,6 +111,8 @@ import java.util.List;
 import java.util.TreeMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 
 @Service
 @Profile("install")
@@ -155,6 +170,19 @@ public class DefaultSystemDataLoaderService implements SystemDataLoaderService {
     @Getter
     private boolean persistActivityToTelemetry;
 
+    @Lazy
+    @Autowired
+    private QueueService queueService;
+
+    @Autowired
+    private JwtSettingsService jwtSettingsService;
+
+    @Autowired
+    private NotificationSettingsService notificationSettingsService;
+
+    @Autowired
+    private NotificationTargetService notificationTargetService;
+
     @Bean
     protected BCryptPasswordEncoder passwordEncoder() {
         return new BCryptPasswordEncoder();
@@ -183,46 +211,39 @@ public class DefaultSystemDataLoaderService implements SystemDataLoaderService {
     public void createDefaultTenantProfiles() throws Exception {
         tenantProfileService.findOrCreateDefaultTenantProfile(TenantId.SYS_TENANT_ID);
 
-        TenantProfileData tenantProfileData = new TenantProfileData();
-        tenantProfileData.setConfiguration(new DefaultTenantProfileConfiguration());
+        TenantProfileData isolatedRuleEngineTenantProfileData = new TenantProfileData();
+        isolatedRuleEngineTenantProfileData.setConfiguration(new DefaultTenantProfileConfiguration());
 
-        TenantProfile isolatedTbCoreProfile = new TenantProfile();
-        isolatedTbCoreProfile.setDefault(false);
-        isolatedTbCoreProfile.setName("Isolated TB Core");
-        isolatedTbCoreProfile.setDescription("Isolated TB Core tenant profile");
-        isolatedTbCoreProfile.setIsolatedTbCore(true);
-        isolatedTbCoreProfile.setIsolatedTbRuleEngine(false);
-        isolatedTbCoreProfile.setProfileData(tenantProfileData);
-        try {
-            tenantProfileService.saveTenantProfile(TenantId.SYS_TENANT_ID, isolatedTbCoreProfile);
-        } catch (DataValidationException e) {
-            log.warn(e.getMessage());
-        }
+        TenantProfileQueueConfiguration mainQueueConfiguration = new TenantProfileQueueConfiguration();
+        mainQueueConfiguration.setName(DataConstants.MAIN_QUEUE_NAME);
+        mainQueueConfiguration.setTopic(DataConstants.MAIN_QUEUE_TOPIC);
+        mainQueueConfiguration.setPollInterval(25);
+        mainQueueConfiguration.setPartitions(10);
+        mainQueueConfiguration.setConsumerPerPartition(true);
+        mainQueueConfiguration.setPackProcessingTimeout(2000);
+        SubmitStrategy mainQueueSubmitStrategy = new SubmitStrategy();
+        mainQueueSubmitStrategy.setType(SubmitStrategyType.BURST);
+        mainQueueSubmitStrategy.setBatchSize(1000);
+        mainQueueConfiguration.setSubmitStrategy(mainQueueSubmitStrategy);
+        ProcessingStrategy mainQueueProcessingStrategy = new ProcessingStrategy();
+        mainQueueProcessingStrategy.setType(ProcessingStrategyType.SKIP_ALL_FAILURES);
+        mainQueueProcessingStrategy.setRetries(3);
+        mainQueueProcessingStrategy.setFailurePercentage(0);
+        mainQueueProcessingStrategy.setPauseBetweenRetries(3);
+        mainQueueProcessingStrategy.setMaxPauseBetweenRetries(3);
+        mainQueueConfiguration.setProcessingStrategy(mainQueueProcessingStrategy);
+
+        isolatedRuleEngineTenantProfileData.setQueueConfiguration(Collections.singletonList(mainQueueConfiguration));
 
         TenantProfile isolatedTbRuleEngineProfile = new TenantProfile();
         isolatedTbRuleEngineProfile.setDefault(false);
         isolatedTbRuleEngineProfile.setName("Isolated TB Rule Engine");
         isolatedTbRuleEngineProfile.setDescription("Isolated TB Rule Engine tenant profile");
-        isolatedTbRuleEngineProfile.setIsolatedTbCore(false);
         isolatedTbRuleEngineProfile.setIsolatedTbRuleEngine(true);
-        isolatedTbRuleEngineProfile.setProfileData(tenantProfileData);
+        isolatedTbRuleEngineProfile.setProfileData(isolatedRuleEngineTenantProfileData);
 
         try {
             tenantProfileService.saveTenantProfile(TenantId.SYS_TENANT_ID, isolatedTbRuleEngineProfile);
-        } catch (DataValidationException e) {
-            log.warn(e.getMessage());
-        }
-
-        TenantProfile isolatedTbCoreAndTbRuleEngineProfile = new TenantProfile();
-        isolatedTbCoreAndTbRuleEngineProfile.setDefault(false);
-        isolatedTbCoreAndTbRuleEngineProfile.setName("Isolated TB Core and TB Rule Engine");
-        isolatedTbCoreAndTbRuleEngineProfile.setDescription("Isolated TB Core and TB Rule Engine tenant profile");
-        isolatedTbCoreAndTbRuleEngineProfile.setIsolatedTbCore(true);
-        isolatedTbCoreAndTbRuleEngineProfile.setIsolatedTbRuleEngine(true);
-        isolatedTbCoreAndTbRuleEngineProfile.setProfileData(tenantProfileData);
-
-        try {
-            tenantProfileService.saveTenantProfile(TenantId.SYS_TENANT_ID, isolatedTbCoreAndTbRuleEngineProfile);
         } catch (DataValidationException e) {
             log.warn(e.getMessage());
         }
@@ -231,6 +252,7 @@ public class DefaultSystemDataLoaderService implements SystemDataLoaderService {
     @Override
     public void createAdminSettings() throws Exception {
         AdminSettings generalSettings = new AdminSettings();
+        generalSettings.setTenantId(TenantId.SYS_TENANT_ID);
         generalSettings.setKey("general");
         ObjectNode node = objectMapper.createObjectNode();
         node.put("baseUrl", "http://localhost:8080");
@@ -239,6 +261,7 @@ public class DefaultSystemDataLoaderService implements SystemDataLoaderService {
         adminSettingsService.saveAdminSettings(TenantId.SYS_TENANT_ID, generalSettings);
 
         AdminSettings mailSettings = new AdminSettings();
+        mailSettings.setTenantId(TenantId.SYS_TENANT_ID);
         mailSettings.setKey("mail");
         node = objectMapper.createObjectNode();
         node.put("mailFrom", "ThingsBoard <sysadmin@localhost.localdomain>");
@@ -254,6 +277,16 @@ public class DefaultSystemDataLoaderService implements SystemDataLoaderService {
         node.put("showChangePassword", false);
         mailSettings.setJsonValue(node);
         adminSettingsService.saveAdminSettings(TenantId.SYS_TENANT_ID, mailSettings);
+    }
+
+    @Override
+    public void createRandomJwtSettings() throws Exception {
+        jwtSettingsService.createRandomJwtSettings();
+    }
+
+    @Override
+    public void saveLegacyYmlSettings() throws Exception {
+        jwtSettingsService.saveLegacyYmlSettings();
     }
 
     @Override
@@ -478,6 +511,7 @@ public class DefaultSystemDataLoaderService implements SystemDataLoaderService {
         this.deleteSystemWidgetBundle("entity_admin_widgets");
         this.deleteSystemWidgetBundle("navigation_widgets");
         this.deleteSystemWidgetBundle("edge_widgets");
+        this.deleteSystemWidgetBundle("home_page_widgets");
         installScripts.loadSystemWidgets();
     }
 
@@ -532,7 +566,7 @@ public class DefaultSystemDataLoaderService implements SystemDataLoaderService {
                     Collections.singletonList(new BasicTsKvEntry(System.currentTimeMillis(), new BooleanDataEntry(key, value))), 0L);
             addTsCallback(saveFuture, new TelemetrySaveCallback<>(deviceId, key, value));
         } else {
-            ListenableFuture<List<Void>> saveFuture = attributesService.save(TenantId.SYS_TENANT_ID, deviceId, DataConstants.SERVER_SCOPE,
+            ListenableFuture<List<String>> saveFuture = attributesService.save(TenantId.SYS_TENANT_ID, deviceId, DataConstants.SERVER_SCOPE,
                     Collections.singletonList(new BaseAttributeKvEntry(new BooleanDataEntry(key, value)
                     , System.currentTimeMillis())));
             addTsCallback(saveFuture, new TelemetrySaveCallback<>(deviceId, key, value));
@@ -573,6 +607,107 @@ public class DefaultSystemDataLoaderService implements SystemDataLoaderService {
                 callback.onFailure(t);
             }
         }, tsCallBackExecutor);
+    }
+
+    @Override
+    public void createQueues() {
+        Queue mainQueue = queueService.findQueueByTenantIdAndName(TenantId.SYS_TENANT_ID, DataConstants.MAIN_QUEUE_NAME);
+        if (mainQueue == null) {
+            mainQueue = new Queue();
+            mainQueue.setTenantId(TenantId.SYS_TENANT_ID);
+            mainQueue.setName(DataConstants.MAIN_QUEUE_NAME);
+            mainQueue.setTopic(DataConstants.MAIN_QUEUE_TOPIC);
+            mainQueue.setPollInterval(25);
+            mainQueue.setPartitions(10);
+            mainQueue.setConsumerPerPartition(true);
+            mainQueue.setPackProcessingTimeout(2000);
+            SubmitStrategy mainQueueSubmitStrategy = new SubmitStrategy();
+            mainQueueSubmitStrategy.setType(SubmitStrategyType.BURST);
+            mainQueueSubmitStrategy.setBatchSize(1000);
+            mainQueue.setSubmitStrategy(mainQueueSubmitStrategy);
+            ProcessingStrategy mainQueueProcessingStrategy = new ProcessingStrategy();
+            mainQueueProcessingStrategy.setType(ProcessingStrategyType.SKIP_ALL_FAILURES);
+            mainQueueProcessingStrategy.setRetries(3);
+            mainQueueProcessingStrategy.setFailurePercentage(0);
+            mainQueueProcessingStrategy.setPauseBetweenRetries(3);
+            mainQueueProcessingStrategy.setMaxPauseBetweenRetries(3);
+            mainQueue.setProcessingStrategy(mainQueueProcessingStrategy);
+            queueService.saveQueue(mainQueue);
+        }
+
+        Queue highPriorityQueue = queueService.findQueueByTenantIdAndName(TenantId.SYS_TENANT_ID, DataConstants.HP_QUEUE_NAME);
+        if (highPriorityQueue == null) {
+            highPriorityQueue = new Queue();
+            highPriorityQueue.setTenantId(TenantId.SYS_TENANT_ID);
+            highPriorityQueue.setName(DataConstants.HP_QUEUE_NAME);
+            highPriorityQueue.setTopic(DataConstants.HP_QUEUE_TOPIC);
+            highPriorityQueue.setPollInterval(25);
+            highPriorityQueue.setPartitions(10);
+            highPriorityQueue.setConsumerPerPartition(true);
+            highPriorityQueue.setPackProcessingTimeout(2000);
+            SubmitStrategy highPriorityQueueSubmitStrategy = new SubmitStrategy();
+            highPriorityQueueSubmitStrategy.setType(SubmitStrategyType.BURST);
+            highPriorityQueueSubmitStrategy.setBatchSize(100);
+            highPriorityQueue.setSubmitStrategy(highPriorityQueueSubmitStrategy);
+            ProcessingStrategy highPriorityQueueProcessingStrategy = new ProcessingStrategy();
+            highPriorityQueueProcessingStrategy.setType(ProcessingStrategyType.RETRY_FAILED_AND_TIMED_OUT);
+            highPriorityQueueProcessingStrategy.setRetries(0);
+            highPriorityQueueProcessingStrategy.setFailurePercentage(0);
+            highPriorityQueueProcessingStrategy.setPauseBetweenRetries(5);
+            highPriorityQueueProcessingStrategy.setMaxPauseBetweenRetries(5);
+            highPriorityQueue.setProcessingStrategy(highPriorityQueueProcessingStrategy);
+            queueService.saveQueue(highPriorityQueue);
+        }
+
+        Queue sequentialByOriginatorQueue = queueService.findQueueByTenantIdAndName(TenantId.SYS_TENANT_ID, DataConstants.SQ_QUEUE_NAME);
+        if (sequentialByOriginatorQueue == null) {
+            sequentialByOriginatorQueue = new Queue();
+            sequentialByOriginatorQueue.setTenantId(TenantId.SYS_TENANT_ID);
+            sequentialByOriginatorQueue.setName(DataConstants.SQ_QUEUE_NAME);
+            sequentialByOriginatorQueue.setTopic(DataConstants.SQ_QUEUE_TOPIC);
+            sequentialByOriginatorQueue.setPollInterval(25);
+            sequentialByOriginatorQueue.setPartitions(10);
+            sequentialByOriginatorQueue.setPackProcessingTimeout(2000);
+            sequentialByOriginatorQueue.setConsumerPerPartition(true);
+            SubmitStrategy sequentialByOriginatorQueueSubmitStrategy = new SubmitStrategy();
+            sequentialByOriginatorQueueSubmitStrategy.setType(SubmitStrategyType.SEQUENTIAL_BY_ORIGINATOR);
+            sequentialByOriginatorQueueSubmitStrategy.setBatchSize(100);
+            sequentialByOriginatorQueue.setSubmitStrategy(sequentialByOriginatorQueueSubmitStrategy);
+            ProcessingStrategy sequentialByOriginatorQueueProcessingStrategy = new ProcessingStrategy();
+            sequentialByOriginatorQueueProcessingStrategy.setType(ProcessingStrategyType.RETRY_FAILED_AND_TIMED_OUT);
+            sequentialByOriginatorQueueProcessingStrategy.setRetries(3);
+            sequentialByOriginatorQueueProcessingStrategy.setFailurePercentage(0);
+            sequentialByOriginatorQueueProcessingStrategy.setPauseBetweenRetries(5);
+            sequentialByOriginatorQueueProcessingStrategy.setMaxPauseBetweenRetries(5);
+            sequentialByOriginatorQueue.setProcessingStrategy(sequentialByOriginatorQueueProcessingStrategy);
+            queueService.saveQueue(sequentialByOriginatorQueue);
+        }
+    }
+
+    @Override
+    @SneakyThrows
+    public void createDefaultNotificationConfigs() {
+        log.info("Creating default notification configs for system admin");
+        if (notificationTargetService.countNotificationTargetsByTenantId(TenantId.SYS_TENANT_ID) == 0) {
+            notificationSettingsService.createDefaultNotificationConfigs(TenantId.SYS_TENANT_ID);
+        }
+        PageDataIterable<TenantId> tenants = new PageDataIterable<>(tenantService::findTenantsIds, 500);
+        ExecutorService executor = Executors.newFixedThreadPool(Math.max(Runtime.getRuntime().availableProcessors(), 4));
+        log.info("Creating default notification configs for all tenants");
+        AtomicInteger count = new AtomicInteger();
+        for (TenantId tenantId : tenants) {
+            executor.submit(() -> {
+                if (notificationTargetService.countNotificationTargetsByTenantId(tenantId) == 0) {
+                    notificationSettingsService.createDefaultNotificationConfigs(tenantId);
+                    int n = count.incrementAndGet();
+                    if (n % 500 == 0) {
+                        log.info("{} tenants processed", n);
+                    }
+                }
+            });
+        }
+        executor.shutdown();
+        executor.awaitTermination(Integer.MAX_VALUE, TimeUnit.SECONDS);
     }
 
 }

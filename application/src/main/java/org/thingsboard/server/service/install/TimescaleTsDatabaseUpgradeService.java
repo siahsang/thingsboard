@@ -1,5 +1,5 @@
 /**
- * Copyright © 2016-2022 The Thingsboard Authors
+ * Copyright © 2016-2023 The Thingsboard Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,13 +16,12 @@
 package org.thingsboard.server.service.install;
 
 import lombok.extern.slf4j.Slf4j;
-import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.lang3.SystemUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Service;
-import org.thingsboard.server.dao.util.PsqlDao;
+import org.thingsboard.server.common.data.StringUtils;
 import org.thingsboard.server.dao.util.TimescaleDBTsDao;
 
 import java.io.File;
@@ -37,7 +36,6 @@ import java.sql.DriverManager;
 @Profile("install")
 @Slf4j
 @TimescaleDBTsDao
-@PsqlDao
 public class TimescaleTsDatabaseUpgradeService extends AbstractSqlTsDatabaseUpgradeService implements DatabaseTsUpgradeService {
 
     @Value("${sql.timescale.chunk_time_interval:86400000}")

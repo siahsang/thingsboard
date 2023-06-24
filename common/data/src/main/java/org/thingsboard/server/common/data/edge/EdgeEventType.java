@@ -1,5 +1,5 @@
 /**
- * Copyright © 2016-2022 The Thingsboard Authors
+ * Copyright © 2016-2023 The Thingsboard Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,6 +20,7 @@ public enum EdgeEventType {
     ASSET,
     DEVICE,
     DEVICE_PROFILE,
+    ASSET_PROFILE,
     ENTITY_VIEW,
     ALARM,
     RULE_CHAIN,
@@ -31,5 +32,7 @@ public enum EdgeEventType {
     TENANT,
     WIDGETS_BUNDLE,
     WIDGET_TYPE,
-    ADMIN_SETTINGS
+    ADMIN_SETTINGS,
+    OTA_PACKAGE,
+    QUEUE
 }

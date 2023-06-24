@@ -1,5 +1,5 @@
 /**
- * Copyright © 2016-2022 The Thingsboard Authors
+ * Copyright © 2016-2023 The Thingsboard Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,9 +17,10 @@ package org.thingsboard.server.dao.sql.customer;
 
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
-import org.springframework.data.repository.PagingAndSortingRepository;
 import org.springframework.data.repository.query.Param;
+import org.thingsboard.server.dao.ExportableEntityRepository;
 import org.thingsboard.server.dao.model.sql.CustomerEntity;
 
 import java.util.UUID;
@@ -27,7 +28,7 @@ import java.util.UUID;
 /**
  * Created by Valerii Sosliuk on 5/6/2017.
  */
-public interface CustomerRepository extends PagingAndSortingRepository<CustomerEntity, UUID> {
+public interface CustomerRepository extends JpaRepository<CustomerEntity, UUID>, ExportableEntityRepository<CustomerEntity> {
 
     @Query("SELECT c FROM CustomerEntity c WHERE c.tenantId = :tenantId " +
             "AND LOWER(c.searchText) LIKE LOWER(CONCAT('%', :textSearch, '%'))")
@@ -38,4 +39,8 @@ public interface CustomerRepository extends PagingAndSortingRepository<CustomerE
     CustomerEntity findByTenantIdAndTitle(UUID tenantId, String title);
 
     Long countByTenantId(UUID tenantId);
+
+    @Query("SELECT externalId FROM CustomerEntity WHERE id = :id")
+    UUID getExternalIdById(@Param("id") UUID id);
+
 }

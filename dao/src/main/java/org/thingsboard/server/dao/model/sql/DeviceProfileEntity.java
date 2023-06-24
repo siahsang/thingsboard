@@ -1,5 +1,5 @@
 /**
- * Copyright © 2016-2022 The Thingsboard Authors
+ * Copyright © 2016-2023 The Thingsboard Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -103,6 +103,12 @@ public final class DeviceProfileEntity extends BaseSqlEntity<DeviceProfile> impl
     @Column(name = ModelConstants.DEVICE_PROFILE_SOFTWARE_ID_PROPERTY)
     private UUID softwareId;
 
+    @Column(name = ModelConstants.DEVICE_PROFILE_DEFAULT_EDGE_RULE_CHAIN_ID_PROPERTY, columnDefinition = "uuid")
+    private UUID defaultEdgeRuleChainId;
+
+    @Column(name = ModelConstants.EXTERNAL_ID_PROPERTY)
+    private UUID externalId;
+
     public DeviceProfileEntity() {
         super();
     }
@@ -137,6 +143,12 @@ public final class DeviceProfileEntity extends BaseSqlEntity<DeviceProfile> impl
         if (deviceProfile.getSoftwareId() != null) {
             this.softwareId = deviceProfile.getSoftwareId().getId();
         }
+        if (deviceProfile.getDefaultEdgeRuleChainId() != null) {
+            this.defaultEdgeRuleChainId = deviceProfile.getDefaultEdgeRuleChainId().getId();
+        }
+        if (deviceProfile.getExternalId() != null) {
+            this.externalId = deviceProfile.getExternalId().getId();
+        }
     }
 
     @Override
@@ -167,6 +179,7 @@ public final class DeviceProfileEntity extends BaseSqlEntity<DeviceProfile> impl
         deviceProfile.setProvisionType(provisionType);
         deviceProfile.setDescription(description);
         deviceProfile.setDefault(isDefault);
+        deviceProfile.setDefaultQueueName(defaultQueueName);
         deviceProfile.setProfileData(JacksonUtil.convertValue(profileData, DeviceProfileData.class));
         if (defaultRuleChainId != null) {
             deviceProfile.setDefaultRuleChainId(new RuleChainId(defaultRuleChainId));
@@ -174,15 +187,19 @@ public final class DeviceProfileEntity extends BaseSqlEntity<DeviceProfile> impl
         if (defaultDashboardId != null) {
             deviceProfile.setDefaultDashboardId(new DashboardId(defaultDashboardId));
         }
-        deviceProfile.setDefaultQueueName(defaultQueueName);
         deviceProfile.setProvisionDeviceKey(provisionDeviceKey);
 
         if (firmwareId != null) {
             deviceProfile.setFirmwareId(new OtaPackageId(firmwareId));
         }
-
         if (softwareId != null) {
             deviceProfile.setSoftwareId(new OtaPackageId(softwareId));
+        }
+        if (defaultEdgeRuleChainId != null) {
+            deviceProfile.setDefaultEdgeRuleChainId(new RuleChainId(defaultEdgeRuleChainId));
+        }
+        if (externalId != null) {
+            deviceProfile.setExternalId(new DeviceProfileId(externalId));
         }
 
         return deviceProfile;

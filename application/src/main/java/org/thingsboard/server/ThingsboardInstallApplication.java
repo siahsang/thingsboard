@@ -1,5 +1,5 @@
 /**
- * Copyright © 2016-2022 The Thingsboard Authors
+ * Copyright © 2016-2023 The Thingsboard Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -29,10 +29,13 @@ import java.util.Arrays;
 @ComponentScan({"org.thingsboard.server.install",
         "org.thingsboard.server.service.component",
         "org.thingsboard.server.service.install",
+        "org.thingsboard.server.service.security.auth.jwt.settings",
         "org.thingsboard.server.dao",
         "org.thingsboard.server.common.stats",
         "org.thingsboard.server.common.transport.config.ssl",
-        "org.thingsboard.server.cache"})
+        "org.thingsboard.server.cache",
+        "org.thingsboard.server.springfox"
+})
 public class ThingsboardInstallApplication {
 
     private static final String SPRING_CONFIG_NAME_KEY = "--spring.config.name";

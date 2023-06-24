@@ -1,5 +1,5 @@
 ///
-/// Copyright © 2016-2022 The Thingsboard Authors
+/// Copyright © 2016-2023 The Thingsboard Authors
 ///
 /// Licensed under the Apache License, Version 2.0 (the "License");
 /// you may not use this file except in compliance with the License.
@@ -24,6 +24,7 @@ import { WidgetLibraryComponent } from './widget-library.component';
 import { WidgetEditorComponent } from '@home/pages/widget/widget-editor.component';
 import { SelectWidgetTypeDialogComponent } from '@home/pages/widget/select-widget-type-dialog.component';
 import { SaveWidgetTypeAsDialogComponent } from './save-widget-type-as-dialog.component';
+import { WidgetsBundleTabsComponent } from '@home/pages/widget/widgets-bundle-tabs.component';
 
 @NgModule({
   declarations: [
@@ -31,7 +32,8 @@ import { SaveWidgetTypeAsDialogComponent } from './save-widget-type-as-dialog.co
     WidgetLibraryComponent,
     WidgetEditorComponent,
     SelectWidgetTypeDialogComponent,
-    SaveWidgetTypeAsDialogComponent
+    SaveWidgetTypeAsDialogComponent,
+    WidgetsBundleTabsComponent
   ],
   imports: [
     CommonModule,

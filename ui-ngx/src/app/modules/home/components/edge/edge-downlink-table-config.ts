@@ -1,5 +1,5 @@
 ///
-/// Copyright © 2016-2022 The Thingsboard Authors
+/// Copyright © 2016-2023 The Thingsboard Authors
 ///
 /// Licensed under the Apache License, Version 2.0 (the "License");
 /// you may not use this file except in compliance with the License.
@@ -76,6 +76,7 @@ export class EdgeDownlinkTableConfig extends EntityTableConfig<EdgeEvent, TimePa
     this.searchEnabled = false;
     this.addEnabled = false;
     this.entitiesDeleteEnabled = false;
+    this.pageMode = false;
 
     this.headerComponent = EdgeDownlinkTableHeaderComponent;
     this.entityTranslations = { noEntities: 'edge.no-downlinks-prompt' };
@@ -130,7 +131,7 @@ export class EdgeDownlinkTableConfig extends EntityTableConfig<EdgeEvent, TimePa
               );
             }
         },
-        '40px'),
+        '48px'),
     );
     if (updateTableColumns) {
       this.getTable().columnsUpdated(true);
@@ -138,7 +139,7 @@ export class EdgeDownlinkTableConfig extends EntityTableConfig<EdgeEvent, TimePa
   }
 
   private updateEdgeEventStatus(createdTime: number): string {
-    if (this.queueStartTs && createdTime < this.queueStartTs) {
+    if (this.queueStartTs && createdTime <= this.queueStartTs) {
       return this.translate.instant('edge.deployed');
     } else {
       return this.translate.instant('edge.pending');

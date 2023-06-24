@@ -1,5 +1,5 @@
 #
-# Copyright © 2016-2022 The Thingsboard Authors
+# Copyright © 2016-2023 The Thingsboard Authors
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -14,15 +14,12 @@
 # limitations under the License.
 #
 
-FROM node:16.13.1-bullseye-slim
-
-COPY start-web-ui.sh /tmp/
-
-RUN chmod a+x /tmp/*.sh \
-    && mv /tmp/start-web-ui.sh /usr/bin
+FROM thingsboard/node:16.17.0-bullseye-slim
 
 ENV NODE_ENV production
 ENV DOCKER_MODE true
+
+COPY start-web-ui.sh /tmp/
 
 WORKDIR ${pkg.installFolder}
 
@@ -31,11 +28,13 @@ COPY ["src/package.json", "src/yarn.lock", "./"]
 COPY package/linux/conf ./conf
 COPY package/linux/conf ./config
 COPY web ./web
+COPY src/config ./config
 COPY src/server.js ./
 
-RUN chown -R node:node ${pkg.installFolder}
-
-RUN yarn install --production && yarn cache clean --all
+RUN chmod a+x /tmp/*.sh \
+    && mv /tmp/start-web-ui.sh /usr/bin \
+    && chown -R node:node ${pkg.installFolder} \
+    && yarn install --production && yarn cache clean --all
 
 USER node
 

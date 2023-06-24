@@ -1,5 +1,5 @@
 /**
- * Copyright © 2016-2022 The Thingsboard Authors
+ * Copyright © 2016-2023 The Thingsboard Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,25 +17,27 @@ package org.thingsboard.server.dao.sql.ota;
 
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.data.repository.CrudRepository;
+import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Component;
 import org.thingsboard.server.common.data.OtaPackageInfo;
-import org.thingsboard.server.common.data.ota.OtaPackageType;
 import org.thingsboard.server.common.data.id.DeviceProfileId;
 import org.thingsboard.server.common.data.id.OtaPackageId;
 import org.thingsboard.server.common.data.id.TenantId;
+import org.thingsboard.server.common.data.ota.OtaPackageType;
 import org.thingsboard.server.common.data.page.PageData;
 import org.thingsboard.server.common.data.page.PageLink;
 import org.thingsboard.server.dao.DaoUtil;
-import org.thingsboard.server.dao.ota.OtaPackageInfoDao;
 import org.thingsboard.server.dao.model.sql.OtaPackageInfoEntity;
+import org.thingsboard.server.dao.ota.OtaPackageInfoDao;
 import org.thingsboard.server.dao.sql.JpaAbstractSearchTextDao;
+import org.thingsboard.server.dao.util.SqlDao;
 
 import java.util.Objects;
 import java.util.UUID;
 
 @Slf4j
 @Component
+@SqlDao
 public class JpaOtaPackageInfoDao extends JpaAbstractSearchTextDao<OtaPackageInfoEntity, OtaPackageInfo> implements OtaPackageInfoDao {
 
     @Autowired
@@ -47,7 +49,7 @@ public class JpaOtaPackageInfoDao extends JpaAbstractSearchTextDao<OtaPackageInf
     }
 
     @Override
-    protected CrudRepository<OtaPackageInfoEntity, UUID> getCrudRepository() {
+    protected JpaRepository<OtaPackageInfoEntity, UUID> getRepository() {
         return otaPackageInfoRepository;
     }
 

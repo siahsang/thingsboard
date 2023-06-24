@@ -1,5 +1,5 @@
 /**
- * Copyright © 2016-2022 The Thingsboard Authors
+ * Copyright © 2016-2023 The Thingsboard Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,6 +17,7 @@ package org.thingsboard.server.controller;
 
 import io.swagger.annotations.ApiOperation;
 import io.swagger.annotations.ApiParam;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.core.io.ByteArrayResource;
 import org.springframework.http.HttpHeaders;
@@ -30,10 +31,8 @@ import org.springframework.web.bind.annotation.RequestMethod;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseBody;
 import org.springframework.web.bind.annotation.RestController;
-import org.thingsboard.server.common.data.EntityType;
 import org.thingsboard.server.common.data.TbResource;
 import org.thingsboard.server.common.data.TbResourceInfo;
-import org.thingsboard.server.common.data.audit.ActionType;
 import org.thingsboard.server.common.data.exception.ThingsboardException;
 import org.thingsboard.server.common.data.id.TbResourceId;
 import org.thingsboard.server.common.data.lwm2m.LwM2mObject;
@@ -41,6 +40,7 @@ import org.thingsboard.server.common.data.page.PageData;
 import org.thingsboard.server.common.data.page.PageLink;
 import org.thingsboard.server.common.data.security.Authority;
 import org.thingsboard.server.queue.util.TbCoreComponent;
+import org.thingsboard.server.service.resource.TbResourceService;
 import org.thingsboard.server.service.security.permission.Operation;
 import org.thingsboard.server.service.security.permission.Resource;
 
@@ -68,7 +68,10 @@ import static org.thingsboard.server.controller.ControllerConstants.UUID_WIKI_LI
 @RestController
 @TbCoreComponent
 @RequestMapping("/api")
+@RequiredArgsConstructor
 public class TbResourceController extends BaseController {
+
+    private final TbResourceService tbResourceService;
 
     public static final String RESOURCE_ID = "resourceId";
 
@@ -79,20 +82,16 @@ public class TbResourceController extends BaseController {
     public ResponseEntity<org.springframework.core.io.Resource> downloadResource(@ApiParam(value = RESOURCE_ID_PARAM_DESCRIPTION)
                                                                                  @PathVariable(RESOURCE_ID) String strResourceId) throws ThingsboardException {
         checkParameter(RESOURCE_ID, strResourceId);
-        try {
-            TbResourceId resourceId = new TbResourceId(toUUID(strResourceId));
-            TbResource tbResource = checkResourceId(resourceId, Operation.READ);
+        TbResourceId resourceId = new TbResourceId(toUUID(strResourceId));
+        TbResource tbResource = checkResourceId(resourceId, Operation.READ);
 
-            ByteArrayResource resource = new ByteArrayResource(Base64.getDecoder().decode(tbResource.getData().getBytes()));
-            return ResponseEntity.ok()
-                    .header(HttpHeaders.CONTENT_DISPOSITION, "attachment;filename=" + tbResource.getFileName())
-                    .header("x-filename", tbResource.getFileName())
-                    .contentLength(resource.contentLength())
-                    .contentType(MediaType.APPLICATION_OCTET_STREAM)
-                    .body(resource);
-        } catch (Exception e) {
-            throw handleException(e);
-        }
+        ByteArrayResource resource = new ByteArrayResource(Base64.getDecoder().decode(tbResource.getData().getBytes()));
+        return ResponseEntity.ok()
+                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment;filename=" + tbResource.getFileName())
+                .header("x-filename", tbResource.getFileName())
+                .contentLength(resource.contentLength())
+                .contentType(MediaType.APPLICATION_OCTET_STREAM)
+                .body(resource);
     }
 
     @ApiOperation(value = "Get Resource Info (getResourceInfoById)",
@@ -105,12 +104,8 @@ public class TbResourceController extends BaseController {
     public TbResourceInfo getResourceInfoById(@ApiParam(value = RESOURCE_ID_PARAM_DESCRIPTION)
                                               @PathVariable(RESOURCE_ID) String strResourceId) throws ThingsboardException {
         checkParameter(RESOURCE_ID, strResourceId);
-        try {
-            TbResourceId resourceId = new TbResourceId(toUUID(strResourceId));
-            return checkResourceInfoId(resourceId, Operation.READ);
-        } catch (Exception e) {
-            throw handleException(e);
-        }
+        TbResourceId resourceId = new TbResourceId(toUUID(strResourceId));
+        return checkResourceInfoId(resourceId, Operation.READ);
     }
 
     @ApiOperation(value = "Get Resource (getResourceById)",
@@ -123,12 +118,8 @@ public class TbResourceController extends BaseController {
     public TbResource getResourceById(@ApiParam(value = RESOURCE_ID_PARAM_DESCRIPTION)
                                       @PathVariable(RESOURCE_ID) String strResourceId) throws ThingsboardException {
         checkParameter(RESOURCE_ID, strResourceId);
-        try {
-            TbResourceId resourceId = new TbResourceId(toUUID(strResourceId));
-            return checkResourceId(resourceId, Operation.READ);
-        } catch (Exception e) {
-            throw handleException(e);
-        }
+        TbResourceId resourceId = new TbResourceId(toUUID(strResourceId));
+        return checkResourceId(resourceId, Operation.READ);
     }
 
     @ApiOperation(value = "Create Or Update Resource (saveResource)",
@@ -136,28 +127,19 @@ public class TbResourceController extends BaseController {
                     "The newly created Resource id will be present in the response. " +
                     "Specify existing Resource id to update the Resource. " +
                     "Referencing non-existing Resource Id will cause 'Not Found' error. " +
-                    "\n\nResource combination of the title with the key is unique in the scope of tenant. " + SYSTEM_OR_TENANT_AUTHORITY_PARAGRAPH,
+                    "\n\nResource combination of the title with the key is unique in the scope of tenant. " +
+                    "Remove 'id', 'tenantId' from the request body example (below) to create new Resource entity." +
+                    SYSTEM_OR_TENANT_AUTHORITY_PARAGRAPH,
             produces = "application/json",
             consumes = "application/json")
     @PreAuthorize("hasAnyAuthority('SYS_ADMIN', 'TENANT_ADMIN')")
     @RequestMapping(value = "/resource", method = RequestMethod.POST)
     @ResponseBody
     public TbResource saveResource(@ApiParam(value = "A JSON value representing the Resource.")
-                                   @RequestBody TbResource resource) throws ThingsboardException {
-        boolean created = resource.getId() == null;
-        try {
-            resource.setTenantId(getTenantId());
-            checkEntity(resource.getId(), resource, Resource.TB_RESOURCE);
-            TbResource savedResource = checkNotNull(resourceService.saveResource(resource));
-            tbClusterService.onResourceChange(savedResource, null);
-            logEntityAction(savedResource.getId(), savedResource,
-                    null, created ? ActionType.ADDED : ActionType.UPDATED, null);
-            return savedResource;
-        } catch (Exception e) {
-            logEntityAction(emptyId(EntityType.TB_RESOURCE), resource,
-                    null, created ? ActionType.ADDED : ActionType.UPDATED, e);
-            throw handleException(e);
-        }
+                                   @RequestBody TbResource resource) throws Exception {
+        resource.setTenantId(getTenantId());
+        checkEntity(resource.getId(), resource, Resource.TB_RESOURCE);
+        return tbResourceService.save(resource, getCurrentUser());
     }
 
     @ApiOperation(value = "Get Resource Infos (getResources)",
@@ -177,15 +159,11 @@ public class TbResourceController extends BaseController {
                                                  @RequestParam(required = false) String sortProperty,
                                                  @ApiParam(value = SORT_ORDER_DESCRIPTION, allowableValues = SORT_ORDER_ALLOWABLE_VALUES)
                                                  @RequestParam(required = false) String sortOrder) throws ThingsboardException {
-        try {
-            PageLink pageLink = createPageLink(pageSize, page, textSearch, sortProperty, sortOrder);
-            if (Authority.SYS_ADMIN.equals(getCurrentUser().getAuthority())) {
-                return checkNotNull(resourceService.findTenantResourcesByTenantId(getTenantId(), pageLink));
-            } else {
-                return checkNotNull(resourceService.findAllTenantResourcesByTenantId(getTenantId(), pageLink));
-            }
-        } catch (Exception e) {
-            throw handleException(e);
+        PageLink pageLink = createPageLink(pageSize, page, textSearch, sortProperty, sortOrder);
+        if (Authority.SYS_ADMIN.equals(getCurrentUser().getAuthority())) {
+            return checkNotNull(resourceService.findTenantResourcesByTenantId(getTenantId(), pageLink));
+        } else {
+            return checkNotNull(resourceService.findAllTenantResourcesByTenantId(getTenantId(), pageLink));
         }
     }
 
@@ -206,12 +184,8 @@ public class TbResourceController extends BaseController {
                                                      @RequestParam(required = false) String sortProperty,
                                                      @ApiParam(value = SORT_ORDER_DESCRIPTION, allowableValues = SORT_ORDER_ALLOWABLE_VALUES)
                                                      @RequestParam(required = false) String sortOrder) throws ThingsboardException {
-        try {
-            PageLink pageLink = new PageLink(pageSize, page, textSearch);
-            return checkNotNull(resourceService.findLwM2mObjectPage(getTenantId(), sortProperty, sortOrder, pageLink));
-        } catch (Exception e) {
-            throw handleException(e);
-        }
+        PageLink pageLink = new PageLink(pageSize, page, textSearch);
+        return checkNotNull(resourceService.findLwM2mObjectPage(getTenantId(), sortProperty, sortOrder, pageLink));
     }
 
     @ApiOperation(value = "Get LwM2M Objects (getLwm2mListObjects)",
@@ -227,11 +201,7 @@ public class TbResourceController extends BaseController {
                                                  @RequestParam String sortProperty,
                                                  @ApiParam(value = "LwM2M Object ids.", required = true)
                                                  @RequestParam(required = false) String[] objectIds) throws ThingsboardException {
-        try {
-            return checkNotNull(resourceService.findLwM2mObject(getTenantId(), sortOrder, sortProperty, objectIds));
-        } catch (Exception e) {
-            throw handleException(e);
-        }
+        return checkNotNull(resourceService.findLwM2mObject(getTenantId(), sortOrder, sortProperty, objectIds));
     }
 
     @ApiOperation(value = "Delete Resource (deleteResource)",
@@ -242,16 +212,8 @@ public class TbResourceController extends BaseController {
     public void deleteResource(@ApiParam(value = RESOURCE_ID_PARAM_DESCRIPTION)
                                @PathVariable("resourceId") String strResourceId) throws ThingsboardException {
         checkParameter(RESOURCE_ID, strResourceId);
-        try {
-            TbResourceId resourceId = new TbResourceId(toUUID(strResourceId));
-            TbResource tbResource = checkResourceId(resourceId, Operation.DELETE);
-            resourceService.deleteResource(getTenantId(), resourceId);
-            tbClusterService.onResourceDeleted(tbResource, null);
-            logEntityAction(resourceId, tbResource, null, ActionType.DELETED, null, strResourceId);
-        } catch (Exception e) {
-            logEntityAction(emptyId(EntityType.TB_RESOURCE), null, null, ActionType.DELETED, e, strResourceId);
-            throw handleException(e);
-        }
+        TbResourceId resourceId = new TbResourceId(toUUID(strResourceId));
+        TbResource tbResource = checkResourceId(resourceId, Operation.DELETE);
+        tbResourceService.delete(tbResource, getCurrentUser());
     }
-
 }

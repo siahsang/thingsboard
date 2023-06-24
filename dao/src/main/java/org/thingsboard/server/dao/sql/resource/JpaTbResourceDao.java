@@ -1,5 +1,5 @@
 /**
- * Copyright © 2016-2022 The Thingsboard Authors
+ * Copyright © 2016-2023 The Thingsboard Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,8 +16,9 @@
 package org.thingsboard.server.dao.sql.resource;
 
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.data.repository.CrudRepository;
+import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Component;
+import org.thingsboard.server.common.data.EntityType;
 import org.thingsboard.server.common.data.ResourceType;
 import org.thingsboard.server.common.data.TbResource;
 import org.thingsboard.server.common.data.id.TenantId;
@@ -27,6 +28,7 @@ import org.thingsboard.server.dao.DaoUtil;
 import org.thingsboard.server.dao.model.sql.TbResourceEntity;
 import org.thingsboard.server.dao.resource.TbResourceDao;
 import org.thingsboard.server.dao.sql.JpaAbstractSearchTextDao;
+import org.thingsboard.server.dao.util.SqlDao;
 
 import java.util.List;
 import java.util.Objects;
@@ -34,6 +36,7 @@ import java.util.UUID;
 
 @Slf4j
 @Component
+@SqlDao
 public class JpaTbResourceDao extends JpaAbstractSearchTextDao<TbResourceEntity, TbResource> implements TbResourceDao {
 
     private final TbResourceRepository resourceRepository;
@@ -48,7 +51,7 @@ public class JpaTbResourceDao extends JpaAbstractSearchTextDao<TbResourceEntity,
     }
 
     @Override
-    protected CrudRepository<TbResourceEntity, UUID> getCrudRepository() {
+    protected JpaRepository<TbResourceEntity, UUID> getRepository() {
         return resourceRepository;
     }
 
@@ -96,4 +99,10 @@ public class JpaTbResourceDao extends JpaAbstractSearchTextDao<TbResourceEntity,
     public Long sumDataSizeByTenantId(TenantId tenantId) {
         return resourceRepository.sumDataSizeByTenantId(tenantId.getId());
     }
+
+    @Override
+    public EntityType getEntityType() {
+        return EntityType.TB_RESOURCE;
+    }
+
 }

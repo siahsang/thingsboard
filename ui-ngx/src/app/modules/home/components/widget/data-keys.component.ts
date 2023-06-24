@@ -1,5 +1,5 @@
 ///
-/// Copyright © 2016-2022 The Thingsboard Authors
+/// Copyright © 2016-2023 The Thingsboard Authors
 ///
 /// Licensed under the Apache License, Version 2.0 (the "License");
 /// you may not use this file except in compliance with the License.
@@ -16,25 +16,27 @@
 
 import { COMMA, ENTER, SEMICOLON } from '@angular/cdk/keycodes';
 import {
-  AfterViewInit,
+  ChangeDetectorRef,
   Component,
   ElementRef,
   forwardRef,
   Input,
   OnChanges,
   OnInit,
+  Renderer2,
   SimpleChanges,
   SkipSelf,
-  ViewChild
+  ViewChild,
+  ViewEncapsulation
 } from '@angular/core';
 import {
   ControlValueAccessor,
-  FormBuilder,
-  FormControl,
-  FormGroup,
   FormGroupDirective,
   NG_VALUE_ACCESSOR,
   NgForm,
+  UntypedFormBuilder,
+  UntypedFormControl,
+  UntypedFormGroup,
   Validators
 } from '@angular/forms';
 import { Observable, of } from 'rxjs';
@@ -43,10 +45,10 @@ import { Store } from '@ngrx/store';
 import { AppState } from '@app/core/core.state';
 import { TranslateService } from '@ngx-translate/core';
 import { MatAutocomplete } from '@angular/material/autocomplete';
-import { MatChipInputEvent, MatChipList } from '@angular/material/chips';
+import { MatChipGrid, MatChipInputEvent, MatChipRow } from '@angular/material/chips';
 import { coerceBooleanProperty } from '@angular/cdk/coercion';
 import { DataKeyType } from '@shared/models/telemetry/telemetry.models';
-import { DataKey, DatasourceType, widgetType } from '@shared/models/widget.models';
+import { DataKey, DatasourceType, JsonSettingsSchema, Widget, widgetType } from '@shared/models/widget.models';
 import { IAliasController } from '@core/api/widget-api.models';
 import { DataKeysCallbacks } from './data-keys.component.models';
 import { alarmFields } from '@shared/models/alarm.models';
@@ -59,8 +61,11 @@ import {
   DataKeyConfigDialogComponent,
   DataKeyConfigDialogData
 } from '@home/components/widget/data-key-config-dialog.component';
-import { deepClone } from '@core/utils';
-import { MatChipDropEvent } from '@app/shared/components/mat-chip-draggable.directive';
+import { deepClone, guid, isUndefined } from '@core/utils';
+import { Dashboard } from '@shared/models/dashboard.models';
+import { AggregationType } from '@shared/models/time/time.models';
+import { DndDropEvent } from 'ngx-drag-drop/lib/dnd-dropzone.directive';
+import { moveItemInArray } from '@angular/cdk/drag-drop';
 
 @Component({
   selector: 'tb-data-keys',
@@ -76,15 +81,16 @@ import { MatChipDropEvent } from '@app/shared/components/mat-chip-draggable.dire
       provide: ErrorStateMatcher,
       useExisting: DataKeysComponent
     }
-  ]
+  ],
+  encapsulation: ViewEncapsulation.None
 })
-export class DataKeysComponent implements ControlValueAccessor, OnInit, AfterViewInit, OnChanges, ErrorStateMatcher {
+export class DataKeysComponent implements ControlValueAccessor, OnInit, OnChanges, ErrorStateMatcher {
 
   datasourceTypes = DatasourceType;
   widgetTypes = widgetType;
   dataKeyTypes = DataKeyType;
 
-  keysListFormGroup: FormGroup;
+  keysListFormGroup: UntypedFormGroup;
 
   modelValue: Array<DataKey> | null;
 
@@ -96,7 +102,7 @@ export class DataKeysComponent implements ControlValueAccessor, OnInit, AfterVie
 
   private maxDataKeysValue: number;
   get maxDataKeys(): number {
-    return this.datasourceType === DatasourceType.entityCount ? 1 : this.maxDataKeysValue;
+    return this.isCountDatasource ? 1 : this.maxDataKeysValue;
   }
 
   @Input()
@@ -111,7 +117,16 @@ export class DataKeysComponent implements ControlValueAccessor, OnInit, AfterVie
   aliasController: IAliasController;
 
   @Input()
-  datakeySettingsSchema: any;
+  datakeySettingsSchema: JsonSettingsSchema;
+
+  @Input()
+  dataKeySettingsDirective: string;
+
+  @Input()
+  dashboard: Dashboard;
+
+  @Input()
+  widget: Widget;
 
   @Input()
   callbacks: DataKeysCallbacks;
@@ -121,7 +136,7 @@ export class DataKeysComponent implements ControlValueAccessor, OnInit, AfterVie
 
   private requiredValue: boolean;
   get required(): boolean {
-    return this.requiredValue || !this.optDataKeys || this.isEntityCountDatasource;
+    return this.requiredValue || !this.optDataKeys || this.isCountDatasource;
   }
   @Input()
   set required(value: boolean) {
@@ -133,7 +148,7 @@ export class DataKeysComponent implements ControlValueAccessor, OnInit, AfterVie
 
   @ViewChild('keyInput') keyInput: ElementRef<HTMLInputElement>;
   @ViewChild('keyAutocomplete') matAutocomplete: MatAutocomplete;
-  @ViewChild('chipList') chipList: MatChipList;
+  @ViewChild('chipList') chipList: MatChipGrid;
 
   keys: Array<DataKey> = [];
   filteredKeys: Observable<Array<DataKey>>;
@@ -145,9 +160,15 @@ export class DataKeysComponent implements ControlValueAccessor, OnInit, AfterVie
 
   dataKeyType: DataKeyType;
   placeholder: string;
+  secondaryPlaceholder: string;
   requiredText: string;
 
   searchText = '';
+
+  dndId = guid();
+
+  dragIndex: number;
+
   private latestSearchTextResult: Array<DataKey> = null;
   private fetchObservable$: Observable<Array<DataKey>> = null;
 
@@ -161,7 +182,9 @@ export class DataKeysComponent implements ControlValueAccessor, OnInit, AfterVie
               private utils: UtilsService,
               private dialogs: DialogService,
               private dialog: MatDialog,
-              private fb: FormBuilder,
+              private fb: UntypedFormBuilder,
+              private cd: ChangeDetectorRef,
+              private renderer: Renderer2,
               public truncate: TruncatePipe) {
   }
 
@@ -217,7 +240,7 @@ export class DataKeysComponent implements ControlValueAccessor, OnInit, AfterVie
     if (this.maxDataKeys !== null && this.maxDataKeys > -1) {
       if (this.datasourceType === DatasourceType.function) {
         return this.translate.instant('datakey.maximum-function-types', {count: this.maxDataKeys});
-      } else if (!this.isEntityCountDatasource) {
+      } else if (!this.isCountDatasource) {
         return this.translate.instant('datakey.maximum-timeseries-or-attributes', {count: this.maxDataKeys});
       } else {
         return '';
@@ -230,28 +253,42 @@ export class DataKeysComponent implements ControlValueAccessor, OnInit, AfterVie
   private updateParams() {
       if (this.datasourceType === DatasourceType.function) {
         this.dataKeyType = DataKeyType.function;
-        this.placeholder = this.translate.instant('datakey.function-types');
         this.requiredText = this.translate.instant('datakey.function-types-required');
+        if (this.widgetType === widgetType.latest) {
+          this.placeholder = this.translate.instant('datakey.latest-key-functions');
+          this.secondaryPlaceholder = '+' + this.translate.instant('datakey.latest-key-function');
+        } else if (this.widgetType === widgetType.alarm) {
+          this.placeholder = this.translate.instant('datakey.alarm-key-functions');
+          this.secondaryPlaceholder = '+' + this.translate.instant('datakey.alarm-key-function');
+        } else {
+          this.placeholder = this.translate.instant('datakey.timeseries-key-functions');
+          this.secondaryPlaceholder = '+' + this.translate.instant('datakey.timeseries-key-function');
+        }
       } else {
         if (this.widgetType === widgetType.latest) {
           this.dataKeyType = null;
+          this.placeholder = this.translate.instant('datakey.latest-keys');
+          this.secondaryPlaceholder = '+' + this.translate.instant('datakey.latest-key');
           this.requiredText = this.translate.instant('datakey.timeseries-or-attributes-required');
         } else if (this.widgetType === widgetType.alarm) {
           this.dataKeyType = null;
+          this.placeholder = this.translate.instant('datakey.alarm-keys');
+          this.secondaryPlaceholder = '+' + this.translate.instant('datakey.alarm-key');
           this.requiredText = this.translate.instant('datakey.alarm-fields-timeseries-or-attributes-required');
         } else {
           this.dataKeyType = DataKeyType.timeseries;
+          this.placeholder = this.translate.instant('datakey.timeseries-keys');
+          this.secondaryPlaceholder = '+' + this.translate.instant('datakey.timeseries-key');
           this.requiredText = this.translate.instant('datakey.timeseries-required');
         }
-        this.placeholder = '';
       }
   }
 
   private reset() {
     if (this.widgetType === widgetType.alarm) {
       this.keys = this.utils.getDefaultAlarmDataKeys();
-    } else if (this.isEntityCountDatasource) {
-      this.keys = [this.callbacks.generateDataKey('count', DataKeyType.count)];
+    } else if (this.isCountDatasource) {
+      this.keys = [this.callbacks.generateDataKey('count', DataKeyType.count, this.datakeySettingsSchema)];
     } else {
       this.keys = [];
     }
@@ -286,13 +323,11 @@ export class DataKeysComponent implements ControlValueAccessor, OnInit, AfterVie
     }
   }
 
-  isErrorState(control: FormControl | null, form: FormGroupDirective | NgForm | null): boolean {
+  isErrorState(control: UntypedFormControl | null, form: FormGroupDirective | NgForm | null): boolean {
     const originalErrorState = this.errorStateMatcher.isErrorState(control, form);
     const customErrorState = this.required && !this.modelValue;
     return originalErrorState || customErrorState;
   }
-
-  ngAfterViewInit(): void {}
 
   setDisabledState(isDisabled: boolean): void {
     this.disabled = isDisabled;
@@ -325,7 +360,7 @@ export class DataKeysComponent implements ControlValueAccessor, OnInit, AfterVie
   }
 
   private addFromChipValue(chip: DataKey) {
-    const key = this.callbacks.generateDataKey(chip.name, chip.type);
+    const key = this.callbacks.generateDataKey(chip.name, chip.type, this.datakeySettingsSchema);
     this.addKey(key);
   }
 
@@ -367,12 +402,24 @@ export class DataKeysComponent implements ControlValueAccessor, OnInit, AfterVie
     }
   }
 
-  onChipDrop(event: MatChipDropEvent) {
-    const from = event.from;
-    const to = event.to;
-    this.keys.splice(to, 0, this.keys.splice(from, 1)[0]);
+  chipDragStart(index: number, chipRow: MatChipRow, placeholderChipRow: MatChipRow) {
+    this.renderer.setStyle(placeholderChipRow._elementRef.nativeElement, 'width', chipRow._elementRef.nativeElement.offsetWidth + 'px');
+    this.dragIndex = index;
+  }
+
+  chipDragEnd() {
+    this.dragIndex = -1;
+  }
+
+  onChipDrop(event: DndDropEvent) {
+    let index = event.index;
+    if (isUndefined(index)) {
+      index = this.keys.length;
+    }
+    moveItemInArray(this.keys, this.dragIndex, index);
     this.keysListFormGroup.get('keys').setValue(this.keys);
-    this.modelValue.splice(to, 0, this.modelValue.splice(from, 1)[0]);
+    moveItemInArray(this.modelValue, this.dragIndex, index);
+    this.dragIndex = -1;
     this.propagateChange(this.modelValue);
   }
 
@@ -395,6 +442,11 @@ export class DataKeysComponent implements ControlValueAccessor, OnInit, AfterVie
         data: {
           dataKey: deepClone(key),
           dataKeySettingsSchema: this.datakeySettingsSchema,
+          dataKeySettingsDirective: this.dataKeySettingsDirective,
+          dashboard: this.dashboard,
+          aliasController: this.aliasController,
+          widget: this.widget,
+          widgetType: this.widgetType,
           entityAliasId: this.entityAliasId,
           showPostProcessing: this.widgetType !== widgetType.alarm,
           callbacks: this.callbacks
@@ -415,6 +467,15 @@ export class DataKeysComponent implements ControlValueAccessor, OnInit, AfterVie
 
   displayKeyFn(key?: DataKey): string | undefined {
     return key ? key.name : undefined;
+  }
+
+  dataKeyHasAggregation(key: DataKey): boolean {
+    return this.widgetType === widgetType.latest && key.type === DataKeyType.timeseries
+      && key.aggregationType && key.aggregationType !== AggregationType.NONE;
+  }
+
+  dataKeyHasPostprocessing(key: DataKey): boolean {
+    return this.datasourceType !== DatasourceType.function && !!key.postFuncBody;
   }
 
   private fetchKeys(searchText?: string): Observable<Array<DataKey>> {
@@ -474,8 +535,8 @@ export class DataKeysComponent implements ControlValueAccessor, OnInit, AfterVie
     }, 0);
   }
 
-  get isEntityCountDatasource(): boolean {
-    return this.datasourceType === DatasourceType.entityCount;
+  get isCountDatasource(): boolean {
+    return [DatasourceType.entityCount, DatasourceType.alarmCount].includes(this.datasourceType);
   }
 
   private clearSearchCache() {

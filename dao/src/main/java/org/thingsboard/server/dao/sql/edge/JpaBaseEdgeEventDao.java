@@ -1,5 +1,5 @@
 /**
- * Copyright © 2016-2022 The Thingsboard Authors
+ * Copyright © 2016-2023 The Thingsboard Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,46 +16,79 @@
 package org.thingsboard.server.dao.sql.edge;
 
 import com.datastax.oss.driver.api.core.uuid.Uuids;
+import com.google.common.util.concurrent.ListenableFuture;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.commons.lang3.StringUtils;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.data.repository.CrudRepository;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
+import org.thingsboard.server.common.data.StringUtils;
 import org.thingsboard.server.common.data.edge.EdgeEvent;
 import org.thingsboard.server.common.data.id.EdgeEventId;
 import org.thingsboard.server.common.data.id.EdgeId;
 import org.thingsboard.server.common.data.page.PageData;
 import org.thingsboard.server.common.data.page.TimePageLink;
+import org.thingsboard.server.common.stats.StatsFactory;
 import org.thingsboard.server.dao.DaoUtil;
 import org.thingsboard.server.dao.edge.EdgeEventDao;
+import org.thingsboard.server.dao.model.ModelConstants;
 import org.thingsboard.server.dao.model.sql.EdgeEventEntity;
 import org.thingsboard.server.dao.sql.JpaAbstractSearchTextDao;
+import org.thingsboard.server.dao.sql.ScheduledLogExecutorComponent;
+import org.thingsboard.server.dao.sql.TbSqlBlockingQueueParams;
+import org.thingsboard.server.dao.sql.TbSqlBlockingQueueWrapper;
+import org.thingsboard.server.dao.sqlts.insert.sql.SqlPartitioningRepository;
+import org.thingsboard.server.dao.util.SqlDao;
 
-import java.sql.Connection;
-import java.sql.PreparedStatement;
-import java.sql.ResultSet;
-import java.sql.SQLException;
+import javax.annotation.PostConstruct;
+import javax.annotation.PreDestroy;
+import java.util.Comparator;
 import java.util.Objects;
-import java.util.Optional;
 import java.util.UUID;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.locks.Lock;
-import java.util.concurrent.locks.ReentrantLock;
+import java.util.function.Function;
 
 import static org.thingsboard.server.dao.model.ModelConstants.NULL_UUID;
 
-@Slf4j
 @Component
+@SqlDao
+@RequiredArgsConstructor
+@Slf4j
 public class JpaBaseEdgeEventDao extends JpaAbstractSearchTextDao<EdgeEventEntity, EdgeEvent> implements EdgeEventDao {
 
     private final UUID systemTenantId = NULL_UUID;
 
-    private final ConcurrentMap<EdgeId, Lock> readWriteLocks = new ConcurrentHashMap<>();
+    private final ScheduledLogExecutorComponent logExecutor;
 
-    @Autowired
-    private EdgeEventRepository edgeEventRepository;
+    private final StatsFactory statsFactory;
+
+    private final EdgeEventRepository edgeEventRepository;
+
+    private final EdgeEventInsertRepository edgeEventInsertRepository;
+
+    private final SqlPartitioningRepository partitioningRepository;
+
+    private final JdbcTemplate jdbcTemplate;
+
+    @Value("${sql.edge_events.batch_size:1000}")
+    private int batchSize;
+
+    @Value("${sql.edge_events.batch_max_delay:100}")
+    private long maxDelay;
+
+    @Value("${sql.edge_events.stats_print_interval_ms:10000}")
+    private long statsPrintIntervalMs;
+
+    @Value("${sql.edge_events.partition_size:168}")
+    private int partitionSizeInHours;
+
+    @Value("${sql.ttl.edge_events.edge_events_ttl:2628000}")
+    private long edgeEventsTtl;
+
+    private static final String TABLE_NAME = ModelConstants.EDGE_EVENT_COLUMN_FAMILY_NAME;
+
+    private TbSqlBlockingQueueWrapper<EdgeEventEntity> queue;
 
     @Override
     protected Class<EdgeEventEntity> getEntityClass() {
@@ -63,70 +96,63 @@ public class JpaBaseEdgeEventDao extends JpaAbstractSearchTextDao<EdgeEventEntit
     }
 
     @Override
-    protected CrudRepository<EdgeEventEntity, UUID> getCrudRepository() {
+    protected JpaRepository<EdgeEventEntity, UUID> getRepository() {
         return edgeEventRepository;
     }
 
-    @Override
-    public EdgeEvent save(EdgeEvent edgeEvent) {
-        final Lock readWriteLock = readWriteLocks.computeIfAbsent(edgeEvent.getEdgeId(), id -> new ReentrantLock());
-        readWriteLock.lock();
-        try {
-            log.debug("Save edge event [{}] ", edgeEvent);
-            if (edgeEvent.getId() == null) {
-                UUID timeBased = Uuids.timeBased();
-                edgeEvent.setId(new EdgeEventId(timeBased));
-                edgeEvent.setCreatedTime(Uuids.unixTimestamp(timeBased));
-            } else if (edgeEvent.getCreatedTime() == 0L) {
-                UUID eventId = edgeEvent.getId().getId();
-                if (eventId.version() == 1) {
-                    edgeEvent.setCreatedTime(Uuids.unixTimestamp(eventId));
-                } else {
-                    edgeEvent.setCreatedTime(System.currentTimeMillis());
-                }
-            }
-            if (StringUtils.isEmpty(edgeEvent.getUid())) {
-                edgeEvent.setUid(edgeEvent.getId().toString());
-            }
-            return save(new EdgeEventEntity(edgeEvent)).orElse(null);
-        } finally {
-            readWriteLock.unlock();
-        }
-    }
-
-    @Override
-    public PageData<EdgeEvent> findEdgeEvents(UUID tenantId, EdgeId edgeId, TimePageLink pageLink, boolean withTsUpdate) {
-        final Lock readWriteLock = readWriteLocks.computeIfAbsent(edgeId, id -> new ReentrantLock());
-        readWriteLock.lock();
-        try {
-            if (withTsUpdate) {
-                return DaoUtil.toPageData(
-                        edgeEventRepository
-                                .findEdgeEventsByTenantIdAndEdgeId(
-                                        tenantId,
-                                        edgeId.getId(),
-                                        Objects.toString(pageLink.getTextSearch(), ""),
-                                        pageLink.getStartTime(),
-                                        pageLink.getEndTime(),
-                                        DaoUtil.toPageable(pageLink)));
+    @PostConstruct
+    private void init() {
+        TbSqlBlockingQueueParams params = TbSqlBlockingQueueParams.builder()
+                .logName("Edge Events")
+                .batchSize(batchSize)
+                .maxDelay(maxDelay)
+                .statsPrintIntervalMs(statsPrintIntervalMs)
+                .statsNamePrefix("edge.events")
+                .batchSortEnabled(true)
+                .build();
+        Function<EdgeEventEntity, Integer> hashcodeFunction = entity -> {
+            if (entity.getEntityId() != null) {
+                return entity.getEntityId().hashCode();
             } else {
-                return DaoUtil.toPageData(
-                        edgeEventRepository
-                                .findEdgeEventsByTenantIdAndEdgeIdWithoutTimeseriesUpdated(
-                                        tenantId,
-                                        edgeId.getId(),
-                                        Objects.toString(pageLink.getTextSearch(), ""),
-                                        pageLink.getStartTime(),
-                                        pageLink.getEndTime(),
-                                        DaoUtil.toPageable(pageLink)));
-
+                return NULL_UUID.hashCode();
             }
-        } finally {
-            readWriteLock.unlock();
+        };
+        queue = new TbSqlBlockingQueueWrapper<>(params, hashcodeFunction, 1, statsFactory);
+        queue.init(logExecutor, v -> edgeEventInsertRepository.save(v),
+                Comparator.comparing(EdgeEventEntity::getTs)
+        );
+    }
+
+    @PreDestroy
+    private void destroy() {
+        if (queue != null) {
+            queue.destroy();
         }
     }
 
-    public Optional<EdgeEvent> save(EdgeEventEntity entity) {
+    @Override
+    public ListenableFuture<Void> saveAsync(EdgeEvent edgeEvent) {
+        log.debug("Save edge event [{}] ", edgeEvent);
+        if (edgeEvent.getId() == null) {
+            UUID timeBased = Uuids.timeBased();
+            edgeEvent.setId(new EdgeEventId(timeBased));
+            edgeEvent.setCreatedTime(Uuids.unixTimestamp(timeBased));
+        } else if (edgeEvent.getCreatedTime() == 0L) {
+            UUID eventId = edgeEvent.getId().getId();
+            if (eventId.version() == 1) {
+                edgeEvent.setCreatedTime(Uuids.unixTimestamp(eventId));
+            } else {
+                edgeEvent.setCreatedTime(System.currentTimeMillis());
+            }
+        }
+        if (StringUtils.isEmpty(edgeEvent.getUid())) {
+            edgeEvent.setUid(edgeEvent.getId().toString());
+        }
+        partitioningRepository.createPartitionIfNotExists(TABLE_NAME, edgeEvent.getCreatedTime(), TimeUnit.HOURS.toMillis(partitionSizeInHours));
+        return save(new EdgeEventEntity(edgeEvent));
+    }
+
+    private ListenableFuture<Void> save(EdgeEventEntity entity) {
         log.debug("Save edge event [{}] ", entity);
         if (entity.getTenantId() == null) {
             log.trace("Save system edge event with predefined id {}", systemTenantId);
@@ -135,25 +161,73 @@ public class JpaBaseEdgeEventDao extends JpaAbstractSearchTextDao<EdgeEventEntit
         if (entity.getUuid() == null) {
             entity.setUuid(Uuids.timeBased());
         }
-        return Optional.of(DaoUtil.getData(edgeEventRepository.save(entity)));
+
+        return addToQueue(entity);
+    }
+
+    private ListenableFuture<Void> addToQueue(EdgeEventEntity entity) {
+        return queue.add(entity);
+    }
+
+
+    @Override
+    public PageData<EdgeEvent> findEdgeEvents(UUID tenantId, EdgeId edgeId, TimePageLink pageLink, boolean withTsUpdate) {
+        if (withTsUpdate) {
+            return DaoUtil.toPageData(
+                    edgeEventRepository
+                            .findEdgeEventsByTenantIdAndEdgeId(
+                                    tenantId,
+                                    edgeId.getId(),
+                                    Objects.toString(pageLink.getTextSearch(), ""),
+                                    pageLink.getStartTime(),
+                                    pageLink.getEndTime(),
+                                    DaoUtil.toPageable(pageLink)));
+        } else {
+            return DaoUtil.toPageData(
+                    edgeEventRepository
+                            .findEdgeEventsByTenantIdAndEdgeIdWithoutTimeseriesUpdated(
+                                    tenantId,
+                                    edgeId.getId(),
+                                    Objects.toString(pageLink.getTextSearch(), ""),
+                                    pageLink.getStartTime(),
+                                    pageLink.getEndTime(),
+                                    DaoUtil.toPageable(pageLink)));
+
+        }
     }
 
     @Override
     public void cleanupEvents(long ttl) {
-        log.info("Going to cleanup old edge events using ttl: {}s", ttl);
-        try (Connection connection = dataSource.getConnection();
-             PreparedStatement stmt = connection.prepareStatement("call cleanup_edge_events_by_ttl(?,?)")) {
-            stmt.setLong(1, ttl);
-            stmt.setLong(2, 0);
-            stmt.setQueryTimeout((int) TimeUnit.HOURS.toSeconds(1));
-            stmt.execute();
-            printWarnings(stmt);
-            try (ResultSet resultSet = stmt.getResultSet()) {
-                resultSet.next();
-                log.info("Total edge events removed by TTL: [{}]", resultSet.getLong(1));
-            }
-        } catch (SQLException e) {
-            log.error("SQLException occurred during edge events TTL task execution ", e);
+        partitioningRepository.dropPartitionsBefore(TABLE_NAME, ttl, TimeUnit.HOURS.toMillis(partitionSizeInHours));
+    }
+
+    @Override
+    public void migrateEdgeEvents() {
+        long startTime = edgeEventsTtl > 0 ? System.currentTimeMillis() - TimeUnit.SECONDS.toMillis(edgeEventsTtl) : 1629158400000L;
+
+        long currentTime = System.currentTimeMillis();
+        var partitionStepInMs = TimeUnit.HOURS.toMillis(partitionSizeInHours);
+        long numberOfPartitions = (currentTime - startTime) / partitionStepInMs;
+
+        if (numberOfPartitions > 1000) {
+            String error = "Please adjust your edge event partitioning configuration. Configuration with partition size " +
+                    "of " + partitionSizeInHours + " hours and corresponding TTL will use " + numberOfPartitions + " " +
+                    "(> 1000) partitions which is not recommended!";
+            log.error(error);
+            throw new RuntimeException(error);
         }
+
+        while (startTime < currentTime) {
+            var endTime = startTime + partitionStepInMs;
+            log.info("Migrating edge event for time period: {} - {}", startTime, endTime);
+            callMigrationFunction(startTime, endTime, partitionStepInMs);
+            startTime = endTime;
+        }
+        log.info("Event edge migration finished");
+        jdbcTemplate.execute("DROP TABLE IF EXISTS old_edge_event");
+    }
+
+    private void callMigrationFunction(long startTime, long endTime, long partitionSIzeInMs) {
+        jdbcTemplate.update("CALL migrate_edge_event(?, ?, ?)", startTime, endTime, partitionSIzeInMs);
     }
 }

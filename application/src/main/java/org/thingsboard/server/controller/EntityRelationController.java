@@ -1,5 +1,5 @@
 /**
- * Copyright © 2016-2022 The Thingsboard Authors
+ * Copyright © 2016-2023 The Thingsboard Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,6 +17,7 @@ package org.thingsboard.server.controller;
 
 import io.swagger.annotations.ApiOperation;
 import io.swagger.annotations.ApiParam;
+import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -27,9 +28,6 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseBody;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
-import org.thingsboard.server.common.data.audit.ActionType;
-import org.thingsboard.server.common.data.edge.EdgeEventActionType;
-import org.thingsboard.server.common.data.exception.ThingsboardErrorCode;
 import org.thingsboard.server.common.data.exception.ThingsboardException;
 import org.thingsboard.server.common.data.id.EntityId;
 import org.thingsboard.server.common.data.id.EntityIdFactory;
@@ -38,9 +36,12 @@ import org.thingsboard.server.common.data.relation.EntityRelationInfo;
 import org.thingsboard.server.common.data.relation.EntityRelationsQuery;
 import org.thingsboard.server.common.data.relation.RelationTypeGroup;
 import org.thingsboard.server.queue.util.TbCoreComponent;
+import org.thingsboard.server.service.entitiy.entity.relation.TbEntityRelationService;
+import org.thingsboard.server.service.security.model.SecurityUser;
 import org.thingsboard.server.service.security.permission.Operation;
 
 import java.util.List;
+import java.util.concurrent.ExecutionException;
 import java.util.stream.Collectors;
 
 import static org.thingsboard.server.controller.ControllerConstants.ENTITY_ID_PARAM_DESCRIPTION;
@@ -52,7 +53,10 @@ import static org.thingsboard.server.controller.ControllerConstants.RELATION_TYP
 @RestController
 @TbCoreComponent
 @RequestMapping("/api")
+@RequiredArgsConstructor
 public class EntityRelationController extends BaseController {
+
+    private final TbEntityRelationService tbEntityRelationService;
 
     public static final String TO_TYPE = "toType";
     public static final String FROM_ID = "fromId";
@@ -77,28 +81,14 @@ public class EntityRelationController extends BaseController {
     @ResponseStatus(value = HttpStatus.OK)
     public void saveRelation(@ApiParam(value = "A JSON value representing the relation.", required = true)
                              @RequestBody EntityRelation relation) throws ThingsboardException {
-        try {
-            checkNotNull(relation);
-            checkEntityId(relation.getFrom(), Operation.WRITE);
-            checkEntityId(relation.getTo(), Operation.WRITE);
-            if (relation.getTypeGroup() == null) {
-                relation.setTypeGroup(RelationTypeGroup.COMMON);
-            }
-            relationService.saveRelation(getTenantId(), relation);
-
-            logEntityAction(relation.getFrom(), null, getCurrentUser().getCustomerId(),
-                    ActionType.RELATION_ADD_OR_UPDATE, null, relation);
-            logEntityAction(relation.getTo(), null, getCurrentUser().getCustomerId(),
-                    ActionType.RELATION_ADD_OR_UPDATE, null, relation);
-
-            sendRelationNotificationMsg(getTenantId(), relation, EdgeEventActionType.RELATION_ADD_OR_UPDATE);
-        } catch (Exception e) {
-            logEntityAction(relation.getFrom(), null, getCurrentUser().getCustomerId(),
-                    ActionType.RELATION_ADD_OR_UPDATE, e, relation);
-            logEntityAction(relation.getTo(), null, getCurrentUser().getCustomerId(),
-                    ActionType.RELATION_ADD_OR_UPDATE, e, relation);
-            throw handleException(e);
+        checkNotNull(relation);
+        checkCanCreateRelation(relation.getFrom());
+        checkCanCreateRelation(relation.getTo());
+        if (relation.getTypeGroup() == null) {
+            relation.setTypeGroup(RelationTypeGroup.COMMON);
         }
+
+        tbEntityRelationService.save(getTenantId(), getCurrentUser().getCustomerId(), relation, getCurrentUser());
     }
 
     @ApiOperation(value = "Delete Relation (deleteRelation)",
@@ -119,28 +109,12 @@ public class EntityRelationController extends BaseController {
         checkParameter(TO_TYPE, strToType);
         EntityId fromId = EntityIdFactory.getByTypeAndId(strFromType, strFromId);
         EntityId toId = EntityIdFactory.getByTypeAndId(strToType, strToId);
-        checkEntityId(fromId, Operation.WRITE);
-        checkEntityId(toId, Operation.WRITE);
+        checkCanCreateRelation(fromId);
+        checkCanCreateRelation(toId);
+
         RelationTypeGroup relationTypeGroup = parseRelationTypeGroup(strRelationTypeGroup, RelationTypeGroup.COMMON);
         EntityRelation relation = new EntityRelation(fromId, toId, strRelationType, relationTypeGroup);
-        try {
-            Boolean found = relationService.deleteRelation(getTenantId(), fromId, toId, strRelationType, relationTypeGroup);
-            if (!found) {
-                throw new ThingsboardException("Requested item wasn't found!", ThingsboardErrorCode.ITEM_NOT_FOUND);
-            }
-            logEntityAction(relation.getFrom(), null, getCurrentUser().getCustomerId(),
-                    ActionType.RELATION_DELETED, null, relation);
-            logEntityAction(relation.getTo(), null, getCurrentUser().getCustomerId(),
-                    ActionType.RELATION_DELETED, null, relation);
-
-            sendRelationNotificationMsg(getTenantId(), relation, EdgeEventActionType.RELATION_DELETED);
-        } catch (Exception e) {
-            logEntityAction(relation.getFrom(), null, getCurrentUser().getCustomerId(),
-                    ActionType.RELATION_DELETED, e, relation);
-            logEntityAction(relation.getTo(), null, getCurrentUser().getCustomerId(),
-                    ActionType.RELATION_DELETED, e, relation);
-            throw handleException(e);
-        }
+        tbEntityRelationService.delete(getTenantId(), getCurrentUser().getCustomerId(), relation, getCurrentUser());
     }
 
     @ApiOperation(value = "Delete Relations (deleteRelations)",
@@ -155,13 +129,7 @@ public class EntityRelationController extends BaseController {
         checkParameter("entityType", strType);
         EntityId entityId = EntityIdFactory.getByTypeAndId(strType, strId);
         checkEntityId(entityId, Operation.WRITE);
-        try {
-            relationService.deleteEntityRelations(getTenantId(), entityId);
-            logEntityAction(entityId, null, getCurrentUser().getCustomerId(), ActionType.RELATIONS_DELETED, null);
-        } catch (Exception e) {
-            logEntityAction(entityId, null, getCurrentUser().getCustomerId(), ActionType.RELATIONS_DELETED, e);
-            throw handleException(e);
-        }
+        tbEntityRelationService.deleteRelations(getTenantId(), getCurrentUser().getCustomerId(), entityId, getCurrentUser());
     }
 
     @ApiOperation(value = "Get Relation (getRelation)",
@@ -176,21 +144,17 @@ public class EntityRelationController extends BaseController {
                                       @ApiParam(value = RELATION_TYPE_GROUP_PARAM_DESCRIPTION) @RequestParam(value = "relationTypeGroup", required = false) String strRelationTypeGroup,
                                       @ApiParam(value = ENTITY_ID_PARAM_DESCRIPTION, required = true) @RequestParam(TO_ID) String strToId,
                                       @ApiParam(value = ENTITY_TYPE_PARAM_DESCRIPTION, required = true) @RequestParam(TO_TYPE) String strToType) throws ThingsboardException {
-        try {
-            checkParameter(FROM_ID, strFromId);
-            checkParameter(FROM_TYPE, strFromType);
-            checkParameter(RELATION_TYPE, strRelationType);
-            checkParameter(TO_ID, strToId);
-            checkParameter(TO_TYPE, strToType);
-            EntityId fromId = EntityIdFactory.getByTypeAndId(strFromType, strFromId);
-            EntityId toId = EntityIdFactory.getByTypeAndId(strToType, strToId);
-            checkEntityId(fromId, Operation.READ);
-            checkEntityId(toId, Operation.READ);
-            RelationTypeGroup typeGroup = parseRelationTypeGroup(strRelationTypeGroup, RelationTypeGroup.COMMON);
-            return checkNotNull(relationService.getRelation(getTenantId(), fromId, toId, strRelationType, typeGroup));
-        } catch (Exception e) {
-            throw handleException(e);
-        }
+        checkParameter(FROM_ID, strFromId);
+        checkParameter(FROM_TYPE, strFromType);
+        checkParameter(RELATION_TYPE, strRelationType);
+        checkParameter(TO_ID, strToId);
+        checkParameter(TO_TYPE, strToType);
+        EntityId fromId = EntityIdFactory.getByTypeAndId(strFromType, strFromId);
+        EntityId toId = EntityIdFactory.getByTypeAndId(strToType, strToId);
+        checkEntityId(fromId, Operation.READ);
+        checkEntityId(toId, Operation.READ);
+        RelationTypeGroup typeGroup = parseRelationTypeGroup(strRelationTypeGroup, RelationTypeGroup.COMMON);
+        return checkNotNull(relationService.getRelation(getTenantId(), fromId, toId, strRelationType, typeGroup));
     }
 
     @ApiOperation(value = "Get List of Relations (findByFrom)",
@@ -209,11 +173,7 @@ public class EntityRelationController extends BaseController {
         EntityId entityId = EntityIdFactory.getByTypeAndId(strFromType, strFromId);
         checkEntityId(entityId, Operation.READ);
         RelationTypeGroup typeGroup = parseRelationTypeGroup(strRelationTypeGroup, RelationTypeGroup.COMMON);
-        try {
-            return checkNotNull(filterRelationsByReadPermission(relationService.findByFrom(getTenantId(), entityId, typeGroup)));
-        } catch (Exception e) {
-            throw handleException(e);
-        }
+        return checkNotNull(filterRelationsByReadPermission(relationService.findByFrom(getTenantId(), entityId, typeGroup)));
     }
 
     @ApiOperation(value = "Get List of Relation Infos (findInfoByFrom)",
@@ -226,17 +186,13 @@ public class EntityRelationController extends BaseController {
     public List<EntityRelationInfo> findInfoByFrom(@ApiParam(value = ENTITY_ID_PARAM_DESCRIPTION, required = true) @RequestParam(FROM_ID) String strFromId,
                                                    @ApiParam(value = ENTITY_TYPE_PARAM_DESCRIPTION, required = true) @RequestParam(FROM_TYPE) String strFromType,
                                                    @ApiParam(value = RELATION_TYPE_GROUP_PARAM_DESCRIPTION)
-                                                   @RequestParam(value = "relationTypeGroup", required = false) String strRelationTypeGroup) throws ThingsboardException {
+                                                   @RequestParam(value = "relationTypeGroup", required = false) String strRelationTypeGroup) throws ThingsboardException, ExecutionException, InterruptedException {
         checkParameter(FROM_ID, strFromId);
         checkParameter(FROM_TYPE, strFromType);
         EntityId entityId = EntityIdFactory.getByTypeAndId(strFromType, strFromId);
         checkEntityId(entityId, Operation.READ);
         RelationTypeGroup typeGroup = parseRelationTypeGroup(strRelationTypeGroup, RelationTypeGroup.COMMON);
-        try {
-            return checkNotNull(filterRelationsByReadPermission(relationService.findInfoByFrom(getTenantId(), entityId, typeGroup).get()));
-        } catch (Exception e) {
-            throw handleException(e);
-        }
+        return checkNotNull(filterRelationsByReadPermission(relationService.findInfoByFrom(getTenantId(), entityId, typeGroup).get()));
     }
 
     @ApiOperation(value = "Get List of Relations (findByFrom)",
@@ -257,11 +213,7 @@ public class EntityRelationController extends BaseController {
         EntityId entityId = EntityIdFactory.getByTypeAndId(strFromType, strFromId);
         checkEntityId(entityId, Operation.READ);
         RelationTypeGroup typeGroup = parseRelationTypeGroup(strRelationTypeGroup, RelationTypeGroup.COMMON);
-        try {
-            return checkNotNull(filterRelationsByReadPermission(relationService.findByFromAndType(getTenantId(), entityId, strRelationType, typeGroup)));
-        } catch (Exception e) {
-            throw handleException(e);
-        }
+        return checkNotNull(filterRelationsByReadPermission(relationService.findByFromAndType(getTenantId(), entityId, strRelationType, typeGroup)));
     }
 
     @ApiOperation(value = "Get List of Relations (findByTo)",
@@ -280,11 +232,7 @@ public class EntityRelationController extends BaseController {
         EntityId entityId = EntityIdFactory.getByTypeAndId(strToType, strToId);
         checkEntityId(entityId, Operation.READ);
         RelationTypeGroup typeGroup = parseRelationTypeGroup(strRelationTypeGroup, RelationTypeGroup.COMMON);
-        try {
-            return checkNotNull(filterRelationsByReadPermission(relationService.findByTo(getTenantId(), entityId, typeGroup)));
-        } catch (Exception e) {
-            throw handleException(e);
-        }
+        return checkNotNull(filterRelationsByReadPermission(relationService.findByTo(getTenantId(), entityId, typeGroup)));
     }
 
     @ApiOperation(value = "Get List of Relation Infos (findInfoByTo)",
@@ -297,17 +245,13 @@ public class EntityRelationController extends BaseController {
     public List<EntityRelationInfo> findInfoByTo(@ApiParam(value = ENTITY_ID_PARAM_DESCRIPTION, required = true) @RequestParam(TO_ID) String strToId,
                                                  @ApiParam(value = ENTITY_TYPE_PARAM_DESCRIPTION, required = true) @RequestParam(TO_TYPE) String strToType,
                                                  @ApiParam(value = RELATION_TYPE_GROUP_PARAM_DESCRIPTION)
-                                                 @RequestParam(value = "relationTypeGroup", required = false) String strRelationTypeGroup) throws ThingsboardException {
+                                                 @RequestParam(value = "relationTypeGroup", required = false) String strRelationTypeGroup) throws ThingsboardException, ExecutionException, InterruptedException {
         checkParameter(TO_ID, strToId);
         checkParameter(TO_TYPE, strToType);
         EntityId entityId = EntityIdFactory.getByTypeAndId(strToType, strToId);
         checkEntityId(entityId, Operation.READ);
         RelationTypeGroup typeGroup = parseRelationTypeGroup(strRelationTypeGroup, RelationTypeGroup.COMMON);
-        try {
-            return checkNotNull(filterRelationsByReadPermission(relationService.findInfoByTo(getTenantId(), entityId, typeGroup).get()));
-        } catch (Exception e) {
-            throw handleException(e);
-        }
+        return checkNotNull(filterRelationsByReadPermission(relationService.findInfoByTo(getTenantId(), entityId, typeGroup).get()));
     }
 
     @ApiOperation(value = "Get List of Relations (findByTo)",
@@ -328,11 +272,7 @@ public class EntityRelationController extends BaseController {
         EntityId entityId = EntityIdFactory.getByTypeAndId(strToType, strToId);
         checkEntityId(entityId, Operation.READ);
         RelationTypeGroup typeGroup = parseRelationTypeGroup(strRelationTypeGroup, RelationTypeGroup.COMMON);
-        try {
-            return checkNotNull(filterRelationsByReadPermission(relationService.findByToAndType(getTenantId(), entityId, strRelationType, typeGroup)));
-        } catch (Exception e) {
-            throw handleException(e);
-        }
+        return checkNotNull(filterRelationsByReadPermission(relationService.findByToAndType(getTenantId(), entityId, strRelationType, typeGroup)));
     }
 
     @ApiOperation(value = "Find related entities (findByQuery)",
@@ -343,16 +283,12 @@ public class EntityRelationController extends BaseController {
     @RequestMapping(value = "/relations", method = RequestMethod.POST)
     @ResponseBody
     public List<EntityRelation> findByQuery(@ApiParam(value = "A JSON value representing the entity relations query object.", required = true)
-                                            @RequestBody EntityRelationsQuery query) throws ThingsboardException {
+                                            @RequestBody EntityRelationsQuery query) throws ThingsboardException, ExecutionException, InterruptedException {
         checkNotNull(query);
         checkNotNull(query.getParameters());
         checkNotNull(query.getFilters());
         checkEntityId(query.getParameters().getEntityId(), Operation.READ);
-        try {
-            return checkNotNull(filterRelationsByReadPermission(relationService.findByQuery(getTenantId(), query).get()));
-        } catch (Exception e) {
-            throw handleException(e);
-        }
+        return checkNotNull(filterRelationsByReadPermission(relationService.findByQuery(getTenantId(), query).get()));
     }
 
     @ApiOperation(value = "Find related entity infos (findInfoByQuery)",
@@ -363,15 +299,19 @@ public class EntityRelationController extends BaseController {
     @RequestMapping(value = "/relations/info", method = RequestMethod.POST)
     @ResponseBody
     public List<EntityRelationInfo> findInfoByQuery(@ApiParam(value = "A JSON value representing the entity relations query object.", required = true)
-                                                    @RequestBody EntityRelationsQuery query) throws ThingsboardException {
+                                                    @RequestBody EntityRelationsQuery query) throws ThingsboardException, ExecutionException, InterruptedException {
         checkNotNull(query);
         checkNotNull(query.getParameters());
         checkNotNull(query.getFilters());
         checkEntityId(query.getParameters().getEntityId(), Operation.READ);
-        try {
-            return checkNotNull(filterRelationsByReadPermission(relationService.findInfoByQuery(getTenantId(), query).get()));
-        } catch (Exception e) {
-            throw handleException(e);
+        return checkNotNull(filterRelationsByReadPermission(relationService.findInfoByQuery(getTenantId(), query).get()));
+    }
+
+    private void checkCanCreateRelation(EntityId entityId) throws ThingsboardException {
+        SecurityUser currentUser = getCurrentUser();
+        var isTenantAdminAndRelateToSelf = currentUser.isTenantAdmin() && currentUser.getTenantId().equals(entityId);
+        if (!isTenantAdminAndRelateToSelf) {
+            checkEntityId(entityId, Operation.WRITE);
         }
     }
 

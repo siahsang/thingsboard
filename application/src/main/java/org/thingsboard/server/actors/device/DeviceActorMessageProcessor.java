@@ -1,5 +1,5 @@
 /**
- * Copyright © 2016-2022 The Thingsboard Authors
+ * Copyright © 2016-2023 The Thingsboard Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,7 +21,6 @@ import com.google.common.util.concurrent.FutureCallback;
 import com.google.common.util.concurrent.Futures;
 import com.google.common.util.concurrent.ListenableFuture;
 import com.google.common.util.concurrent.MoreExecutors;
-import com.google.protobuf.InvalidProtocolBufferException;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.collections.CollectionUtils;
 import org.thingsboard.common.util.JacksonUtil;
@@ -35,6 +34,7 @@ import org.thingsboard.server.actors.TbActorCtx;
 import org.thingsboard.server.actors.shared.AbstractContextAwareMsgProcessor;
 import org.thingsboard.server.common.data.DataConstants;
 import org.thingsboard.server.common.data.Device;
+import org.thingsboard.server.common.data.EdgeUtils;
 import org.thingsboard.server.common.data.StringUtils;
 import org.thingsboard.server.common.data.edge.EdgeEvent;
 import org.thingsboard.server.common.data.edge.EdgeEventActionType;
@@ -97,7 +97,6 @@ import javax.annotation.Nullable;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
-import java.util.ConcurrentModificationException;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -107,6 +106,7 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.ExecutionException;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
 
@@ -115,7 +115,7 @@ import java.util.stream.Collectors;
  * @author Andrew Shvayka
  */
 @Slf4j
-class DeviceActorMessageProcessor extends AbstractContextAwareMsgProcessor {
+public class DeviceActorMessageProcessor extends AbstractContextAwareMsgProcessor {
 
     static final String SESSION_TIMEOUT_MESSAGE = "session timeout!";
     final TenantId tenantId;
@@ -200,8 +200,12 @@ class DeviceActorMessageProcessor extends AbstractContextAwareMsgProcessor {
         boolean sent = false;
         if (systemContext.isEdgesEnabled() && edgeId != null) {
             log.debug("[{}][{}] device is related to edge [{}]. Saving RPC request to edge queue", tenantId, deviceId, edgeId.getId());
-            saveRpcRequestToEdgeQueue(request, rpcRequest.getRequestId());
-            sent = true;
+            try {
+                saveRpcRequestToEdgeQueue(request, rpcRequest.getRequestId()).get();
+                sent = true;
+            } catch (InterruptedException | ExecutionException e) {
+                log.error("[{}][{}][{}] Failed to save rpc request to edge queue {}", tenantId, deviceId, edgeId.getId(), request, e);
+            }
         } else if (isSendNewRpcAvailable()) {
             sent = rpcSubscriptions.size() > 0;
             Set<UUID> syncSessionSet = new HashSet<>();
@@ -810,13 +814,7 @@ class DeviceActorMessageProcessor extends AbstractContextAwareMsgProcessor {
         systemContext.getTbCoreToTransportService().process(nodeId, msg);
     }
 
-    private void saveRpcRequestToEdgeQueue(ToDeviceRpcRequest msg, Integer requestId) {
-        EdgeEvent edgeEvent = new EdgeEvent();
-        edgeEvent.setTenantId(tenantId);
-        edgeEvent.setAction(EdgeEventActionType.RPC_CALL);
-        edgeEvent.setEntityId(deviceId.getId());
-        edgeEvent.setType(EdgeEventType.DEVICE);
-
+    private ListenableFuture<Void> saveRpcRequestToEdgeQueue(ToDeviceRpcRequest msg, Integer requestId) {
         ObjectNode body = mapper.createObjectNode();
         body.put("requestId", requestId);
         body.put("requestUUID", msg.getId().toString());
@@ -824,11 +822,16 @@ class DeviceActorMessageProcessor extends AbstractContextAwareMsgProcessor {
         body.put("expirationTime", msg.getExpirationTime());
         body.put("method", msg.getBody().getMethod());
         body.put("params", msg.getBody().getParams());
-        edgeEvent.setBody(body);
+        body.put("persisted", msg.isPersisted());
+        body.put("retries", msg.getRetries());
+        body.put("additionalInfo", msg.getAdditionalInfo());
 
-        edgeEvent.setEdgeId(edgeId);
-        systemContext.getEdgeEventService().save(edgeEvent);
-        systemContext.getClusterService().onEdgeEventUpdate(tenantId, edgeId);
+        EdgeEvent edgeEvent = EdgeUtils.constructEdgeEvent(tenantId, edgeId, EdgeEventType.DEVICE, EdgeEventActionType.RPC_CALL, deviceId, body);
+
+        return Futures.transform(systemContext.getEdgeEventService().saveAsync(edgeEvent), unused -> {
+            systemContext.getClusterService().onEdgeEventUpdate(tenantId, edgeId);
+            return null;
+        }, systemContext.getDbCallbackExecutor());
     }
 
     private List<TsKvProto> toTsKvProtos(@Nullable List<AttributeKvEntry> result) {
@@ -882,10 +885,10 @@ class DeviceActorMessageProcessor extends AbstractContextAwareMsgProcessor {
             return;
         }
         log.debug("[{}] Restoring sessions from cache", deviceId);
-        DeviceSessionsCacheEntry sessionsDump = null;
+        DeviceSessionsCacheEntry sessionsDump;
         try {
-            sessionsDump = DeviceSessionsCacheEntry.parseFrom(systemContext.getDeviceSessionCacheService().get(deviceId));
-        } catch (InvalidProtocolBufferException e) {
+            sessionsDump = systemContext.getDeviceSessionCacheService().get(deviceId);
+        } catch (Exception e) {
             log.warn("[{}] Failed to decode device sessions from cache", deviceId);
             return;
         }
@@ -940,7 +943,7 @@ class DeviceActorMessageProcessor extends AbstractContextAwareMsgProcessor {
         });
         systemContext.getDeviceSessionCacheService()
                 .put(deviceId, DeviceSessionsCacheEntry.newBuilder()
-                        .addAllSessions(sessionsList).build().toByteArray());
+                        .addAllSessions(sessionsList).build());
     }
 
     void init(TbActorCtx ctx) {

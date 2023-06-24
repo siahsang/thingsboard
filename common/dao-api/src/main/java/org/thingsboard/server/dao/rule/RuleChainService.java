@@ -1,5 +1,5 @@
 /**
- * Copyright © 2016-2022 The Thingsboard Authors
+ * Copyright © 2016-2023 The Thingsboard Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -28,17 +28,18 @@ import org.thingsboard.server.common.data.rule.RuleChain;
 import org.thingsboard.server.common.data.rule.RuleChainData;
 import org.thingsboard.server.common.data.rule.RuleChainImportResult;
 import org.thingsboard.server.common.data.rule.RuleChainMetaData;
-import org.thingsboard.server.common.data.rule.RuleChainOutputLabelsUsage;
 import org.thingsboard.server.common.data.rule.RuleChainType;
 import org.thingsboard.server.common.data.rule.RuleChainUpdateResult;
 import org.thingsboard.server.common.data.rule.RuleNode;
+import org.thingsboard.server.dao.entity.EntityDaoService;
 
+import java.util.Collection;
 import java.util.List;
 
 /**
  * Created by igor on 3/12/18.
  */
-public interface RuleChainService {
+public interface RuleChainService extends EntityDaoService {
 
     RuleChain saveRuleChain(RuleChain ruleChain);
 
@@ -66,6 +67,8 @@ public interface RuleChainService {
 
     PageData<RuleChain> findTenantRuleChainsByType(TenantId tenantId, RuleChainType type, PageLink pageLink);
 
+    Collection<RuleChain> findTenantRuleChainsByTypeAndName(TenantId tenantId, RuleChainType type, String name);
+
     void deleteRuleChainById(TenantId tenantId, RuleChainId ruleChainId);
 
     void deleteRuleChainsByTenantId(TenantId tenantId);
@@ -92,5 +95,12 @@ public interface RuleChainService {
 
     List<RuleNode> findRuleNodesByTenantIdAndType(TenantId tenantId, String name, String toString);
 
+    List<RuleNode> findRuleNodesByTenantIdAndType(TenantId tenantId, String type);
+
+    PageData<RuleNode> findAllRuleNodesByType(String type, PageLink pageLink);
+
     RuleNode saveRuleNode(TenantId tenantId, RuleNode ruleNode);
+
+    void deleteRuleNodes(TenantId tenantId, RuleChainId ruleChainId);
+
 }

@@ -1,5 +1,5 @@
 /**
- * Copyright © 2016-2022 The Thingsboard Authors
+ * Copyright © 2016-2023 The Thingsboard Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,16 +15,30 @@
  */
 package org.thingsboard.common.util;
 
+import com.fasterxml.jackson.core.JsonParser;
 import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.core.json.JsonWriteFeature;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.MapperFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.SerializationFeature;
+import com.fasterxml.jackson.databind.json.JsonMapper;
+import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import org.thingsboard.server.common.data.kv.DataType;
+import org.thingsboard.server.common.data.kv.KvEntry;
 
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.HashSet;
+import java.util.HashMap;
+import java.util.Iterator;
+import java.util.List;
+import java.util.Map;
 import java.util.Set;
+import java.util.UUID;
+import java.util.function.UnaryOperator;
 
 /**
  * Created by Valerii Sosliuk on 5/12/2017.
@@ -32,6 +46,15 @@ import java.util.Set;
 public class JacksonUtil {
 
     public static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
+    public static final ObjectMapper PRETTY_SORTED_JSON_MAPPER = JsonMapper.builder()
+            .enable(SerializationFeature.INDENT_OUTPUT)
+            .configure(SerializationFeature.ORDER_MAP_ENTRIES_BY_KEYS, true)
+            .configure(MapperFeature.SORT_PROPERTIES_ALPHABETICALLY, true)
+            .build();
+    public static ObjectMapper ALLOW_UNQUOTED_FIELD_NAMES_MAPPER = JsonMapper.builder()
+            .configure(JsonWriteFeature.QUOTE_FIELD_NAMES.mappedFeature(), false)
+            .configure(JsonParser.Feature.ALLOW_UNQUOTED_FIELD_NAMES, true)
+            .build();
 
     public static <T> T convertValue(Object fromValue, Class<T> toValueType) {
         try {
@@ -96,14 +119,11 @@ public class JacksonUtil {
         }
     }
 
-    public static JsonNode toJsonNode(String value) {
-        if (value == null || value.isEmpty()) {
-            return null;
-        }
+    public static String toPrettyString(Object o) {
         try {
-            return OBJECT_MAPPER.readTree(value);
-        } catch (IOException e) {
-            throw new IllegalArgumentException(e);
+            return PRETTY_SORTED_JSON_MAPPER.writeValueAsString(o);
+        } catch (JsonProcessingException e) {
+            throw new RuntimeException(e);
         }
     }
 
@@ -115,8 +135,35 @@ public class JacksonUtil {
         }
     }
 
+    public static JsonNode toJsonNode(String value) {
+        return toJsonNode(value, OBJECT_MAPPER);
+    }
+
+    public static JsonNode toJsonNode(String value, ObjectMapper mapper) {
+        if (value == null || value.isEmpty()) {
+            return null;
+        }
+        try {
+            return mapper.readTree(value);
+        } catch (IOException e) {
+            throw new IllegalArgumentException(e);
+        }
+    }
+
     public static ObjectNode newObjectNode() {
-        return OBJECT_MAPPER.createObjectNode();
+        return newObjectNode(OBJECT_MAPPER);
+    }
+
+    public static ObjectNode newObjectNode(ObjectMapper mapper) {
+        return mapper.createObjectNode();
+    }
+
+    public static ArrayNode newArrayNode() {
+        return newArrayNode(OBJECT_MAPPER);
+    }
+
+    public static ArrayNode newArrayNode(ObjectMapper mapper) {
+        return mapper.createArrayNode();
     }
 
     public static <T> T clone(T value) {
@@ -137,4 +184,103 @@ public class JacksonUtil {
                     + value + " cannot be transformed to a String", e);
         }
     }
+
+
+    public static JsonNode getSafely(JsonNode node, String... path) {
+        if (node == null) {
+            return null;
+        }
+        for (String p : path) {
+            if (!node.has(p)) {
+                return null;
+            } else {
+                node = node.get(p);
+            }
+        }
+        return node;
+    }
+
+    public static void replaceUuidsRecursively(JsonNode node, Set<String> skipFieldsSet, UnaryOperator<UUID> replacer) {
+        if (node == null) {
+            return;
+        }
+        if (node.isObject()) {
+            ObjectNode objectNode = (ObjectNode) node;
+            List<String> fieldNames = new ArrayList<>(objectNode.size());
+            objectNode.fieldNames().forEachRemaining(fieldNames::add);
+            for (String fieldName : fieldNames) {
+                if (skipFieldsSet.contains(fieldName)) {
+                    continue;
+                }
+                var child = objectNode.get(fieldName);
+                if (child.isObject() || child.isArray()) {
+                    replaceUuidsRecursively(child, skipFieldsSet, replacer);
+                } else if (child.isTextual()) {
+                    String text = child.asText();
+                    String newText = RegexUtils.replace(text, RegexUtils.UUID_PATTERN, uuid -> replacer.apply(UUID.fromString(uuid)).toString());
+                    if (!text.equals(newText)) {
+                        objectNode.put(fieldName, newText);
+                    }
+                }
+            }
+        } else if (node.isArray()) {
+            ArrayNode array = (ArrayNode) node;
+            for (int i = 0; i < array.size(); i++) {
+                JsonNode arrayElement = array.get(i);
+                if (arrayElement.isObject() || arrayElement.isArray()) {
+                    replaceUuidsRecursively(arrayElement, skipFieldsSet, replacer);
+                } else if (arrayElement.isTextual()) {
+                    String text = arrayElement.asText();
+                    String newText = RegexUtils.replace(text, RegexUtils.UUID_PATTERN, uuid -> replacer.apply(UUID.fromString(uuid)).toString());
+                    if (!text.equals(newText)) {
+                        array.set(i, newText);
+                    }
+                }
+            }
+        }
+    }
+
+    public static Map<String, String> toFlatMap(JsonNode node) {
+        HashMap<String, String> map = new HashMap<>();
+        toFlatMap(node, "", map);
+        return map;
+    }
+
+    private static void toFlatMap(JsonNode node, String currentPath, Map<String, String> map) {
+        if (node.isObject()) {
+            Iterator<Map.Entry<String, JsonNode>> fields = node.fields();
+            currentPath = currentPath.isEmpty() ? "" : currentPath + ".";
+            while (fields.hasNext()) {
+                Map.Entry<String, JsonNode> entry = fields.next();
+                toFlatMap(entry.getValue(), currentPath + entry.getKey(), map);
+            }
+        } else if (node.isValueNode()) {
+            map.put(currentPath, node.asText());
+        }
+    }
+
+    public static void addKvEntry(ObjectNode entityNode, KvEntry kvEntry) {
+        addKvEntry(entityNode, kvEntry, kvEntry.getKey());
+    }
+
+    public static void addKvEntry(ObjectNode entityNode, KvEntry kvEntry, String key) {
+        addKvEntry(entityNode, kvEntry, key, OBJECT_MAPPER);
+    }
+
+    public static void addKvEntry(ObjectNode entityNode, KvEntry kvEntry, String key, ObjectMapper mapper) {
+        if (kvEntry.getDataType() == DataType.BOOLEAN) {
+            kvEntry.getBooleanValue().ifPresent(value -> entityNode.put(key, value));
+        } else if (kvEntry.getDataType() == DataType.DOUBLE) {
+            kvEntry.getDoubleValue().ifPresent(value -> entityNode.put(key, value));
+        } else if (kvEntry.getDataType() == DataType.LONG) {
+            kvEntry.getLongValue().ifPresent(value -> entityNode.put(key, value));
+        } else if (kvEntry.getDataType() == DataType.JSON) {
+            if (kvEntry.getJsonValue().isPresent()) {
+                entityNode.set(key, toJsonNode(kvEntry.getJsonValue().get(), mapper));
+            }
+        } else {
+            entityNode.put(key, kvEntry.getValueAsString());
+        }
+    }
+
 }

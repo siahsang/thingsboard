@@ -1,5 +1,5 @@
 /**
- * Copyright © 2016-2022 The Thingsboard Authors
+ * Copyright © 2016-2023 The Thingsboard Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,22 +16,32 @@
 package org.thingsboard.server.dao.service;
 
 import com.datastax.oss.driver.api.core.uuid.Uuids;
-import org.apache.commons.lang3.RandomStringUtils;
-import org.junit.After;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.junit.Assert;
-import org.junit.Before;
 import org.junit.Test;
+import org.junit.jupiter.api.Assertions;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.thingsboard.common.util.JacksonUtil;
 import org.thingsboard.server.common.data.Customer;
 import org.thingsboard.server.common.data.EntitySubtype;
+import org.thingsboard.server.common.data.StringUtils;
 import org.thingsboard.server.common.data.Tenant;
 import org.thingsboard.server.common.data.edge.Edge;
 import org.thingsboard.server.common.data.id.CustomerId;
 import org.thingsboard.server.common.data.id.TenantId;
 import org.thingsboard.server.common.data.page.PageData;
 import org.thingsboard.server.common.data.page.PageLink;
+import org.thingsboard.server.common.data.rule.RuleChain;
+import org.thingsboard.server.common.data.rule.RuleChainMetaData;
+import org.thingsboard.server.common.data.rule.RuleChainType;
+import org.thingsboard.server.common.data.rule.RuleNode;
+import org.thingsboard.server.dao.customer.CustomerService;
+import org.thingsboard.server.dao.edge.EdgeService;
 import org.thingsboard.server.dao.exception.DataValidationException;
+import org.thingsboard.server.dao.rule.RuleChainService;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 
@@ -39,23 +49,14 @@ import static org.thingsboard.server.dao.model.ModelConstants.NULL_UUID;
 
 public abstract class BaseEdgeServiceTest extends AbstractServiceTest {
 
+    @Autowired
+    CustomerService customerService;
+    @Autowired
+    EdgeService edgeService;
+    @Autowired
+    RuleChainService ruleChainService;
+
     private IdComparator<Edge> idComparator = new IdComparator<>();
-
-    private TenantId tenantId;
-
-    @Before
-    public void before() {
-        Tenant tenant = new Tenant();
-        tenant.setTitle("My tenant");
-        Tenant savedTenant = tenantService.saveTenant(tenant);
-        Assert.assertNotNull(savedTenant);
-        tenantId = savedTenant.getId();
-    }
-
-    @After
-    public void after() {
-        tenantService.deleteTenant(tenantId);
-    }
 
     @Test
     public void testSaveEdge() {
@@ -79,57 +80,67 @@ public abstract class BaseEdgeServiceTest extends AbstractServiceTest {
         edgeService.deleteEdge(tenantId, savedEdge.getId());
     }
 
-    @Test(expected = DataValidationException.class)
+    @Test
     public void testSaveEdgeWithEmptyName() {
         Edge edge = new Edge();
         edge.setType("default");
         edge.setTenantId(tenantId);
-        edgeService.saveEdge(edge);
+        Assertions.assertThrows(DataValidationException.class, () -> {
+            edgeService.saveEdge(edge);
+        });
     }
 
-    @Test(expected = DataValidationException.class)
+    @Test
     public void testSaveEdgeWithEmptyTenant() {
         Edge edge = new Edge();
         edge.setName("My edge");
         edge.setType("default");
-        edgeService.saveEdge(edge);
+        Assertions.assertThrows(DataValidationException.class, () -> {
+            edgeService.saveEdge(edge);
+        });
     }
 
-    @Test(expected = DataValidationException.class)
+    @Test
     public void testSaveEdgeWithInvalidTenant() {
         Edge edge = new Edge();
         edge.setName("My edge");
         edge.setType("default");
         edge.setTenantId(TenantId.fromUUID(Uuids.timeBased()));
-        edgeService.saveEdge(edge);
+        Assertions.assertThrows(DataValidationException.class, () -> {
+            edgeService.saveEdge(edge);
+        });
     }
 
-    @Test(expected = DataValidationException.class)
+    @Test
     public void testAssignEdgeToNonExistentCustomer() {
         Edge edge = constructEdge("My edge", "default");
-        edge = edgeService.saveEdge(edge);
+        Edge savedEdge = edgeService.saveEdge(edge);
         try {
-            edgeService.assignEdgeToCustomer(tenantId, edge.getId(), new CustomerId(Uuids.timeBased()));
+            Assertions.assertThrows(DataValidationException.class, () -> {
+                edgeService.assignEdgeToCustomer(tenantId, savedEdge.getId(), new CustomerId(Uuids.timeBased()));
+            });
         } finally {
-            edgeService.deleteEdge(tenantId, edge.getId());
+            edgeService.deleteEdge(tenantId, savedEdge.getId());
         }
     }
 
-    @Test(expected = DataValidationException.class)
+    @Test
     public void testAssignEdgeToCustomerFromDifferentTenant() {
         Edge edge = constructEdge("My edge", "default");
-        edge = edgeService.saveEdge(edge);
+        Edge savedEdge = edgeService.saveEdge(edge);
         Tenant tenant = new Tenant();
         tenant.setTitle("Test different tenant");
         tenant = tenantService.saveTenant(tenant);
         Customer customer = new Customer();
         customer.setTenantId(tenant.getId());
         customer.setTitle("Test different customer");
-        customer = customerService.saveCustomer(customer);
+        Customer savedCustomer = customerService.saveCustomer(customer);
         try {
-            edgeService.assignEdgeToCustomer(tenantId, edge.getId(), customer.getId());
+            Assertions.assertThrows(DataValidationException.class, () -> {
+                edgeService.assignEdgeToCustomer(tenantId, savedEdge.getId(), savedCustomer.getId());
+            });
         } finally {
-            edgeService.deleteEdge(tenantId, edge.getId());
+            edgeService.deleteEdge(tenantId, savedEdge.getId());
             tenantService.deleteTenant(tenant.getId());
         }
     }
@@ -186,12 +197,6 @@ public abstract class BaseEdgeServiceTest extends AbstractServiceTest {
 
     @Test
     public void testFindEdgesByTenantId() {
-        Tenant tenant = new Tenant();
-        tenant.setTitle("Test tenant");
-        tenant = tenantService.saveTenant(tenant);
-
-        TenantId tenantId = tenant.getId();
-
         List<Edge> edges = new ArrayList<>();
         for (int i = 0; i < 178; i++) {
             Edge edge = constructEdge(tenantId, "Edge " + i, "default");
@@ -220,8 +225,6 @@ public abstract class BaseEdgeServiceTest extends AbstractServiceTest {
         pageData = edgeService.findEdgesByTenantId(tenantId, pageLink);
         Assert.assertFalse(pageData.hasNext());
         Assert.assertTrue(pageData.getData().isEmpty());
-
-        tenantService.deleteTenant(tenantId);
     }
 
     @Test
@@ -229,7 +232,7 @@ public abstract class BaseEdgeServiceTest extends AbstractServiceTest {
         String title1 = "Edge title 1";
         List<Edge> edgesTitle1 = new ArrayList<>();
         for (int i = 0; i < 143; i++) {
-            String suffix = RandomStringUtils.randomAlphanumeric(15);
+            String suffix = StringUtils.randomAlphanumeric(15);
             String name = title1 + suffix;
             name = i % 2 == 0 ? name.toLowerCase() : name.toUpperCase();
             Edge edge = constructEdge(name, "default");
@@ -238,7 +241,7 @@ public abstract class BaseEdgeServiceTest extends AbstractServiceTest {
         String title2 = "Edge title 2";
         List<Edge> edgesTitle2 = new ArrayList<>();
         for (int i = 0; i < 175; i++) {
-            String suffix = RandomStringUtils.randomAlphanumeric(15);
+            String suffix = StringUtils.randomAlphanumeric(15);
             String name = title2 + suffix;
             name = i % 2 == 0 ? name.toLowerCase() : name.toUpperCase();
             Edge edge = constructEdge(name, "default");
@@ -301,7 +304,7 @@ public abstract class BaseEdgeServiceTest extends AbstractServiceTest {
         String type1 = "typeA";
         List<Edge> edgesType1 = new ArrayList<>();
         for (int i = 0; i < 143; i++) {
-            String suffix = RandomStringUtils.randomAlphanumeric(15);
+            String suffix = StringUtils.randomAlphanumeric(15);
             String name = title1 + suffix;
             name = i % 2 == 0 ? name.toLowerCase() : name.toUpperCase();
             Edge edge = constructEdge(name, type1);
@@ -311,7 +314,7 @@ public abstract class BaseEdgeServiceTest extends AbstractServiceTest {
         String type2 = "typeB";
         List<Edge> edgesType2 = new ArrayList<>();
         for (int i = 0; i < 175; i++) {
-            String suffix = RandomStringUtils.randomAlphanumeric(15);
+            String suffix = StringUtils.randomAlphanumeric(15);
             String name = title2 + suffix;
             name = i % 2 == 0 ? name.toLowerCase() : name.toUpperCase();
             Edge edge = constructEdge(name, type2);
@@ -370,12 +373,6 @@ public abstract class BaseEdgeServiceTest extends AbstractServiceTest {
 
     @Test
     public void testFindEdgesByTenantIdAndCustomerId() {
-        Tenant tenant = new Tenant();
-        tenant.setTitle("Test tenant");
-        tenant = tenantService.saveTenant(tenant);
-
-        TenantId tenantId = tenant.getId();
-
         Customer customer = new Customer();
         customer.setTitle("Test customer");
         customer.setTenantId(tenantId);
@@ -411,8 +408,6 @@ public abstract class BaseEdgeServiceTest extends AbstractServiceTest {
         pageData = edgeService.findEdgesByTenantIdAndCustomerId(tenantId, customerId, pageLink);
         Assert.assertFalse(pageData.hasNext());
         Assert.assertTrue(pageData.getData().isEmpty());
-
-        tenantService.deleteTenant(tenantId);
     }
 
     @Test
@@ -427,7 +422,7 @@ public abstract class BaseEdgeServiceTest extends AbstractServiceTest {
         String title1 = "Edge title 1";
         List<Edge> edgesTitle1 = new ArrayList<>();
         for (int i = 0; i < 175; i++) {
-            String suffix = RandomStringUtils.randomAlphanumeric(15);
+            String suffix = StringUtils.randomAlphanumeric(15);
             String name = title1 + suffix;
             name = i % 2 == 0 ? name.toLowerCase() : name.toUpperCase();
             Edge edge = constructEdge(name, "default");
@@ -437,7 +432,7 @@ public abstract class BaseEdgeServiceTest extends AbstractServiceTest {
         String title2 = "Edge title 2";
         List<Edge> edgesTitle2 = new ArrayList<>();
         for (int i = 0; i < 143; i++) {
-            String suffix = RandomStringUtils.randomAlphanumeric(15);
+            String suffix = StringUtils.randomAlphanumeric(15);
             String name = title2 + suffix;
             name = i % 2 == 0 ? name.toLowerCase() : name.toUpperCase();
             Edge edge = constructEdge(name, "default");
@@ -509,7 +504,7 @@ public abstract class BaseEdgeServiceTest extends AbstractServiceTest {
         String type1 = "typeC";
         List<Edge> edgesType1 = new ArrayList<>();
         for (int i = 0; i < 175; i++) {
-            String suffix = RandomStringUtils.randomAlphanumeric(15);
+            String suffix = StringUtils.randomAlphanumeric(15);
             String name = title1 + suffix;
             name = i % 2 == 0 ? name.toLowerCase() : name.toUpperCase();
             Edge edge = constructEdge(name, type1);
@@ -520,7 +515,7 @@ public abstract class BaseEdgeServiceTest extends AbstractServiceTest {
         String type2 = "typeD";
         List<Edge> edgesType2 = new ArrayList<>();
         for (int i = 0; i < 143; i++) {
-            String suffix = RandomStringUtils.randomAlphanumeric(15);
+            String suffix = StringUtils.randomAlphanumeric(15);
             String name = title2 + suffix;
             name = i % 2 == 0 ? name.toLowerCase() : name.toUpperCase();
             Edge edge = constructEdge(name, type2);
@@ -585,8 +580,8 @@ public abstract class BaseEdgeServiceTest extends AbstractServiceTest {
 
     @Test
     public void testCleanCacheIfEdgeRenamed() {
-        String edgeNameBeforeRename = RandomStringUtils.randomAlphanumeric(15);
-        String edgeNameAfterRename = RandomStringUtils.randomAlphanumeric(15);
+        String edgeNameBeforeRename = StringUtils.randomAlphanumeric(15);
+        String edgeNameAfterRename = StringUtils.randomAlphanumeric(15);
 
         Edge edge = constructEdge(tenantId, edgeNameBeforeRename, "default");
         edgeService.saveEdge(edge);
@@ -600,6 +595,57 @@ public abstract class BaseEdgeServiceTest extends AbstractServiceTest {
 
         Assert.assertNull("Can't find edge by name in cache if it was renamed", renamedEdge);
         edgeService.deleteEdge(tenantId, savedEdge.getId());
+    }
+
+    @Test
+    public void testFindMissingToRelatedRuleChains() {
+        Edge edge = constructEdge("My edge", "default");
+        Edge savedEdge = edgeService.saveEdge(edge);
+
+        RuleChain ruleChain = new RuleChain();
+        ruleChain.setTenantId(tenantId);
+        ruleChain.setName("Rule Chain #1");
+        ruleChain.setType(RuleChainType.EDGE);
+        RuleChain ruleChain1 = ruleChainService.saveRuleChain(ruleChain);
+
+        ruleChain = new RuleChain();
+        ruleChain.setTenantId(tenantId);
+        ruleChain.setName("Rule Chain #2");
+        ruleChain.setType(RuleChainType.EDGE);
+        RuleChain ruleChain2 = ruleChainService.saveRuleChain(ruleChain);
+
+        ruleChain = new RuleChain();
+        ruleChain.setTenantId(tenantId);
+        ruleChain.setName("Rule Chain #3");
+        ruleChain.setType(RuleChainType.EDGE);
+        RuleChain ruleChain3 = ruleChainService.saveRuleChain(ruleChain);
+
+        RuleNode ruleNode1 = new RuleNode();
+        ruleNode1.setName("Input rule node 1");
+        ruleNode1.setType("org.thingsboard.rule.engine.flow.TbRuleChainInputNode");
+        ObjectNode configuration = JacksonUtil.OBJECT_MAPPER.createObjectNode();
+        configuration.put("ruleChainId", ruleChain1.getUuidId().toString());
+        ruleNode1.setConfiguration(configuration);
+
+        RuleNode ruleNode2 = new RuleNode();
+        ruleNode2.setName("Input rule node 2");
+        ruleNode2.setType("org.thingsboard.rule.engine.flow.TbRuleChainInputNode");
+        configuration = JacksonUtil.OBJECT_MAPPER.createObjectNode();
+        configuration.put("ruleChainId", ruleChain2.getUuidId().toString());
+        ruleNode2.setConfiguration(configuration);
+
+        RuleChainMetaData ruleChainMetaData3 = new RuleChainMetaData();
+        ruleChainMetaData3.setNodes(Arrays.asList(ruleNode1, ruleNode2));
+        ruleChainMetaData3.setFirstNodeIndex(0);
+        ruleChainMetaData3.setRuleChainId(ruleChain3.getId());
+        ruleChainService.saveRuleChainMetaData(tenantId, ruleChainMetaData3);
+
+        ruleChainService.assignRuleChainToEdge(tenantId, ruleChain3.getId(), savedEdge.getId());
+
+        String missingToRelatedRuleChains = edgeService.findMissingToRelatedRuleChains(tenantId,
+                savedEdge.getId(),
+                "org.thingsboard.rule.engine.flow.TbRuleChainInputNode");
+        Assert.assertEquals("{\"Rule Chain #3\":[\"Rule Chain #1\",\"Rule Chain #2\"]}", missingToRelatedRuleChains);
     }
 
 }

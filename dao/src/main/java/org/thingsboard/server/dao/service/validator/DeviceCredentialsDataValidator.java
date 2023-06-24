@@ -1,5 +1,5 @@
 /**
- * Copyright © 2016-2022 The Thingsboard Authors
+ * Copyright © 2016-2023 The Thingsboard Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -46,7 +46,7 @@ public class DeviceCredentialsDataValidator extends DataValidator<DeviceCredenti
     }
 
     @Override
-    protected void validateUpdate(TenantId tenantId, DeviceCredentials deviceCredentials) {
+    protected DeviceCredentials validateUpdate(TenantId tenantId, DeviceCredentials deviceCredentials) {
         if (deviceCredentialsDao.findById(tenantId, deviceCredentials.getUuidId()) == null) {
             throw new DeviceCredentialsValidationException("Unable to update non-existent device credentials!");
         }
@@ -54,6 +54,7 @@ public class DeviceCredentialsDataValidator extends DataValidator<DeviceCredenti
         if (existingCredentials != null && !existingCredentials.getId().equals(deviceCredentials.getId())) {
             throw new DeviceCredentialsValidationException("Device credentials are already assigned to another device!");
         }
+        return existingCredentials;
     }
 
     @Override

@@ -1,5 +1,5 @@
 ///
-/// Copyright © 2016-2022 The Thingsboard Authors
+/// Copyright © 2016-2023 The Thingsboard Authors
 ///
 /// Licensed under the Apache License, Version 2.0 (the "License");
 /// you may not use this file except in compliance with the License.
@@ -14,7 +14,7 @@
 /// limitations under the License.
 ///
 
-import { BaseData } from '@shared/models/base-data';
+import { BaseData, ExportableEntity } from '@shared/models/base-data';
 import { DashboardId } from '@shared/models/id/dashboard-id';
 import { TenantId } from '@shared/models/id/tenant-id';
 import { ShortCustomerInfo } from '@shared/models/customer.model';
@@ -22,8 +22,9 @@ import { Widget } from './widget.models';
 import { Timewindow } from '@shared/models/time/time.models';
 import { EntityAliases } from './alias.models';
 import { Filters } from '@shared/models/query/query.models';
+import { MatDialogRef } from '@angular/material/dialog';
 
-export interface DashboardInfo extends BaseData<DashboardId> {
+export interface DashboardInfo extends BaseData<DashboardId>, ExportableEntity<DashboardId> {
   tenantId?: TenantId;
   title?: string;
   image?: string;
@@ -35,6 +36,7 @@ export interface DashboardInfo extends BaseData<DashboardId> {
 export interface WidgetLayout {
   sizeX?: number;
   sizeY?: number;
+  desktopHide?: boolean;
   mobileHide?: boolean;
   mobileHeight?: number;
   mobileOrder?: number;
@@ -50,11 +52,13 @@ export interface GridSettings {
   backgroundColor?: string;
   columns?: number;
   margin?: number;
+  outerMargin?: boolean;
   backgroundSizeMode?: string;
   backgroundImageUrl?: string;
   autoFillHeight?: boolean;
   mobileAutoFillHeight?: boolean;
   mobileRowHeight?: number;
+  layoutDimension?: LayoutDimension;
   [key: string]: any;
 }
 
@@ -69,7 +73,16 @@ export interface DashboardLayoutInfo {
   gridSettings?: GridSettings;
 }
 
+export interface LayoutDimension {
+  type?: LayoutType,
+  fixedWidth?: number,
+  fixedLayout?: DashboardLayoutId,
+  leftWidthPercentage?: number
+}
+
 export declare type DashboardLayoutId = 'main' | 'right';
+
+export declare type LayoutType = 'percentage' | 'fixed';
 
 export declare type DashboardStateLayouts = {[key in DashboardLayoutId]?: DashboardLayout};
 
@@ -112,6 +125,7 @@ export interface DashboardConfiguration {
 
 export interface Dashboard extends DashboardInfo {
   configuration?: DashboardConfiguration;
+  dialogRef?: MatDialogRef<any>;
 }
 
 export interface HomeDashboard extends Dashboard {

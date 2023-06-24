@@ -1,5 +1,5 @@
 /**
- * Copyright © 2016-2022 The Thingsboard Authors
+ * Copyright © 2016-2023 The Thingsboard Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,6 +20,7 @@ import com.google.common.util.concurrent.Futures;
 import com.google.common.util.concurrent.MoreExecutors;
 import lombok.extern.slf4j.Slf4j;
 import org.checkerframework.checker.nullness.qual.Nullable;
+import org.thingsboard.common.util.JacksonUtil;
 import org.thingsboard.rule.engine.api.RuleNode;
 import org.thingsboard.rule.engine.api.ScriptEngine;
 import org.thingsboard.rule.engine.api.TbContext;
@@ -28,9 +29,10 @@ import org.thingsboard.rule.engine.api.TbNodeConfiguration;
 import org.thingsboard.rule.engine.api.TbNodeException;
 import org.thingsboard.rule.engine.api.util.TbNodeUtils;
 import org.thingsboard.server.common.data.plugin.ComponentType;
+import org.thingsboard.server.common.data.script.ScriptLanguage;
 import org.thingsboard.server.common.msg.TbMsg;
 
-import static org.thingsboard.common.util.DonAsynchron.withCallback;
+import java.util.Objects;
 
 @Slf4j
 @RuleNode(
@@ -48,18 +50,30 @@ import static org.thingsboard.common.util.DonAsynchron.withCallback;
 public class TbLogNode implements TbNode {
 
     private TbLogNodeConfiguration config;
-    private ScriptEngine jsEngine;
+    private ScriptEngine scriptEngine;
+    private boolean standard;
 
     @Override
     public void init(TbContext ctx, TbNodeConfiguration configuration) throws TbNodeException {
         this.config = TbNodeUtils.convert(configuration, TbLogNodeConfiguration.class);
-        this.jsEngine = ctx.createJsScriptEngine(config.getJsScript());
+        this.standard = isStandard(config);
+        this.scriptEngine = this.standard ? null : createScriptEngine(ctx, config);
+    }
+
+    ScriptEngine createScriptEngine(TbContext ctx, TbLogNodeConfiguration config) {
+        return ctx.createScriptEngine(config.getScriptLang(),
+                ScriptLanguage.TBEL.equals(config.getScriptLang()) ? config.getTbelScript() : config.getJsScript());
     }
 
     @Override
     public void onMsg(TbContext ctx, TbMsg msg) {
+        if (standard) {
+            logStandard(ctx, msg);
+            return;
+        }
+
         ctx.logJsEvalRequest();
-        Futures.addCallback(jsEngine.executeToStringAsync(msg), new FutureCallback<String>() {
+        Futures.addCallback(scriptEngine.executeToStringAsync(msg), new FutureCallback<String>() {
             @Override
             public void onSuccess(@Nullable String result) {
                 ctx.logJsEvalResponse();
@@ -75,10 +89,35 @@ public class TbLogNode implements TbNode {
         }, MoreExecutors.directExecutor()); //usually js responses runs on js callback executor
     }
 
+    boolean isStandard(TbLogNodeConfiguration conf) {
+        Objects.requireNonNull(conf, "node config is null");
+        final TbLogNodeConfiguration defaultConfig = new TbLogNodeConfiguration().defaultConfiguration();
+
+        if (conf.getScriptLang() == null || conf.getScriptLang().equals(ScriptLanguage.JS)) {
+            return defaultConfig.getJsScript().equals(conf.getJsScript());
+        } else if (conf.getScriptLang().equals(ScriptLanguage.TBEL)) {
+            return defaultConfig.getTbelScript().equals(conf.getTbelScript());
+        } else {
+            log.warn("No rule to define isStandard script for script language [{}], assuming that is non-standard", conf.getScriptLang());
+            return false;
+        }
+    }
+
+    void logStandard(TbContext ctx, TbMsg msg) {
+        log.info(toLogMessage(msg));
+        ctx.tellSuccess(msg);
+    }
+
+    String toLogMessage(TbMsg msg) {
+        return "\n" +
+                "Incoming message:\n" + msg.getData() + "\n" +
+                "Incoming metadata:\n" + JacksonUtil.toString(msg.getMetaData().getData());
+    }
+
     @Override
     public void destroy() {
-        if (jsEngine != null) {
-            jsEngine.destroy();
+        if (scriptEngine != null) {
+            scriptEngine.destroy();
         }
     }
 }

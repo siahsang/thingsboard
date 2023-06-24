@@ -1,5 +1,5 @@
 /**
- * Copyright © 2016-2022 The Thingsboard Authors
+ * Copyright © 2016-2023 The Thingsboard Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -37,7 +37,7 @@ public class RuleNode extends SearchTextBasedWithAdditionalInfo<RuleNodeId> impl
 
     private static final long serialVersionUID = -5656679015121235465L;
 
-    @ApiModelProperty(position = 3, value = "JSON object with the Rule Chain Id. ", readOnly = true)
+    @ApiModelProperty(position = 3, value = "JSON object with the Rule Chain Id. ", accessMode = ApiModelProperty.AccessMode.READ_ONLY)
     private RuleChainId ruleChainId;
     @Length(fieldName = "type")
     @ApiModelProperty(position = 4, value = "Full Java Class Name of the rule node implementation. ", example = "com.mycompany.iot.rule.engine.ProcessingNode")
@@ -48,10 +48,14 @@ public class RuleNode extends SearchTextBasedWithAdditionalInfo<RuleNodeId> impl
     private String name;
     @ApiModelProperty(position = 6, value = "Enable/disable debug. ", example = "false")
     private boolean debugMode;
-    @ApiModelProperty(position = 7, value = "JSON with the rule node configuration. Structure depends on the rule node implementation.", dataType = "com.fasterxml.jackson.databind.JsonNode")
+    @ApiModelProperty(position = 7, value = "Enable/disable singleton mode. ", example = "false")
+    private boolean singletonMode;
+    @ApiModelProperty(position = 8, value = "JSON with the rule node configuration. Structure depends on the rule node implementation.", dataType = "com.fasterxml.jackson.databind.JsonNode")
     private transient JsonNode configuration;
     @JsonIgnore
     private byte[] configurationBytes;
+
+    private RuleNodeId externalId;
 
     public RuleNode() {
         super();
@@ -67,7 +71,9 @@ public class RuleNode extends SearchTextBasedWithAdditionalInfo<RuleNodeId> impl
         this.type = ruleNode.getType();
         this.name = ruleNode.getName();
         this.debugMode = ruleNode.isDebugMode();
+        this.singletonMode = ruleNode.isSingletonMode();
         this.setConfiguration(ruleNode.getConfiguration());
+        this.externalId = ruleNode.getExternalId();
     }
 
     @Override
@@ -97,7 +103,7 @@ public class RuleNode extends SearchTextBasedWithAdditionalInfo<RuleNodeId> impl
         return super.getId();
     }
 
-    @ApiModelProperty(position = 2, value = "Timestamp of the rule node creation, in milliseconds", example = "1609459200000", readOnly = true)
+    @ApiModelProperty(position = 2, value = "Timestamp of the rule node creation, in milliseconds", example = "1609459200000", accessMode = ApiModelProperty.AccessMode.READ_ONLY)
     @Override
     public long getCreatedTime() {
         return super.getCreatedTime();

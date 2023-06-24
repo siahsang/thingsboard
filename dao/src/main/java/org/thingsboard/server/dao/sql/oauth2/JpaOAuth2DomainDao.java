@@ -1,5 +1,5 @@
 /**
- * Copyright © 2016-2022 The Thingsboard Authors
+ * Copyright © 2016-2023 The Thingsboard Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,19 +16,21 @@
 package org.thingsboard.server.dao.sql.oauth2;
 
 import lombok.RequiredArgsConstructor;
-import org.springframework.data.repository.CrudRepository;
+import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Component;
 import org.thingsboard.server.common.data.oauth2.OAuth2Domain;
 import org.thingsboard.server.dao.DaoUtil;
 import org.thingsboard.server.dao.model.sql.OAuth2DomainEntity;
 import org.thingsboard.server.dao.oauth2.OAuth2DomainDao;
 import org.thingsboard.server.dao.sql.JpaAbstractDao;
+import org.thingsboard.server.dao.util.SqlDao;
 
 import java.util.List;
 import java.util.UUID;
 
 @Component
 @RequiredArgsConstructor
+@SqlDao
 public class JpaOAuth2DomainDao extends JpaAbstractDao<OAuth2DomainEntity, OAuth2Domain> implements OAuth2DomainDao {
 
     private final OAuth2DomainRepository repository;
@@ -39,7 +41,7 @@ public class JpaOAuth2DomainDao extends JpaAbstractDao<OAuth2DomainEntity, OAuth
     }
 
     @Override
-    protected CrudRepository<OAuth2DomainEntity, UUID> getCrudRepository() {
+    protected JpaRepository<OAuth2DomainEntity, UUID> getRepository() {
         return repository;
     }
 

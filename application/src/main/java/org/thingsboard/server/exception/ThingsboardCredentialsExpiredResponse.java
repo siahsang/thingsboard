@@ -1,5 +1,5 @@
 /**
- * Copyright © 2016-2022 The Thingsboard Authors
+ * Copyright © 2016-2023 The Thingsboard Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -34,7 +34,7 @@ public class ThingsboardCredentialsExpiredResponse extends ThingsboardErrorRespo
         return new ThingsboardCredentialsExpiredResponse(message, resetToken);
     }
 
-    @ApiModelProperty(position = 5, value = "Password reset token", readOnly = true)
+    @ApiModelProperty(position = 5, value = "Password reset token", accessMode = ApiModelProperty.AccessMode.READ_ONLY)
     public String getResetToken() {
         return resetToken;
     }

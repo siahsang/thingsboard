@@ -1,5 +1,5 @@
 /**
- * Copyright © 2016-2022 The Thingsboard Authors
+ * Copyright © 2016-2023 The Thingsboard Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -24,6 +24,7 @@ import org.thingsboard.server.common.data.device.profile.AlarmConditionKeyType;
 import org.thingsboard.server.common.data.device.profile.AlarmConditionSpec;
 import org.thingsboard.server.common.data.device.profile.AlarmConditionSpecType;
 import org.thingsboard.server.common.data.device.profile.AlarmRule;
+import org.thingsboard.server.common.data.device.profile.AlarmSchedule;
 import org.thingsboard.server.common.data.device.profile.DeviceProfileAlarm;
 import org.thingsboard.server.common.data.device.profile.DurationAlarmConditionSpec;
 import org.thingsboard.server.common.data.device.profile.RepeatingAlarmConditionSpec;
@@ -77,6 +78,10 @@ class ProfileState {
                         addDynamicValuesRecursively(keyFilter.getPredicate(), entityKeys, ruleKeys);
                     }
                     addEntityKeysFromAlarmConditionSpec(alarmRule);
+                    AlarmSchedule schedule = alarmRule.getSchedule();
+                    if (schedule != null) {
+                        addScheduleDynamicValues(schedule);
+                    }
                 }));
                 if (alarm.getClearRule() != null) {
                     var clearAlarmKeys = alarmClearKeys.computeIfAbsent(alarm.getId(), id -> new HashSet<>());
@@ -88,6 +93,16 @@ class ProfileState {
                     addEntityKeysFromAlarmConditionSpec(alarm.getClearRule());
                 }
             }
+        }
+    }
+
+    private void addScheduleDynamicValues(AlarmSchedule schedule) {
+        DynamicValue<String> dynamicValue = schedule.getDynamicValue();
+        if (dynamicValue != null) {
+            entityKeys.add(
+                    new AlarmConditionFilterKey(AlarmConditionKeyType.ATTRIBUTE,
+                            dynamicValue.getSourceAttribute())
+            );
         }
     }
 

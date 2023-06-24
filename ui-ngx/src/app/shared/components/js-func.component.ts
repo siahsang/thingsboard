@@ -1,5 +1,5 @@
 ///
-/// Copyright © 2016-2022 The Thingsboard Authors
+/// Copyright © 2016-2023 The Thingsboard Authors
 ///
 /// Licensed under the Apache License, Version 2.0 (the "License");
 /// you may not use this file except in compliance with the License.
@@ -15,6 +15,7 @@
 ///
 
 import {
+  ChangeDetectorRef,
   Component,
   ElementRef,
   forwardRef,
@@ -24,7 +25,7 @@ import {
   ViewChild,
   ViewEncapsulation
 } from '@angular/core';
-import { ControlValueAccessor, FormControl, NG_VALIDATORS, NG_VALUE_ACCESSOR, Validator } from '@angular/forms';
+import { ControlValueAccessor, UntypedFormControl, NG_VALIDATORS, NG_VALUE_ACCESSOR, Validator } from '@angular/forms';
 import { Ace } from 'ace-builds';
 import { getAce, Range } from '@shared/models/ace/ace.models';
 import { coerceBooleanProperty } from '@angular/cdk/coercion';
@@ -38,6 +39,7 @@ import { CancelAnimationFrame, RafService } from '@core/services/raf.service';
 import { ResizeObserver } from '@juggle/resize-observer';
 import { TbEditorCompleter } from '@shared/models/ace/completion.models';
 import { beautifyJs } from '@shared/models/beautify.models';
+import { ScriptLanguage } from "@shared/models/rule-node.models";
 
 @Component({
   selector: 'tb-js-func',
@@ -69,6 +71,8 @@ export class JsFuncComponent implements OnInit, OnDestroy, ControlValueAccessor,
 
   toastTargetId = `jsFuncEditor-${guid()}`;
 
+  @Input() functionTitle: string;
+
   @Input() functionName: string;
 
   @Input() functionArgs: Array<string>;
@@ -81,6 +85,8 @@ export class JsFuncComponent implements OnInit, OnDestroy, ControlValueAccessor,
 
   @Input() fillHeight: boolean;
 
+  @Input() minHeight = '200px';
+
   @Input() editorCompleter: TbEditorCompleter;
 
   @Input() globalVariables: Array<string>;
@@ -88,6 +94,8 @@ export class JsFuncComponent implements OnInit, OnDestroy, ControlValueAccessor,
   @Input() disableUndefinedCheck = false;
 
   @Input() helpId: string;
+
+  @Input() scriptLanguage: ScriptLanguage = ScriptLanguage.JS;
 
   private noValidateValue: boolean;
   get noValidate(): boolean {
@@ -123,13 +131,14 @@ export class JsFuncComponent implements OnInit, OnDestroy, ControlValueAccessor,
   errorAnnotationId = -1;
 
   private propagateChange = null;
-  private hasErrors = false;
+  public hasErrors = false;
 
   constructor(public elementRef: ElementRef,
               private utils: UtilsService,
               private translate: TranslateService,
               protected store: Store<AppState>,
-              private raf: RafService) {
+              private raf: RafService,
+              private cd: ChangeDetectorRef) {
   }
 
   ngOnInit(): void {
@@ -146,11 +155,14 @@ export class JsFuncComponent implements OnInit, OnDestroy, ControlValueAccessor,
     }
     const editorElement = this.javascriptEditorElmRef.nativeElement;
     let editorOptions: Partial<Ace.EditorOptions> = {
-      mode: 'ace/mode/javascript',
-      showGutter: true,
-      showPrintMargin: true,
-      readOnly: this.disabled
+        mode: 'ace/mode/javascript',
+        showGutter: true,
+        showPrintMargin: true,
+        readOnly: this.disabled
     };
+    if (ScriptLanguage.TBEL === this.scriptLanguage) {
+      editorOptions.mode = 'ace/mode/tbel';
+    }
 
     const advancedOptions = {
       enableSnippets: true,
@@ -183,6 +195,7 @@ export class JsFuncComponent implements OnInit, OnDestroy, ControlValueAccessor,
             if (this.hasErrors !== hasErrors) {
               this.hasErrors = hasErrors;
               this.propagateChange(this.modelValue);
+              this.cd.markForCheck();
             }
           });
         }
@@ -221,6 +234,9 @@ export class JsFuncComponent implements OnInit, OnDestroy, ControlValueAccessor,
     if (this.editorResize$) {
       this.editorResize$.disconnect();
     }
+    if (this.jsEditor) {
+      this.jsEditor.destroy();
+    }
   }
 
   private onAceEditorResize() {
@@ -248,7 +264,7 @@ export class JsFuncComponent implements OnInit, OnDestroy, ControlValueAccessor,
     }
   }
 
-  public validate(c: FormControl) {
+  public validate(c: UntypedFormControl) {
     return (this.functionValid && !this.hasErrors) ? null : {
       jsFunc: {
         valid: false,
@@ -271,6 +287,7 @@ export class JsFuncComponent implements OnInit, OnDestroy, ControlValueAccessor,
       this.functionValid = this.validateJsFunc();
       if (!this.functionValid) {
         this.propagateChange(this.modelValue);
+        this.cd.markForCheck();
         this.store.dispatch(new ActionNotificationShow(
           {
             message: this.validationError,
@@ -398,6 +415,7 @@ export class JsFuncComponent implements OnInit, OnDestroy, ControlValueAccessor,
       this.modelValue = editorValue;
       this.functionValid = true;
       this.propagateChange(this.modelValue);
+      this.cd.markForCheck();
     }
   }
 }

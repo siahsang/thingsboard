@@ -1,5 +1,5 @@
 /**
- * Copyright © 2016-2022 The Thingsboard Authors
+ * Copyright © 2016-2023 The Thingsboard Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,16 +15,9 @@
  */
 package org.thingsboard.server.common.data.security.event;
 
-import org.thingsboard.server.common.data.id.UserId;
+import java.io.Serializable;
 
-public class UserAuthDataChangedEvent {
-    private final UserId userId;
-
-    public UserAuthDataChangedEvent(UserId userId) {
-        this.userId = userId;
-    }
-
-    public UserId getUserId() {
-        return userId;
-    }
+public abstract class UserAuthDataChangedEvent implements Serializable {
+    public abstract String getId();
+    public abstract long getTs();
 }

@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# Copyright © 2016-2022 The Thingsboard Authors
+# Copyright © 2016-2023 The Thingsboard Authors
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -25,15 +25,18 @@ firstlaunch=${DATA_FOLDER}/.firstlaunch
 source "${CONF_FOLDER}/${configfile}"
 
 if [ ! -f ${firstlaunch} ]; then
-    install-tb.sh --loadDemo
-    touch ${firstlaunch}
+    install-tb.sh --loadDemo && touch ${firstlaunch}
 fi
 
-echo "Starting ThingsBoard ..."
+if [ -f ${firstlaunch} ]; then
+    echo "Starting ThingsBoard ..."
 
-java -cp ${jarfile} $JAVA_OPTS -Dloader.main=org.thingsboard.server.ThingsboardServerApplication \
-                    -Dspring.jpa.hibernate.ddl-auto=none \
-                    -Dlogging.config=${CONF_FOLDER}/logback.xml \
-                    org.springframework.boot.loader.PropertiesLauncher
+    java -cp ${jarfile} $JAVA_OPTS -Dloader.main=org.thingsboard.server.ThingsboardServerApplication \
+                        -Dspring.jpa.hibernate.ddl-auto=none \
+                        -Dlogging.config=${CONF_FOLDER}/logback.xml \
+                        org.springframework.boot.loader.PropertiesLauncher
+else
+    echo "ERROR: ThingsBoard is not installed"
+fi
 
 stop-db.sh

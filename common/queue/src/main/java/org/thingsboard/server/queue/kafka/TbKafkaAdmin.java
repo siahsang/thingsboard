@@ -1,5 +1,5 @@
 /**
- * Copyright © 2016-2022 The Thingsboard Authors
+ * Copyright © 2016-2023 The Thingsboard Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -51,7 +51,7 @@ public class TbKafkaAdmin implements TbQueueAdmin {
             log.error("Failed to get all topics.", e);
         }
 
-        String numPartitionsStr = topicConfigs.get("partitions");
+        String numPartitionsStr = topicConfigs.get(TbKafkaTopicConfigs.NUM_PARTITIONS_SETTING);
         if (numPartitionsStr != null) {
             numPartitions = Integer.parseInt(numPartitionsStr);
             topicConfigs.remove("partitions");
@@ -82,6 +82,23 @@ public class TbKafkaAdmin implements TbQueueAdmin {
             throw new RuntimeException(e);
         }
 
+    }
+
+    @Override
+    public void deleteTopic(String topic) {
+        if (topics.contains(topic)) {
+            client.deleteTopics(Collections.singletonList(topic));
+        } else {
+            try {
+                if (client.listTopics().names().get().contains(topic)) {
+                    client.deleteTopics(Collections.singletonList(topic));
+                } else {
+                    log.warn("Kafka topic [{}] does not exist.", topic);
+                }
+            } catch (InterruptedException | ExecutionException e) {
+                log.error("Failed to delete kafka topic [{}].", topic, e);
+            }
+        }
     }
 
     @Override

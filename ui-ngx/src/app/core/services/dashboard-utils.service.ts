@@ -1,5 +1,5 @@
 ///
-/// Copyright © 2016-2022 The Thingsboard Authors
+/// Copyright © 2016-2023 The Thingsboard Authors
 ///
 /// Licensed under the Apache License, Version 2.0 (the "License");
 /// you may not use this file except in compliance with the License.
@@ -30,10 +30,19 @@ import {
   WidgetLayout
 } from '@shared/models/dashboard.models';
 import { isDefined, isString, isUndefined } from '@core/utils';
-import { Datasource, DatasourceType, Widget } from '@app/shared/models/widget.models';
+import {
+  Datasource,
+  datasourcesHasOnlyComparisonAggregation,
+  DatasourceType,
+  Widget,
+  WidgetConfig,
+  widgetType
+} from '@app/shared/models/widget.models';
 import { EntityType } from '@shared/models/entity-type.models';
 import { AliasFilterType, EntityAlias, EntityAliasFilter } from '@app/shared/models/alias.models';
 import { EntityId } from '@app/shared/models/id/entity-id';
+import { initModelFromDefaultTimewindow } from '@shared/models/time/time.models';
+import { AlarmSearchStatus } from '@shared/models/alarm.models';
 
 @Injectable({
   providedIn: 'root'
@@ -106,7 +115,8 @@ export class DashboardUtilsService {
     const targetDevicesByAliasId: {[aliasId: string]: Array<Array<string>>} = {};
     for (const widgetId of Object.keys(dashboard.configuration.widgets)) {
       const widget = dashboard.configuration.widgets[widgetId];
-      widget.config.datasources.forEach((datasource) => {
+      const datasources = widget.type === widgetType.alarm ? [widget.config.alarmSource] : widget.config.datasources;
+      datasources.forEach((datasource) => {
         if (datasource.entityAliasId) {
           const aliasId = datasource.entityAliasId;
           let aliasDatasources = datasourcesByAliasId[aliasId];
@@ -199,13 +209,22 @@ export class DashboardUtilsService {
   }
 
   public validateAndUpdateWidget(widget: Widget): Widget {
-    if (!widget.config) {
-      widget.config = {};
+    widget.config = this.validateAndUpdateWidgetConfig(widget.config, widget.type);
+    // Temp workaround
+    if (widget.isSystemType  && widget.bundleAlias === 'charts' && widget.typeAlias === 'timeseries') {
+      widget.typeAlias = 'basic_timeseries';
     }
-    if (!widget.config.datasources) {
-      widget.config.datasources = [];
+    return widget;
+  }
+
+  public validateAndUpdateWidgetConfig(widgetConfig: WidgetConfig | undefined, type: widgetType): WidgetConfig {
+    if (!widgetConfig) {
+      widgetConfig = {};
     }
-    widget.config.datasources.forEach((datasource) => {
+    if (!widgetConfig.datasources) {
+      widgetConfig.datasources = [];
+    }
+    widgetConfig.datasources.forEach((datasource) => {
       if (datasource.type === 'device') {
         datasource.type = DatasourceType.entity;
       }
@@ -214,11 +233,48 @@ export class DashboardUtilsService {
         delete datasource.deviceAliasId;
       }
     });
-    // Temp workaround
-    if (widget.isSystemType  && widget.bundleAlias === 'charts' && widget.typeAlias === 'timeseries') {
-      widget.typeAlias = 'basic_timeseries';
+    if (type === widgetType.latest) {
+      const onlyHistoryTimewindow = datasourcesHasOnlyComparisonAggregation(widgetConfig.datasources);
+      widgetConfig.timewindow = initModelFromDefaultTimewindow(widgetConfig.timewindow, true, onlyHistoryTimewindow, this.timeService);
     }
-    return widget;
+    if (type === widgetType.alarm) {
+      if (!widgetConfig.alarmFilterConfig) {
+        widgetConfig.alarmFilterConfig = {};
+        const alarmFilterConfig = widgetConfig.alarmFilterConfig;
+        if (isDefined(widgetConfig.alarmStatusList) && widgetConfig.alarmStatusList.length) {
+          alarmFilterConfig.statusList = widgetConfig.alarmStatusList;
+        } else if (isDefined(widgetConfig.alarmSearchStatus) && widgetConfig.alarmSearchStatus !== AlarmSearchStatus.ANY) {
+          alarmFilterConfig.statusList = [widgetConfig.alarmSearchStatus];
+        } else {
+          alarmFilterConfig.statusList = [];
+        }
+        if (isDefined(widgetConfig.alarmStatusList)) {
+          delete widgetConfig.alarmStatusList;
+        }
+        if (isDefined(widgetConfig.alarmSearchStatus)) {
+          delete widgetConfig.alarmSearchStatus;
+        }
+        if (isDefined(widgetConfig.alarmSeverityList)) {
+          alarmFilterConfig.severityList = widgetConfig.alarmSeverityList;
+          delete widgetConfig.alarmSeverityList;
+        } else {
+          alarmFilterConfig.severityList = [];
+        }
+        if (isDefined(widgetConfig.alarmTypeList)) {
+          alarmFilterConfig.typeList = widgetConfig.alarmTypeList;
+          delete widgetConfig.alarmTypeList;
+        } else {
+          alarmFilterConfig.typeList = [];
+        }
+        if (isDefined(widgetConfig.searchPropagatedAlarms)) {
+          alarmFilterConfig.searchPropagatedAlarms = widgetConfig.searchPropagatedAlarms;
+          delete widgetConfig.searchPropagatedAlarms;
+        } else {
+          alarmFilterConfig.searchPropagatedAlarms = true;
+        }
+      }
+    }
+    return widgetConfig;
   }
 
   public createDefaultLayoutData(): DashboardLayout {
@@ -233,6 +289,7 @@ export class DashboardUtilsService {
       backgroundColor: '#eeeeee',
       columns: 24,
       margin: 10,
+      outerMargin: true,
       backgroundSizeMode: '100%'
     };
   }
@@ -277,6 +334,7 @@ export class DashboardUtilsService {
       layout.gridSettings.margin = layout.gridSettings.margins[0];
       delete layout.gridSettings.margins;
     }
+    layout.gridSettings.outerMargin = isDefined(layout.gridSettings.outerMargin) ? layout.gridSettings.outerMargin : true;
     layout.gridSettings.margin = isDefined(layout.gridSettings.margin) ? layout.gridSettings.margin : 10;
   }
 
@@ -390,7 +448,8 @@ export class DashboardUtilsService {
       sizeY: originalSize ? originalSize.sizeY : widget.sizeY,
       mobileOrder: widget.config.mobileOrder,
       mobileHeight: widget.config.mobileHeight,
-      mobileHide: widget.config.mobileHide
+      mobileHide: widget.config.mobileHide,
+      desktopHide: widget.config.desktopHide
     };
     if (isUndefined(originalColumns)) {
       originalColumns = 24;
@@ -597,6 +656,47 @@ export class DashboardUtilsService {
       }
       delete entityAlias.entityType;
       delete entityAlias.entityFilter;
+    }
+    entityAlias = this.validateAndUpdateEntityAliasSingleTypeFilters(entityAlias);
+    return entityAlias;
+  }
+
+  private validateAndUpdateEntityAliasSingleTypeFilters(entityAlias: EntityAlias): EntityAlias {
+    if (entityAlias.filter.type === AliasFilterType.deviceType) {
+      if (entityAlias.filter.deviceType) {
+        if (!entityAlias.filter.deviceTypes) {
+          entityAlias.filter.deviceTypes = [];
+        }
+        entityAlias.filter.deviceTypes.push(entityAlias.filter.deviceType);
+        delete entityAlias.filter.deviceType;
+      }
+    }
+    if (entityAlias.filter.type === AliasFilterType.assetType) {
+      if (entityAlias.filter.assetType) {
+        if (!entityAlias.filter.assetTypes) {
+          entityAlias.filter.assetTypes = [];
+        }
+        entityAlias.filter.assetTypes.push(entityAlias.filter.assetType);
+        delete entityAlias.filter.assetType;
+      }
+    }
+    if (entityAlias.filter.type === AliasFilterType.entityViewType) {
+      if (entityAlias.filter.entityViewType) {
+        if (!entityAlias.filter.entityViewTypes) {
+          entityAlias.filter.entityViewTypes = [];
+        }
+        entityAlias.filter.entityViewTypes.push(entityAlias.filter.entityViewType);
+        delete entityAlias.filter.entityViewType;
+      }
+    }
+    if (entityAlias.filter.type === AliasFilterType.edgeType) {
+      if (entityAlias.filter.edgeType) {
+        if (!entityAlias.filter.edgeTypes) {
+          entityAlias.filter.edgeTypes = [];
+        }
+        entityAlias.filter.edgeTypes.push(entityAlias.filter.edgeType);
+        delete entityAlias.filter.edgeType;
+      }
     }
     return entityAlias;
   }

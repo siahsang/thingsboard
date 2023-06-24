@@ -1,5 +1,5 @@
 #
-# Copyright © 2016-2022 The Thingsboard Authors
+# Copyright © 2016-2023 The Thingsboard Authors
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -14,19 +14,16 @@
 # limitations under the License.
 #
 
-FROM thingsboard/openjdk11
+FROM thingsboard/openjdk11:bullseye-slim
 
 COPY start-tb-http-transport.sh ${pkg.name}.deb /tmp/
 
 RUN chmod a+x /tmp/*.sh \
-    && mv /tmp/start-tb-http-transport.sh /usr/bin
-
-RUN yes | dpkg -i /tmp/${pkg.name}.deb
-RUN rm /tmp/${pkg.name}.deb
-
-RUN systemctl --no-reload disable --now ${pkg.name}.service > /dev/null 2>&1 || :
-
-RUN chmod 555 ${pkg.installFolder}/bin/${pkg.name}.jar
+    && mv /tmp/start-tb-http-transport.sh /usr/bin && \
+    (yes | dpkg -i /tmp/${pkg.name}.deb) && \
+    rm /tmp/${pkg.name}.deb && \
+    (systemctl --no-reload disable --now ${pkg.name}.service > /dev/null 2>&1 || :) && \
+    chmod 555 ${pkg.installFolder}/bin/${pkg.name}.jar
 
 USER ${pkg.user}
 

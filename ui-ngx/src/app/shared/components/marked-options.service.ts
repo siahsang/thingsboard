@@ -1,5 +1,5 @@
 ///
-/// Copyright © 2016-2022 The Thingsboard Authors
+/// Copyright © 2016-2023 The Thingsboard Authors
 ///
 /// Licensed under the Apache License, Version 2.0 (the "License");
 /// you may not use this file except in compliance with the License.
@@ -19,8 +19,7 @@ import { Inject, Injectable } from '@angular/core';
 import { TranslateService } from '@ngx-translate/core';
 import { DOCUMENT } from '@angular/common';
 import { WINDOW } from '@core/services/window.service';
-import { Tokenizer } from 'marked';
-import * as marked from 'marked';
+import { Tokenizer, marked } from 'marked';
 import { Clipboard } from '@angular/cdk/clipboard';
 
 const copyCodeBlock = '{:copy-code}';

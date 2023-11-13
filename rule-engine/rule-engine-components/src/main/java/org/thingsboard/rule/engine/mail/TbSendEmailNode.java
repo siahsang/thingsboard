@@ -15,18 +15,18 @@
  */
 package org.thingsboard.rule.engine.mail;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.mail.javamail.JavaMailSenderImpl;
+import org.thingsboard.common.util.JacksonUtil;
 import org.thingsboard.rule.engine.api.RuleNode;
 import org.thingsboard.rule.engine.api.TbContext;
 import org.thingsboard.rule.engine.api.TbEmail;
-import org.thingsboard.rule.engine.api.TbNode;
 import org.thingsboard.rule.engine.api.TbNodeConfiguration;
 import org.thingsboard.rule.engine.api.TbNodeException;
 import org.thingsboard.rule.engine.api.util.TbNodeUtils;
 import org.thingsboard.rule.engine.external.TbAbstractExternalNode;
 import org.thingsboard.server.common.data.StringUtils;
+import org.thingsboard.server.common.data.msg.TbMsgType;
 import org.thingsboard.server.common.data.plugin.ComponentType;
 import org.thingsboard.server.common.msg.TbMsg;
 
@@ -51,9 +51,6 @@ import static org.thingsboard.common.util.DonAsynchron.withCallback;
 public class TbSendEmailNode extends TbAbstractExternalNode {
 
     private static final String MAIL_PROP = "mail.";
-    static final String SEND_EMAIL_TYPE = "SEND_EMAIL";
-    private static final ObjectMapper MAPPER = new ObjectMapper();
-
     private TbSendEmailNodeConfiguration config;
     private JavaMailSenderImpl mailSender;
 
@@ -73,15 +70,15 @@ public class TbSendEmailNode extends TbAbstractExternalNode {
     @Override
     public void onMsg(TbContext ctx, TbMsg msg) {
         try {
-            validateType(msg.getType());
+            validateType(msg);
             TbEmail email = getEmail(msg);
+            var tbMsg = ackIfNeeded(ctx, msg);
             withCallback(ctx.getMailExecutor().executeAsync(() -> {
-                        sendEmail(ctx, msg, email);
+                        sendEmail(ctx, tbMsg, email);
                         return null;
                     }),
-                    ok -> tellSuccess(ctx, msg),
-                    fail -> tellFailure(ctx, msg, fail));
-            ackIfNeeded(ctx, msg);
+                    ok -> tellSuccess(ctx, tbMsg),
+                    fail -> tellFailure(ctx, tbMsg, fail));
         } catch (Exception ex) {
             ctx.tellFailure(msg, ex);
         }
@@ -96,15 +93,16 @@ public class TbSendEmailNode extends TbAbstractExternalNode {
     }
 
     private TbEmail getEmail(TbMsg msg) throws IOException {
-        TbEmail email = MAPPER.readValue(msg.getData(), TbEmail.class);
+        TbEmail email = JacksonUtil.fromString(msg.getData(), TbEmail.class);
         if (StringUtils.isBlank(email.getTo())) {
             throw new IllegalStateException("Email destination can not be blank [" + email.getTo() + "]");
         }
         return email;
     }
 
-    private void validateType(String type) {
-        if (!SEND_EMAIL_TYPE.equals(type)) {
+    private void validateType(TbMsg msg) {
+        if (!msg.isTypeOf(TbMsgType.SEND_EMAIL)) {
+            String type = msg.getType();
             log.warn("Not expected msg type [{}] for SendEmail Node", type);
             throw new IllegalStateException("Not expected msg type " + type + " for SendEmail Node");
         }

@@ -1,5 +1,5 @@
 /**
- * Copyright © 2016-2023 The Thingsboard Authors
+ * Copyright © 2016-2025 The Thingsboard Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,13 +15,13 @@
  */
 package org.thingsboard.rule.engine.util;
 
-import org.junit.After;
-import org.junit.Assert;
-import org.junit.Before;
-import org.junit.Test;
-import org.junit.runner.RunWith;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.Assertions;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
-import org.mockito.junit.MockitoJUnitRunner;
+import org.mockito.junit.jupiter.MockitoExtension;
 import org.thingsboard.common.util.AbstractListeningExecutor;
 import org.thingsboard.rule.engine.api.RuleEngineAlarmService;
 import org.thingsboard.rule.engine.api.RuleEngineApiUsageStateService;
@@ -40,45 +40,61 @@ import org.thingsboard.server.common.data.OtaPackage;
 import org.thingsboard.server.common.data.TbResource;
 import org.thingsboard.server.common.data.TenantProfile;
 import org.thingsboard.server.common.data.User;
+import org.thingsboard.server.common.data.ai.AiModel;
 import org.thingsboard.server.common.data.alarm.Alarm;
 import org.thingsboard.server.common.data.asset.Asset;
 import org.thingsboard.server.common.data.asset.AssetProfile;
+import org.thingsboard.server.common.data.cf.CalculatedField;
+import org.thingsboard.server.common.data.domain.Domain;
 import org.thingsboard.server.common.data.edge.Edge;
 import org.thingsboard.server.common.data.id.AssetProfileId;
 import org.thingsboard.server.common.data.id.DeviceProfileId;
 import org.thingsboard.server.common.data.id.EntityId;
 import org.thingsboard.server.common.data.id.EntityIdFactory;
-import org.thingsboard.server.common.data.id.NotificationId;
 import org.thingsboard.server.common.data.id.TenantId;
 import org.thingsboard.server.common.data.id.TenantProfileId;
+import org.thingsboard.server.common.data.job.Job;
+import org.thingsboard.server.common.data.mobile.app.MobileApp;
+import org.thingsboard.server.common.data.mobile.bundle.MobileAppBundle;
 import org.thingsboard.server.common.data.notification.NotificationRequest;
 import org.thingsboard.server.common.data.notification.rule.NotificationRule;
 import org.thingsboard.server.common.data.notification.targets.NotificationTarget;
 import org.thingsboard.server.common.data.notification.template.NotificationTemplate;
+import org.thingsboard.server.common.data.oauth2.OAuth2Client;
 import org.thingsboard.server.common.data.queue.Queue;
+import org.thingsboard.server.common.data.queue.QueueStats;
 import org.thingsboard.server.common.data.rpc.Rpc;
 import org.thingsboard.server.common.data.rule.RuleChain;
 import org.thingsboard.server.common.data.rule.RuleNode;
 import org.thingsboard.server.common.data.widget.WidgetType;
 import org.thingsboard.server.common.data.widget.WidgetsBundle;
+import org.thingsboard.server.dao.ai.AiModelService;
 import org.thingsboard.server.dao.asset.AssetService;
+import org.thingsboard.server.dao.cf.CalculatedFieldService;
 import org.thingsboard.server.dao.customer.CustomerService;
 import org.thingsboard.server.dao.dashboard.DashboardService;
 import org.thingsboard.server.dao.device.DeviceService;
+import org.thingsboard.server.dao.domain.DomainService;
 import org.thingsboard.server.dao.edge.EdgeService;
 import org.thingsboard.server.dao.entityview.EntityViewService;
+import org.thingsboard.server.dao.job.JobService;
+import org.thingsboard.server.dao.mobile.MobileAppBundleService;
+import org.thingsboard.server.dao.mobile.MobileAppService;
 import org.thingsboard.server.dao.notification.NotificationRequestService;
 import org.thingsboard.server.dao.notification.NotificationRuleService;
 import org.thingsboard.server.dao.notification.NotificationTargetService;
 import org.thingsboard.server.dao.notification.NotificationTemplateService;
+import org.thingsboard.server.dao.oauth2.OAuth2ClientService;
 import org.thingsboard.server.dao.ota.OtaPackageService;
 import org.thingsboard.server.dao.queue.QueueService;
+import org.thingsboard.server.dao.queue.QueueStatsService;
 import org.thingsboard.server.dao.resource.ResourceService;
 import org.thingsboard.server.dao.rule.RuleChainService;
 import org.thingsboard.server.dao.user.UserService;
 import org.thingsboard.server.dao.widget.WidgetTypeService;
 import org.thingsboard.server.dao.widget.WidgetsBundleService;
 
+import java.util.Optional;
 import java.util.UUID;
 
 import static org.mockito.ArgumentMatchers.any;
@@ -86,7 +102,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.when;
 
-@RunWith(MockitoJUnitRunner.class)
+@ExtendWith(MockitoExtension.class)
 public class TenantIdLoaderTest {
 
     @Mock
@@ -135,13 +151,28 @@ public class TenantIdLoaderTest {
     private NotificationRequestService notificationRequestService;
     @Mock
     private NotificationRuleService notificationRuleService;
+    @Mock
+    private QueueStatsService queueStatsService;
+    @Mock
+    private OAuth2ClientService oAuth2ClientService;
+    @Mock
+    private DomainService domainService;
+    @Mock
+    private MobileAppService mobileAppService;
+    @Mock
+    private MobileAppBundleService mobileAppBundleService;
+    @Mock
+    private CalculatedFieldService calculatedFieldService;
+    @Mock
+    private JobService jobService;
+    @Mock
+    private AiModelService aiModelService;
 
     private TenantId tenantId;
     private TenantProfileId tenantProfileId;
-    private NotificationId notificationId;
     private AbstractListeningExecutor dbExecutor;
 
-    @Before
+    @BeforeEach
     public void before() {
         dbExecutor = new AbstractListeningExecutor() {
             @Override
@@ -150,9 +181,8 @@ public class TenantIdLoaderTest {
             }
         };
         dbExecutor.init();
-        this.tenantId = new TenantId(UUID.randomUUID());
+        this.tenantId = TenantId.fromUUID(UUID.randomUUID());
         this.tenantProfileId = new TenantProfileId(UUID.randomUUID());
-        this.notificationId = new NotificationId(UUID.randomUUID());
 
         when(ctx.getTenantId()).thenReturn(tenantId);
 
@@ -161,7 +191,7 @@ public class TenantIdLoaderTest {
         }
     }
 
-    @After
+    @AfterEach
     public void after() {
         dbExecutor.destroy();
     }
@@ -170,6 +200,7 @@ public class TenantIdLoaderTest {
         switch (entityType) {
             case TENANT:
             case NOTIFICATION:
+            case ADMIN_SETTINGS:
                 break;
             case CUSTOMER:
                 Customer customer = new Customer();
@@ -352,6 +383,54 @@ public class TenantIdLoaderTest {
                 when(ctx.getNotificationRuleService()).thenReturn(notificationRuleService);
                 doReturn(notificationRule).when(notificationRuleService).findNotificationRuleById(eq(tenantId), any());
                 break;
+            case QUEUE_STATS:
+                QueueStats queueStats = new QueueStats();
+                queueStats.setTenantId(tenantId);
+                when(ctx.getQueueStatsService()).thenReturn(queueStatsService);
+                doReturn(queueStats).when(queueStatsService).findQueueStatsById(eq(tenantId), any());
+                break;
+            case OAUTH2_CLIENT:
+                OAuth2Client oAuth2Client = new OAuth2Client();
+                oAuth2Client.setTenantId(tenantId);
+                when(ctx.getOAuth2ClientService()).thenReturn(oAuth2ClientService);
+                doReturn(oAuth2Client).when(oAuth2ClientService).findOAuth2ClientById(eq(tenantId), any());
+                break;
+            case DOMAIN:
+                Domain domain = new Domain();
+                domain.setTenantId(tenantId);
+                when(ctx.getDomainService()).thenReturn(domainService);
+                doReturn(domain).when(domainService).findDomainById(eq(tenantId), any());
+                break;
+            case MOBILE_APP:
+                MobileApp mobileApp = new MobileApp();
+                mobileApp.setTenantId(tenantId);
+                when(ctx.getMobileAppService()).thenReturn(mobileAppService);
+                doReturn(mobileApp).when(mobileAppService).findMobileAppById(eq(tenantId), any());
+                break;
+            case MOBILE_APP_BUNDLE:
+                MobileAppBundle mobileAppBundle = new MobileAppBundle();
+                mobileAppBundle.setTenantId(tenantId);
+                when(ctx.getMobileAppBundleService()).thenReturn(mobileAppBundleService);
+                doReturn(mobileAppBundle).when(mobileAppBundleService).findMobileAppBundleById(eq(tenantId), any());
+                break;
+            case CALCULATED_FIELD:
+                CalculatedField calculatedField = new CalculatedField();
+                calculatedField.setTenantId(tenantId);
+                when(ctx.getCalculatedFieldService()).thenReturn(calculatedFieldService);
+                doReturn(calculatedField).when(calculatedFieldService).findById(eq(tenantId), any());
+                break;
+            case JOB:
+                Job job = new Job();
+                job.setTenantId(tenantId);
+                when(ctx.getJobService()).thenReturn(jobService);
+                doReturn(job).when(jobService).findJobById(eq(tenantId), any());
+                break;
+            case AI_MODEL:
+                AiModel aiModel = new AiModel();
+                aiModel.setTenantId(tenantId);
+                when(ctx.getAiModelService()).thenReturn(aiModelService);
+                doReturn(Optional.of(aiModel)).when(aiModelService).findAiModelById(eq(tenantId), any());
+                break;
             default:
                 throw new RuntimeException("Unexpected originator EntityType " + entityType);
         }
@@ -374,9 +453,9 @@ public class TenantIdLoaderTest {
             TenantId targetTenantId = TenantIdLoader.findTenantId(ctx, entityId);
             String msg = "Check entity type <" + entityType.name() + ">:";
             if (equals) {
-                Assert.assertEquals(msg, targetTenantId, checkTenantId);
+                Assertions.assertEquals(targetTenantId, checkTenantId, msg);
             } else {
-                Assert.assertNotEquals(msg, targetTenantId, checkTenantId);
+                Assertions.assertNotEquals(targetTenantId, checkTenantId, msg);
             }
         }
     }
@@ -388,7 +467,7 @@ public class TenantIdLoaderTest {
 
     @Test
     public void test_findEntityIdAsync_other_tenant() {
-        checkTenant(new TenantId(UUID.randomUUID()), false);
+        checkTenant(TenantId.fromUUID(UUID.randomUUID()), false);
     }
 
 }

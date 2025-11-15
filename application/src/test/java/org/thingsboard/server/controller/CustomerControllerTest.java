@@ -1,5 +1,5 @@
 /**
- * Copyright © 2016-2023 The Thingsboard Authors
+ * Copyright © 2016-2025 The Thingsboard Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -33,6 +33,7 @@ import org.springframework.context.annotation.Primary;
 import org.springframework.test.context.ContextConfiguration;
 import org.thingsboard.common.util.ThingsBoardExecutors;
 import org.thingsboard.server.common.data.Customer;
+import org.thingsboard.server.common.data.Device;
 import org.thingsboard.server.common.data.StringUtils;
 import org.thingsboard.server.common.data.Tenant;
 import org.thingsboard.server.common.data.User;
@@ -85,7 +86,7 @@ public class CustomerControllerTest extends AbstractControllerTest {
 
         Tenant tenant = new Tenant();
         tenant.setTitle("My tenant");
-        savedTenant = doPost("/api/tenant", tenant, Tenant.class);
+        savedTenant = saveTenant(tenant);
         Assert.assertNotNull(savedTenant);
 
         tenantAdmin = new User();
@@ -104,8 +105,7 @@ public class CustomerControllerTest extends AbstractControllerTest {
 
         loginSysAdmin();
 
-        doDelete("/api/tenant/" + savedTenant.getId().getId().toString())
-                .andExpect(status().isOk());
+        deleteTenant(savedTenant.getId());
     }
 
     @Test
@@ -154,7 +154,7 @@ public class CustomerControllerTest extends AbstractControllerTest {
                 .andExpect(statusReason(containsString(msgError)));
 
         customer.setTenantId(savedTenant.getId());
-        testNotifyEntityEqualsOneTimeServiceNeverError(customer,savedTenant.getId(),
+        testNotifyEntityEqualsOneTimeServiceNeverError(customer, savedTenant.getId(),
                 tenantAdmin.getId(), tenantAdmin.getEmail(), ActionType.ADDED, new DataValidationException(msgError));
         Mockito.reset(tbClusterService, auditLogService);
 
@@ -165,7 +165,7 @@ public class CustomerControllerTest extends AbstractControllerTest {
                 .andExpect(status().isBadRequest())
                 .andExpect(statusReason(containsString(msgError)));
 
-        testNotifyEntityEqualsOneTimeServiceNeverError(customer,savedTenant.getId(),
+        testNotifyEntityEqualsOneTimeServiceNeverError(customer, savedTenant.getId(),
                 tenantAdmin.getId(), tenantAdmin.getEmail(), ActionType.ADDED, new DataValidationException(msgError));
         Mockito.reset(tbClusterService, auditLogService);
 
@@ -176,7 +176,7 @@ public class CustomerControllerTest extends AbstractControllerTest {
                 .andExpect(status().isBadRequest())
                 .andExpect(statusReason(containsString(msgError)));
 
-        testNotifyEntityEqualsOneTimeServiceNeverError(customer,savedTenant.getId(),
+        testNotifyEntityEqualsOneTimeServiceNeverError(customer, savedTenant.getId(),
                 tenantAdmin.getId(), tenantAdmin.getEmail(), ActionType.ADDED, new DataValidationException(msgError));
         Mockito.reset(tbClusterService, auditLogService);
 
@@ -187,7 +187,7 @@ public class CustomerControllerTest extends AbstractControllerTest {
                 .andExpect(status().isBadRequest())
                 .andExpect(statusReason(containsString(msgError)));
 
-        testNotifyEntityEqualsOneTimeServiceNeverError(customer,savedTenant.getId(),
+        testNotifyEntityEqualsOneTimeServiceNeverError(customer, savedTenant.getId(),
                 tenantAdmin.getId(), tenantAdmin.getEmail(), ActionType.ADDED, new DataValidationException(msgError));
         Mockito.reset(tbClusterService, auditLogService);
 
@@ -198,7 +198,7 @@ public class CustomerControllerTest extends AbstractControllerTest {
                 .andExpect(status().isBadRequest())
                 .andExpect(statusReason(containsString(msgError)));
 
-        testNotifyEntityEqualsOneTimeServiceNeverError(customer,savedTenant.getId(),
+        testNotifyEntityEqualsOneTimeServiceNeverError(customer, savedTenant.getId(),
                 tenantAdmin.getId(), tenantAdmin.getEmail(), ActionType.ADDED, new DataValidationException(msgError));
         Mockito.reset(tbClusterService, auditLogService);
 
@@ -209,7 +209,7 @@ public class CustomerControllerTest extends AbstractControllerTest {
                 .andExpect(status().isBadRequest())
                 .andExpect(statusReason(containsString(msgError)));
 
-        testNotifyEntityEqualsOneTimeServiceNeverError(customer,savedTenant.getId(),
+        testNotifyEntityEqualsOneTimeServiceNeverError(customer, savedTenant.getId(),
                 tenantAdmin.getId(), tenantAdmin.getEmail(), ActionType.ADDED, new DataValidationException(msgError));
     }
 
@@ -293,7 +293,7 @@ public class CustomerControllerTest extends AbstractControllerTest {
                 .andExpect(status().isBadRequest())
                 .andExpect(statusReason(containsString(msgError)));
 
-        testNotifyEntityEqualsOneTimeServiceNeverError(customer,savedTenant.getId(),
+        testNotifyEntityEqualsOneTimeServiceNeverError(customer, savedTenant.getId(),
                 tenantAdmin.getId(), tenantAdmin.getEmail(), ActionType.ADDED, new DataValidationException(msgError));
     }
 
@@ -353,7 +353,7 @@ public class CustomerControllerTest extends AbstractControllerTest {
     }
 
     @Test
-    public void testFindCustomersByTitle() throws Exception {
+    public void testFindCustomersWithTitleAsTextSearch() throws Exception {
         TenantId tenantId = savedTenant.getId();
 
         String title1 = "Customer title 1";
@@ -426,6 +426,31 @@ public class CustomerControllerTest extends AbstractControllerTest {
     }
 
     @Test
+    public void testFindCustomerByTitle() throws Exception {
+        Customer customer = new Customer();
+        customer.setTitle("My customer");
+
+        Mockito.reset(tbClusterService, auditLogService);
+
+        Customer savedCustomer = doPost("/api/customer", customer, Customer.class);
+
+        testNotifyEntityAllOneTime(savedCustomer, savedCustomer.getId(), savedCustomer.getId(), savedCustomer.getTenantId(),
+                new CustomerId(CustomerId.NULL_UUID), tenantAdmin.getId(), tenantAdmin.getEmail(),
+                ActionType.ADDED);
+
+        Assert.assertNotNull(savedCustomer);
+        Assert.assertNotNull(savedCustomer.getId());
+        Assert.assertTrue(savedCustomer.getCreatedTime() > 0);
+        Assert.assertEquals(customer.getTitle(), savedCustomer.getTitle());
+
+        Customer foundCustomer = doGet("/api/tenant/customers?customerTitle=" + savedCustomer.getTitle(), Customer.class);
+        Assert.assertEquals(foundCustomer, savedCustomer);
+
+        doDelete("/api/customer/" + savedCustomer.getId().getId().toString())
+                .andExpect(status().isOk());
+    }
+
+    @Test
     public void testDeleteCustomerWithDeleteRelationsOk() throws Exception {
         CustomerId customerId = createCustomer("Customer for Test WithRelationsOk").getId();
         testEntityDaoWithRelationsOk(savedTenant.getId(), customerId, "/api/customer/" + customerId);
@@ -436,6 +461,27 @@ public class CustomerControllerTest extends AbstractControllerTest {
     public void testDeleteCustomerExceptionWithRelationsTransactional() throws Exception {
         CustomerId customerId = createCustomer("Customer for Test WithRelations Transactional Exception").getId();
         testEntityDaoWithRelationsTransactionalException(customerDao, savedTenant.getId(), customerId, "/api/customer/" + customerId);
+    }
+
+    @Test
+    public void testSaveCustomerWithUniquifyStrategy() throws Exception {
+        Customer customer = new Customer();
+        customer.setTitle("My unique customer");
+        Customer savedCustomer = doPost("/api/customer", customer, Customer.class);
+
+        doPost("/api/customer?nameConflictPolicy=FAIL", customer).andExpect(status().isBadRequest());
+
+        Customer secondCustomer = doPost("/api/customer?nameConflictPolicy=UNIQUIFY", customer, Customer.class);
+        assertThat(secondCustomer.getName()).startsWith("My unique customer_");
+
+        Customer thirdCustomer = doPost("/api/customer?nameConflictPolicy=UNIQUIFY&uniquifySeparator=-", customer, Customer.class);
+        assertThat(thirdCustomer.getName()).startsWith("My unique customer-");
+
+        Customer fourthCustomer = doPost("/api/customer?nameConflictPolicy=UNIQUIFY&uniquifyStrategy=INCREMENTAL", customer, Customer.class);
+        assertThat(fourthCustomer.getName()).isEqualTo("My unique customer_1");
+
+        Customer fifthCustomer = doPost("/api/customer?nameConflictPolicy=UNIQUIFY&uniquifyStrategy=INCREMENTAL", customer, Customer.class);
+        assertThat(fifthCustomer.getName()).isEqualTo("My unique customer_2");
     }
 
     private Customer createCustomer(String title) {

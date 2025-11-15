@@ -1,5 +1,5 @@
 /**
- * Copyright © 2016-2023 The Thingsboard Authors
+ * Copyright © 2016-2025 The Thingsboard Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,10 +16,15 @@
 package org.thingsboard.server.dao.model.sql;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import jakarta.persistence.Column;
+import jakarta.persistence.Convert;
+import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
+import jakarta.persistence.Table;
+import jakarta.persistence.Transient;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
-import org.hibernate.annotations.Type;
-import org.hibernate.annotations.TypeDef;
 import org.thingsboard.common.util.JacksonUtil;
 import org.thingsboard.server.common.data.OtaPackageInfo;
 import org.thingsboard.server.common.data.id.DeviceProfileId;
@@ -29,14 +34,8 @@ import org.thingsboard.server.common.data.ota.ChecksumAlgorithm;
 import org.thingsboard.server.common.data.ota.OtaPackageType;
 import org.thingsboard.server.dao.model.BaseSqlEntity;
 import org.thingsboard.server.dao.model.ModelConstants;
-import org.thingsboard.server.dao.util.mapping.JsonStringType;
+import org.thingsboard.server.dao.util.mapping.JsonConverter;
 
-import javax.persistence.Column;
-import javax.persistence.Entity;
-import javax.persistence.EnumType;
-import javax.persistence.Enumerated;
-import javax.persistence.Table;
-import javax.persistence.Transient;
 import java.util.UUID;
 
 import static org.thingsboard.server.dao.model.ModelConstants.OTA_PACKAGE_CHECKSUM_ALGORITHM_COLUMN;
@@ -52,12 +51,10 @@ import static org.thingsboard.server.dao.model.ModelConstants.OTA_PACKAGE_TILE_C
 import static org.thingsboard.server.dao.model.ModelConstants.OTA_PACKAGE_TYPE_COLUMN;
 import static org.thingsboard.server.dao.model.ModelConstants.OTA_PACKAGE_URL_COLUMN;
 import static org.thingsboard.server.dao.model.ModelConstants.OTA_PACKAGE_VERSION_COLUMN;
-import static org.thingsboard.server.dao.model.ModelConstants.SEARCH_TEXT_PROPERTY;
 
 @Data
 @EqualsAndHashCode(callSuper = true)
 @Entity
-@TypeDef(name = "json", typeClass = JsonStringType.class)
 @Table(name = OTA_PACKAGE_TABLE_NAME)
 public class OtaPackageInfoEntity extends BaseSqlEntity<OtaPackageInfo> {
 
@@ -99,9 +96,12 @@ public class OtaPackageInfoEntity extends BaseSqlEntity<OtaPackageInfo> {
     @Column(name = OTA_PACKAGE_DATA_SIZE_COLUMN)
     private Long dataSize;
 
-    @Type(type = "json")
+    @Convert(converter = JsonConverter.class)
     @Column(name = ModelConstants.OTA_PACKAGE_ADDITIONAL_INFO_COLUMN)
     private JsonNode additionalInfo;
+
+    @Column(name = ModelConstants.EXTERNAL_ID_PROPERTY)
+    private UUID externalId;
 
     @Transient
     private boolean hasData;
@@ -128,11 +128,12 @@ public class OtaPackageInfoEntity extends BaseSqlEntity<OtaPackageInfo> {
         this.checksum = otaPackageInfo.getChecksum();
         this.dataSize = otaPackageInfo.getDataSize();
         this.additionalInfo = otaPackageInfo.getAdditionalInfo();
+        this.externalId = getUuid(otaPackageInfo.getExternalId());
     }
 
     public OtaPackageInfoEntity(UUID id, long createdTime, UUID tenantId, UUID deviceProfileId, OtaPackageType type, String title, String version, String tag,
                                 String url, String fileName, String contentType, ChecksumAlgorithm checksumAlgorithm, String checksum, Long dataSize,
-                                Object additionalInfo, boolean hasData) {
+                                Object additionalInfo, UUID externalId, boolean hasData) {
         this.id = id;
         this.createdTime = createdTime;
         this.tenantId = tenantId;
@@ -149,6 +150,7 @@ public class OtaPackageInfoEntity extends BaseSqlEntity<OtaPackageInfo> {
         this.dataSize = dataSize;
         this.hasData = hasData;
         this.additionalInfo = JacksonUtil.convertValue(additionalInfo, JsonNode.class);
+        this.externalId = externalId;
     }
 
     @Override
@@ -171,6 +173,8 @@ public class OtaPackageInfoEntity extends BaseSqlEntity<OtaPackageInfo> {
         otaPackageInfo.setDataSize(dataSize);
         otaPackageInfo.setAdditionalInfo(additionalInfo);
         otaPackageInfo.setHasData(hasData);
+        otaPackageInfo.setExternalId(getEntityId(externalId, OtaPackageId::new));
         return otaPackageInfo;
     }
+
 }

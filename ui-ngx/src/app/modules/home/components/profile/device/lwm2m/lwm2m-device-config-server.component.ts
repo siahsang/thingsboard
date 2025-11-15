@@ -1,5 +1,5 @@
 ///
-/// Copyright © 2016-2023 The Thingsboard Authors
+/// Copyright © 2016-2025 The Thingsboard Authors
 ///
 /// Licensed under the Apache License, Version 2.0 (the "License");
 /// you may not use this file except in compliance with the License.
@@ -38,6 +38,7 @@ import {
   Lwm2mSecurityType,
   Lwm2mSecurityTypeTranslationMap
 } from '@shared/models/lwm2m-security-config.models';
+import { coerceBoolean } from '@shared/decorators/coercion';
 
 @Component({
   selector: 'tb-profile-lwm2m-device-config-server',
@@ -73,6 +74,13 @@ export class Lwm2mDeviceConfigServerComponent implements OnInit, ControlValueAcc
   currentSecurityMode = null;
   bootstrapDisabled = false;
 
+  readonly shortServerIdMin = 1;
+  readonly shortServerIdMax = 65534;
+
+  @Input()
+  @coerceBoolean()
+  isBootstrap = false;
+
   @Output()
   removeServer = new EventEmitter();
 
@@ -92,7 +100,9 @@ export class Lwm2mDeviceConfigServerComponent implements OnInit, ControlValueAcc
       securityMode: [Lwm2mSecurityType.NO_SEC],
       serverPublicKey: [''],
       clientHoldOffTime: ['', [Validators.required, Validators.min(0), Validators.pattern('[0-9]*')]],
-      shortServerId: ['', [Validators.required, Validators.min(1), Validators.max(65534), Validators.pattern('[0-9]*')]],
+      shortServerId: ['', this.isBootstrap ?
+        [] : [Validators.required, Validators.pattern('[0-9]*'), Validators.min(this.shortServerIdMin), Validators.max(this.shortServerIdMax)]
+      ],
       bootstrapServerAccountTimeout: ['', [Validators.required, Validators.min(0), Validators.pattern('[0-9]*')]],
       binding: [''],
       lifetime: [null, [Validators.required, Validators.min(0), Validators.pattern('[0-9]*')]],
@@ -116,6 +126,7 @@ export class Lwm2mDeviceConfigServerComponent implements OnInit, ControlValueAcc
         this.serverFormGroup.get('serverPublicKey').patchValue(serverSecurityConfig.serverCertificate, {emitEvent: false});
       }
     });
+
     this.serverFormGroup.valueChanges.pipe(
       takeUntil(this.destroy$)
     ).subscribe(value => {
@@ -199,7 +210,7 @@ export class Lwm2mDeviceConfigServerComponent implements OnInit, ControlValueAcc
     if (value !== undefined) {
       this.propagateChange(value);
     }
-  }
+  };
 
   private getLwm2mBootstrapSecurityInfo(securityMode = Lwm2mSecurityType.NO_SEC): Observable<ServerSecurityConfig> {
     return this.deviceProfileService.getLwm2mBootstrapSecurityInfoBySecurityType(

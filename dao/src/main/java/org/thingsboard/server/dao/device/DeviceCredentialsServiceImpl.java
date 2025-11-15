@@ -1,5 +1,5 @@
 /**
- * Copyright © 2016-2023 The Thingsboard Authors
+ * Copyright © 2016-2025 The Thingsboard Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,11 +16,11 @@
 package org.thingsboard.server.dao.device;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.eclipse.leshan.core.SecurityMode;
-import org.eclipse.leshan.core.util.SecurityUtil;
+import org.eclipse.leshan.core.security.util.SecurityUtil;
 import org.hibernate.exception.ConstraintViolationException;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.event.TransactionalEventListener;
 import org.thingsboard.common.util.JacksonUtil;
@@ -45,26 +45,26 @@ import org.thingsboard.server.dao.entity.AbstractCachedEntityService;
 import org.thingsboard.server.dao.eventsourcing.ActionEntityEvent;
 import org.thingsboard.server.dao.exception.DataValidationException;
 import org.thingsboard.server.dao.exception.DeviceCredentialsValidationException;
-import org.thingsboard.server.dao.service.DataValidator;
+import org.thingsboard.server.dao.service.validator.DeviceCredentialsDataValidator;
+
+import java.util.Objects;
 
 import static org.thingsboard.server.dao.service.Validator.validateId;
 import static org.thingsboard.server.dao.service.Validator.validateString;
 
 @Service
 @Slf4j
+@RequiredArgsConstructor
 public class DeviceCredentialsServiceImpl extends AbstractCachedEntityService<String, DeviceCredentials, DeviceCredentialsEvictEvent> implements DeviceCredentialsService {
 
-    @Autowired
-    private DeviceCredentialsDao deviceCredentialsDao;
-
-    @Autowired
-    private DataValidator<DeviceCredentials> credentialsValidator;
+    private final DeviceCredentialsDao deviceCredentialsDao;
+    private final DeviceCredentialsDataValidator credentialsValidator;
 
     @TransactionalEventListener(classes = DeviceCredentialsEvictEvent.class)
     @Override
     public void handleEvictEvent(DeviceCredentialsEvictEvent event) {
-        cache.evict(event.getNewCedentialsId());
-        if (StringUtils.isNotEmpty(event.getOldCredentialsId()) && !event.getNewCedentialsId().equals(event.getOldCredentialsId())) {
+        cache.evict(event.getNewCredentialsId());
+        if (StringUtils.isNotEmpty(event.getOldCredentialsId()) && !event.getNewCredentialsId().equals(event.getOldCredentialsId())) {
             cache.evict(event.getOldCredentialsId());
         }
     }
@@ -72,14 +72,14 @@ public class DeviceCredentialsServiceImpl extends AbstractCachedEntityService<St
     @Override
     public DeviceCredentials findDeviceCredentialsByDeviceId(TenantId tenantId, DeviceId deviceId) {
         log.trace("Executing findDeviceCredentialsByDeviceId [{}]", deviceId);
-        validateId(deviceId, "Incorrect deviceId " + deviceId);
+        validateId(deviceId, id -> "Incorrect deviceId " + id);
         return deviceCredentialsDao.findByDeviceId(tenantId, deviceId.getId());
     }
 
     @Override
     public DeviceCredentials findDeviceCredentialsByCredentialsId(String credentialsId) {
         log.trace("Executing findDeviceCredentialsByCredentialsId [{}]", credentialsId);
-        validateString(credentialsId, "Incorrect credentialsId " + credentialsId);
+        validateString(credentialsId, id -> "Incorrect credentialsId " + id);
         return cache.getAndPutInTransaction(credentialsId,
                 () -> deviceCredentialsDao.findByCredentialsId(TenantId.SYS_TENANT_ID, credentialsId),
                 true); // caching null values is essential for permanently invalid requests
@@ -109,8 +109,8 @@ public class DeviceCredentialsServiceImpl extends AbstractCachedEntityService<St
         try {
             var value = deviceCredentialsDao.saveAndFlush(tenantId, deviceCredentials);
             publishEvictEvent(new DeviceCredentialsEvictEvent(value.getCredentialsId(), oldDeviceCredentials != null ? oldDeviceCredentials.getCredentialsId() : null));
-            if (oldDeviceCredentials != null) {
-                eventPublisher.publishEvent(ActionEntityEvent.builder().tenantId(tenantId).entityId(value.getDeviceId()).actionType(ActionType.CREDENTIALS_UPDATED).build());
+            if (oldDeviceCredentials != null && isCredentialsChanged(oldDeviceCredentials, value)) {
+                eventPublisher.publishEvent(ActionEntityEvent.builder().tenantId(tenantId).entity(value).entityId(value.getDeviceId()).actionType(ActionType.CREDENTIALS_UPDATED).build());
             }
             return value;
         } catch (Exception t) {
@@ -142,13 +142,11 @@ public class DeviceCredentialsServiceImpl extends AbstractCachedEntityService<St
 
     @Override
     public JsonNode toCredentialsInfo(DeviceCredentials deviceCredentials) {
-        switch (deviceCredentials.getCredentialsType()) {
-            case ACCESS_TOKEN:
-                return JacksonUtil.valueToTree(deviceCredentials.getCredentialsId());
-            case X509_CERTIFICATE:
-                return JacksonUtil.valueToTree(deviceCredentials.getCredentialsValue());
-        }
-        return JacksonUtil.fromString(deviceCredentials.getCredentialsValue(), JsonNode.class);
+        return switch (deviceCredentials.getCredentialsType()) {
+            case ACCESS_TOKEN -> JacksonUtil.valueToTree(deviceCredentials.getCredentialsId());
+            case X509_CERTIFICATE -> JacksonUtil.valueToTree(deviceCredentials.getCredentialsValue());
+            default -> JacksonUtil.fromString(deviceCredentials.getCredentialsValue(), JsonNode.class);
+        };
     }
 
     private void formatSimpleMqttCredentials(DeviceCredentials deviceCredentials) {
@@ -407,6 +405,13 @@ public class DeviceCredentialsServiceImpl extends AbstractCachedEntityService<St
         if (credentials != null) {
             publishEvictEvent(new DeviceCredentialsEvictEvent(credentials.getCredentialsId(), null));
         }
+    }
+
+    private boolean isCredentialsChanged(DeviceCredentials oldCredentials, DeviceCredentials newCredentials) {
+        return !Objects.equals(oldCredentials.getCredentialsId(), newCredentials.getCredentialsId())
+                || oldCredentials.getCredentialsType() != newCredentials.getCredentialsType()
+                || !Objects.equals(oldCredentials.getCredentialsValue(), newCredentials.getCredentialsValue())
+                || !Objects.equals(oldCredentials.getDeviceId(), newCredentials.getDeviceId());
     }
 
 }

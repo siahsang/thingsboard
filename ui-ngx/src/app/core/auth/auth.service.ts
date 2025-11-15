@@ -1,5 +1,5 @@
 ///
-/// Copyright © 2016-2023 The Thingsboard Authors
+/// Copyright © 2016-2025 The Thingsboard Authors
 ///
 /// Licensed under the Apache License, Version 2.0 (the "License");
 /// you may not use this file except in compliance with the License.
@@ -22,7 +22,7 @@ import { Observable, of, ReplaySubject, throwError } from 'rxjs';
 import { catchError, map, mergeMap, tap } from 'rxjs/operators';
 
 import { LoginRequest, LoginResponse, PublicLoginRequest } from '@shared/models/login.models';
-import { ActivatedRoute, Router, UrlTree } from '@angular/router';
+import { Router, UrlTree } from '@angular/router';
 import { defaultHttpOptions, defaultHttpOptionsFromConfig, RequestConfig } from '../http/http-utils';
 import { UserService } from '../http/user.service';
 import { Store } from '@ngrx/store';
@@ -35,7 +35,6 @@ import {
 } from './auth.actions';
 import { getCurrentAuthState, getCurrentAuthUser } from './auth.selectors';
 import { Authority } from '@shared/models/authority.enum';
-import { ActionSettingsChangeLanguage } from '@app/core/settings/settings.actions';
 import { AuthPayload, AuthState, SysParams, SysParamsState } from '@core/auth/auth.models';
 import { TranslateService } from '@ngx-translate/core';
 import { AuthUser } from '@shared/models/user.model';
@@ -43,7 +42,7 @@ import { TimeService } from '@core/services/time.service';
 import { UtilsService } from '@core/services/utils.service';
 import { MatDialog, MatDialogConfig } from '@angular/material/dialog';
 import { AlertDialogComponent } from '@shared/components/dialog/alert-dialog.component';
-import { OAuth2ClientInfo, PlatformType } from '@shared/models/oauth2.models';
+import { OAuth2ClientLoginInfo, PlatformType } from '@shared/models/oauth2.models';
 import { isMobileApp } from '@core/utils';
 import { TwoFactorAuthProviderType, TwoFaProviderInfo } from '@shared/models/two-factor-auth.models';
 import { UserPasswordPolicy } from '@shared/models/settings.models';
@@ -59,7 +58,6 @@ export class AuthService {
     private userService: UserService,
     private timeService: TimeService,
     private router: Router,
-    private route: ActivatedRoute,
     private zone: NgZone,
     private utils: UtilsService,
     private translate: TranslateService,
@@ -68,8 +66,9 @@ export class AuthService {
   }
 
   redirectUrl: string;
-  oauth2Clients: Array<OAuth2ClientInfo> = null;
+  oauth2Clients: Array<OAuth2ClientLoginInfo> = null;
   twoFactorAuthProviders: Array<TwoFaProviderInfo> = null;
+  forceTwoFactorAuthProviders: Array<TwoFactorAuthProviderType> = null;
 
   private refreshTokenSubject: ReplaySubject<LoginResponse> = null;
   private jwtHelper = new JwtHelperService();
@@ -119,6 +118,9 @@ export class AuthService {
           if (loginResponse.scope === Authority.PRE_VERIFICATION_TOKEN) {
             this.router.navigateByUrl(`login/mfa`);
           }
+          if (loginResponse.scope === Authority.MFA_CONFIGURATION_TOKEN) {
+            this.router.navigateByUrl(`login/force-mfa`);
+          }
         }
       ));
   }
@@ -154,12 +156,8 @@ export class AuthService {
       ));
   }
 
-  public resetPassword(resetToken: string, password: string): Observable<LoginResponse> {
-    return this.http.post<LoginResponse>('/api/noauth/resetPassword', {resetToken, password}, defaultHttpOptions()).pipe(
-      tap((loginResponse: LoginResponse) => {
-          this.setUserFromJwtToken(loginResponse.token, loginResponse.refreshToken, true);
-        }
-      ));
+  public resetPassword(resetToken: string, password: string): Observable<void> {
+    return this.http.post<void>('/api/noauth/resetPassword', {resetToken, password}, defaultHttpOptions());
   }
 
   public changePassword(currentPassword: string, newPassword: string, config?: RequestConfig) {
@@ -225,9 +223,9 @@ export class AuthService {
     }
   }
 
-  public loadOAuth2Clients(): Observable<Array<OAuth2ClientInfo>> {
+  public loadOAuth2Clients(): Observable<Array<OAuth2ClientLoginInfo>> {
     const url = '/api/noauth/oauth2Clients?platform=' + PlatformType.WEB;
-    return this.http.post<Array<OAuth2ClientInfo>>(url,
+    return this.http.post<Array<OAuth2ClientLoginInfo>>(url,
       null, defaultHttpOptions()).pipe(
       catchError(err => of([])),
       tap((OAuth2Clients) => {
@@ -241,6 +239,15 @@ export class AuthService {
       catchError(() => of([])),
       tap((providers) => {
         this.twoFactorAuthProviders = providers;
+      })
+    );
+  }
+
+  public getAvailableTwoFaProviders(): Observable<Array<TwoFaProviderInfo>> {
+    return this.http.get<Array<TwoFaProviderInfo>>(`/api/2fa/providers`, defaultHttpOptions()).pipe(
+      catchError(() => of([])),
+      tap((providers) => {
+        this.forceTwoFactorAuthProviders = providers;
       })
     );
   }
@@ -272,6 +279,8 @@ export class AuthService {
     if (isAuthenticated) {
       if (authState.authUser.authority === Authority.PRE_VERIFICATION_TOKEN) {
         result = this.router.parseUrl('login/mfa');
+      } else if (authState.authUser.authority === Authority.MFA_CONFIGURATION_TOKEN) {
+        result = this.router.parseUrl('login/force-mfa');
       } else if (!path || path === 'login' || this.forceDefaultPlace(authState, path, params)) {
         if (this.redirectUrl) {
           const redirectUrl = this.redirectUrl;
@@ -352,7 +361,7 @@ export class AuthService {
           )
         );
       } else if (loginError) {
-        this.showLoginErrorDialog(loginError);
+        Promise.resolve().then(() => this.showLoginErrorDialog(loginError));
         this.utils.updateQueryParam('loginError', null);
         return throwError(Error());
       }
@@ -405,7 +414,7 @@ export class AuthService {
               loadUserSubject.error(err);
             }
           );
-        } else if (authPayload.authUser?.authority === Authority.PRE_VERIFICATION_TOKEN) {
+        } else if (authPayload.authUser?.authority === Authority.PRE_VERIFICATION_TOKEN || authPayload.authUser?.authority === Authority.MFA_CONFIGURATION_TOKEN) {
           loadUserSubject.next(authPayload);
           loadUserSubject.complete();
         } else if (authPayload.authUser?.userId) {
@@ -419,14 +428,7 @@ export class AuthService {
               this.loadSystemParams().subscribe(
                 (sysParams) => {
                   authPayload = {...authPayload, ...sysParams};
-                  let userLang;
-                  if (authPayload.userDetails.additionalInfo && authPayload.userDetails.additionalInfo.lang) {
-                    userLang = authPayload.userDetails.additionalInfo.lang;
-                  } else {
-                    userLang = null;
-                  }
                   loadUserSubject.next(authPayload);
-                  this.notifyUserLang(userLang);
                   loadUserSubject.complete();
                 },
                 (err) => {
@@ -555,14 +557,14 @@ export class AuthService {
         this.notifyUserLoaded(false);
         this.loadUser(false).subscribe(
           (authPayload) => {
-            this.notifyUserLoaded(true);
             this.notifyAuthenticated(authPayload);
+            this.notifyUserLoaded(true);
             authenticatedSubject.next(true);
             authenticatedSubject.complete();
           },
           () => {
-            this.notifyUserLoaded(true);
             this.notifyUnauthenticated();
+            this.notifyUserLoaded(true);
             authenticatedSubject.next(false);
             authenticatedSubject.complete();
           }
@@ -607,10 +609,6 @@ export class AuthService {
     this.store.dispatch(new ActionAuthAuthenticated(authPayload));
   }
 
-  private notifyUserLang(userLang: string) {
-    this.store.dispatch(new ActionSettingsChangeLanguage({userLang}));
-  }
-
   private updateAndValidateToken(token, prefix, notify) {
     let valid = false;
     const tokenData = this.jwtHelper.decodeToken(token);
@@ -637,6 +635,7 @@ export class AuthService {
   private userForceFullscreen(authPayload: AuthPayload): boolean {
     return (authPayload.authUser && authPayload.authUser.isPublic) ||
       (authPayload.userDetails && authPayload.userDetails.additionalInfo &&
+        authPayload.userDetails.additionalInfo.defaultDashboardId &&
         authPayload.userDetails.additionalInfo.defaultDashboardFullscreen &&
         authPayload.userDetails.additionalInfo.defaultDashboardFullscreen === true);
   }

@@ -1,5 +1,5 @@
 ///
-/// Copyright © 2016-2023 The Thingsboard Authors
+/// Copyright © 2016-2025 The Thingsboard Authors
 ///
 /// Licensed under the Apache License, Version 2.0 (the "License");
 /// you may not use this file except in compliance with the License.
@@ -16,7 +16,7 @@
 
 import { Component, EventEmitter, Input, OnInit, Output, ViewEncapsulation } from '@angular/core';
 import { PageComponent } from '@shared/components/page.component';
-import { ColorRange } from '@shared/models/widget-settings.models';
+import { ColorRange, ColorRangeSettings } from '@shared/models/widget-settings.models';
 import { TbPopoverComponent } from '@shared/components/popover.component';
 import { UntypedFormBuilder, UntypedFormGroup } from '@angular/forms';
 import { Store } from '@ngrx/store';
@@ -71,8 +71,8 @@ export class ColorRangePanelComponent extends PageComponent implements OnInit {
   }
 
   applyColorRangeSettings() {
-    const colorRangeSettings = this.colorRangeFormGroup.get('rangeList').value;
-    this.colorRangeApplied.emit(colorRangeSettings);
+    const colorRangeSettings: ColorRangeSettings = this.colorRangeFormGroup.get('rangeList').value;
+    this.colorRangeApplied.emit(colorRangeSettings.range);
   }
 
 }

@@ -1,5 +1,5 @@
 ///
-/// Copyright © 2016-2023 The Thingsboard Authors
+/// Copyright © 2016-2025 The Thingsboard Authors
 ///
 /// Licensed under the Apache License, Version 2.0 (the "License");
 /// you may not use this file except in compliance with the License.
@@ -32,10 +32,12 @@ import { Store } from '@ngrx/store';
 import { AppState } from '@core/core.state';
 import { ControlValueAccessor, NG_VALUE_ACCESSOR } from '@angular/forms';
 import { Subscription } from 'rxjs';
-import { coerceBooleanProperty } from '@angular/cdk/coercion';
 import { FlowDirective } from '@flowjs/ngx-flow';
 import { TranslateService } from '@ngx-translate/core';
 import { UtilsService } from '@core/services/utils.service';
+import { DialogService } from '@core/services/dialog.service';
+import { FileSizePipe } from '@shared/pipe/file-size.pipe';
+import { coerceBoolean } from '@shared/decorators/coercion';
 
 @Component({
   selector: 'tb-file-input',
@@ -73,47 +75,42 @@ export class FileInputComponent extends PageComponent implements AfterViewInit, 
   dropLabel: string;
 
   @Input()
+  maxSizeByte: number;
+
+  @Input()
   contentConvertFunction: (content: string) => any;
 
-  private requiredValue: boolean;
-
-  get required(): boolean {
-    return this.requiredValue;
-  }
+  @Input()
+  @coerceBoolean()
+  required: boolean;
 
   @Input()
-  set required(value: boolean) {
-    const newVal = coerceBooleanProperty(value);
-    if (this.requiredValue !== newVal) {
-      this.requiredValue = newVal;
-    }
-  }
-
-  private requiredAsErrorValue: boolean;
-
-  get requiredAsError(): boolean {
-    return this.requiredAsErrorValue;
-  }
+  @coerceBoolean()
+  requiredAsError: boolean;
 
   @Input()
-  set requiredAsError(value: boolean) {
-    const newVal = coerceBooleanProperty(value);
-    if (this.requiredAsErrorValue !== newVal) {
-      this.requiredAsErrorValue = newVal;
-    }
-  }
-
-  @Input()
+  @coerceBoolean()
   disabled: boolean;
 
   @Input()
   existingFileName: string;
 
   @Input()
+  @coerceBoolean()
   readAsBinary = false;
 
   @Input()
   workFromFileObj = false;
+
+  @Input()
+  @coerceBoolean()
+  asButton: boolean;
+
+  @Input()
+  uploadButtonClass = 'browse-file';
+
+  @Input()
+  uploadButtonText: string;
 
   private multipleFileValue = false;
 
@@ -132,9 +129,14 @@ export class FileInputComponent extends PageComponent implements AfterViewInit, 
   @Output()
   fileNameChanged = new EventEmitter<string|string[]>();
 
+  @Output()
+  mediaTypeChanged = new EventEmitter<string>();
+
   fileName: string | string[];
   fileContent: any;
   files: File[];
+
+  mediaType: string;
 
   @ViewChild('flow', {static: true})
   flow: FlowDirective;
@@ -148,7 +150,9 @@ export class FileInputComponent extends PageComponent implements AfterViewInit, 
 
   constructor(protected store: Store<AppState>,
               private utils: UtilsService,
-              public translate: TranslateService) {
+              private translate: TranslateService,
+              private dialog: DialogService,
+              private fileSize: FileSizePipe) {
     super(store);
   }
 
@@ -156,11 +160,24 @@ export class FileInputComponent extends PageComponent implements AfterViewInit, 
     this.autoUploadSubscription = this.flow.events$.subscribe(event => {
       if (event.type === 'filesAdded') {
         const readers = [];
+        let showMaxSizeAlert = false;
         (event.event[0] as flowjs.FlowFile[]).forEach(file => {
           if (this.filterFile(file)) {
-            readers.push(this.readerAsFile(file));
+            if (this.checkMaxSize(file)) {
+              readers.push(this.readerAsFile(file));
+            } else {
+              showMaxSizeAlert = true;
+            }
           }
         });
+
+        if (showMaxSizeAlert) {
+          this.dialog.alert(
+            this.translate.instant('dashboard.cannot-upload-file'),
+            this.translate.instant('dashboard.maximum-upload-file-size', {size: this.fileSize.transform(this.maxSizeByte)})
+          ).subscribe(() => { });
+        }
+
         if (readers.length) {
           Promise.all(readers).then((files) => {
             files = files.filter(file => file.fileContent != null || file.files != null);
@@ -168,6 +185,7 @@ export class FileInputComponent extends PageComponent implements AfterViewInit, 
               this.fileContent = files[0].fileContent;
               this.fileName = files[0].fileName;
               this.files = files[0].files;
+              this.mediaType = files[0].mediaType;
               this.updateModel();
             } else if (files.length > 1) {
               this.fileContent = files.map(content => content.fileContent);
@@ -191,6 +209,7 @@ export class FileInputComponent extends PageComponent implements AfterViewInit, 
         let fileName = null;
         let fileContent = null;
         let files = null;
+        let mediaType = null;
         if (reader.readyState === reader.DONE) {
           if (!this.workFromFileObj) {
             fileContent = reader.result;
@@ -199,16 +218,18 @@ export class FileInputComponent extends PageComponent implements AfterViewInit, 
                 fileContent = this.contentConvertFunction(fileContent);
               }
               fileName = fileContent ? file.name : null;
+              mediaType = file?.file?.type || null;
             }
           } else if (file.name || file.file){
             files = file.file;
             fileName = file.name;
+            mediaType = file.file.type || null;
           }
         }
-        resolve({fileContent, fileName, files});
+        resolve({fileContent, fileName, files, mediaType});
       };
       reader.onerror = () => {
-        resolve({fileContent: null, fileName: null, files: null});
+        resolve({fileContent: null, fileName: null, files: null, mediaType: null});
       };
       if (this.readAsBinary) {
         reader.readAsBinaryString(file.file);
@@ -216,6 +237,10 @@ export class FileInputComponent extends PageComponent implements AfterViewInit, 
         reader.readAsText(file.file);
       }
     });
+  }
+
+  private checkMaxSize(file: flowjs.FlowFile): boolean {
+    return !this.maxSizeByte || file.size <= this.maxSizeByte;
   }
 
   private filterFile(file: flowjs.FlowFile): boolean {
@@ -267,6 +292,7 @@ export class FileInputComponent extends PageComponent implements AfterViewInit, 
       this.propagateChange(this.files);
     } else {
       this.propagateChange(this.fileContent);
+      this.mediaTypeChanged.emit(this.mediaType);
       this.fileNameChanged.emit(this.fileName);
     }
   }

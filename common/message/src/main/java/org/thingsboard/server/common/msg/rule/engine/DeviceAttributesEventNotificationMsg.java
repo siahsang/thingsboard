@@ -1,5 +1,5 @@
 /**
- * Copyright © 2016-2023 The Thingsboard Authors
+ * Copyright © 2016-2025 The Thingsboard Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,16 +23,15 @@ import org.thingsboard.server.common.data.kv.AttributeKvEntry;
 import org.thingsboard.server.common.msg.MsgType;
 import org.thingsboard.server.common.msg.ToDeviceActorNotificationMsg;
 
+import java.io.Serial;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 
-/**
- * @author Andrew Shvayka
- */
 @Data
 public class DeviceAttributesEventNotificationMsg implements ToDeviceActorNotificationMsg {
 
+    @Serial
     private static final long serialVersionUID = 2422071590415277039L;
 
     private final TenantId tenantId;
@@ -56,4 +55,5 @@ public class DeviceAttributesEventNotificationMsg implements ToDeviceActorNotifi
     public MsgType getMsgType() {
         return MsgType.DEVICE_ATTRIBUTES_UPDATE_TO_DEVICE_ACTOR_MSG;
     }
+
 }

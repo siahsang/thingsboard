@@ -1,5 +1,5 @@
 /**
- * Copyright © 2016-2023 The Thingsboard Authors
+ * Copyright © 2016-2025 The Thingsboard Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -50,14 +50,13 @@ public class X509_TrustLwM2MIntegrationTest extends AbstractSecurityLwM2MIntegra
                 serverX509Cert.getEncoded());
         Lwm2mDeviceProfileTransportConfiguration transportConfiguration = getTransportConfiguration(OBSERVE_ATTRIBUTES_WITHOUT_PARAMS, getBootstrapServerCredentialsSecure(X509, NONE));
         LwM2MDeviceCredentials deviceCredentials = getDeviceCredentialsSecure(clientCredentials, privateKey, certificate, X509, false);
-        this.basicTestConnection(security,
+        this.basicTestConnection(security, null,
                 deviceCredentials,
-                COAP_CONFIG,
                 clientEndpoint,
                 transportConfiguration,
                 "await on client state (X509_Trust_Lwm2m)",
                 expectedStatusesRegistrationLwm2mSuccess,
-                false,
+                true,
                 ON_REGISTRATION_SUCCESS,
                 true);
     }
@@ -77,14 +76,13 @@ public class X509_TrustLwM2MIntegrationTest extends AbstractSecurityLwM2MIntegra
                 serverX509CertBs.getEncoded());
         Lwm2mDeviceProfileTransportConfiguration transportConfiguration = getTransportConfiguration(OBSERVE_ATTRIBUTES_WITHOUT_PARAMS, getBootstrapServerCredentialsSecure(X509, BOTH));
         LwM2MDeviceCredentials deviceCredentials = getDeviceCredentialsSecure(clientCredentials, privateKey, certificate, X509, false);
-        this.basicTestConnection(security,
+        this.basicTestConnection(security,null,
                 deviceCredentials,
-                COAP_CONFIG_BS,
                 clientEndpoint,
                 transportConfiguration,
                 "await on client state (X509Trust two section)",
                 expectedStatusesRegistrationBsSuccess,
-                true,
+                false,
                 ON_REGISTRATION_SUCCESS,
                 true);
     }

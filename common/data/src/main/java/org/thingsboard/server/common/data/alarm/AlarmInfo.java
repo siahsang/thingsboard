@@ -1,5 +1,5 @@
 /**
- * Copyright © 2016-2023 The Thingsboard Authors
+ * Copyright © 2016-2025 The Thingsboard Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,33 +15,40 @@
  */
 package org.thingsboard.server.common.data.alarm;
 
-import io.swagger.annotations.ApiModel;
-import io.swagger.annotations.ApiModelProperty;
+import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.EqualsAndHashCode;
 import lombok.Getter;
 import lombok.Setter;
 import lombok.ToString;
 
+import java.io.Serial;
+
 @EqualsAndHashCode(callSuper = true)
 @ToString(callSuper = true)
-@ApiModel
+@Schema
 public class AlarmInfo extends Alarm {
 
+    @Serial
     private static final long serialVersionUID = 2807343093519543363L;
 
     @Getter
     @Setter
-    @ApiModelProperty(position = 19, value = "Alarm originator name", example = "Thermostat")
+    @Schema(description = "Alarm originator name", example = "Thermostat")
     private String originatorName;
 
     @Getter
     @Setter
-    @ApiModelProperty(position = 20, value = "Alarm originator label", example = "Thermostat label")
+    @Schema(description = "Alarm originator label", example = "Thermostat label")
     private String originatorLabel;
 
     @Getter
     @Setter
-    @ApiModelProperty(position = 21, value = "Alarm assignee")
+    @Schema(description = "Originator display name", example = "Thermostat")
+    private String originatorDisplayName;
+
+    @Getter
+    @Setter
+    @Schema(description = "Alarm assignee")
     private AlarmAssignee assignee;
 
     public AlarmInfo() {
@@ -54,8 +61,8 @@ public class AlarmInfo extends Alarm {
 
     public AlarmInfo(AlarmInfo alarmInfo) {
         super(alarmInfo);
-        this.originatorName = alarmInfo.originatorName;
-        this.originatorLabel = alarmInfo.originatorLabel;
+        this.originatorName = alarmInfo.getOriginatorName();
+        this.originatorLabel = alarmInfo.getOriginatorLabel();
         this.assignee = alarmInfo.getAssignee();
     }
 

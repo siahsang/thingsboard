@@ -1,5 +1,5 @@
 ///
-/// Copyright © 2016-2023 The Thingsboard Authors
+/// Copyright © 2016-2025 The Thingsboard Authors
 ///
 /// Licensed under the Apache License, Version 2.0 (the "License");
 /// you may not use this file except in compliance with the License.
@@ -26,11 +26,19 @@ import { WidgetService } from '@core/http/widget.service';
 import { WidgetEditorComponent } from '@home/pages/widget/widget-editor.component';
 import { map } from 'rxjs/operators';
 import { detailsToWidgetInfo, WidgetInfo } from '@home/models/widget-component.models';
-import { widgetType, WidgetTypeDetails, WidgetTypeInfo } from '@app/shared/models/widget.models';
+import {
+  migrateWidgetTypeToDynamicForms,
+  widgetType,
+  WidgetTypeDetails,
+  WidgetTypeInfo
+} from '@app/shared/models/widget.models';
 import { ConfirmOnExitGuard } from '@core/guards/confirm-on-exit.guard';
 import { RouterTabsComponent } from '@home/components/router-tabs.component';
 import { WidgetTypesTableConfigResolver } from '@home/pages/widget/widget-types-table-config.resolver';
 import { WidgetsBundleWidgetsComponent } from '@home/pages/widget/widgets-bundle-widgets.component';
+import { EntityDetailsPageComponent } from '@home/components/entity/entity-details-page.component';
+import { entityDetailsPageBreadcrumbLabelFunction } from '@home/pages/home-pages.models';
+import { MenuId } from '@core/services/menu.models';
 
 export interface WidgetEditorData {
   widgetTypeDetails: WidgetTypeDetails;
@@ -65,10 +73,13 @@ const widgetEditorDataResolver: ResolveFn<WidgetEditorData> = (route: ActivatedR
     );
   } else {
     return inject(WidgetService).getWidgetTypeById(widgetTypeId).pipe(
-      map((result) => ({
-        widgetTypeDetails: result,
-        widget: detailsToWidgetInfo(result)
-      }))
+      map((result) => {
+        result = migrateWidgetTypeToDynamicForms(result);
+        return {
+          widgetTypeDetails: result,
+          widget: detailsToWidgetInfo(result)
+        };
+      })
     );
   }
 };
@@ -106,8 +117,7 @@ const widgetTypesRoutes: Routes = [
     path: 'widget-types',
     data: {
       breadcrumb: {
-        label: 'widget.widgets',
-        icon: 'now_widgets'
+        menuId: MenuId.widget_types
       }
     },
     children: [
@@ -122,6 +132,29 @@ const widgetTypesRoutes: Routes = [
           entitiesTableConfig: WidgetTypesTableConfigResolver
         }
       },
+      {
+        path: 'details',
+        children: [
+          {
+            path: ':entityId',
+            component: EntityDetailsPageComponent,
+            canDeactivate: [ConfirmOnExitGuard],
+            data: {
+              breadcrumb: {
+                labelFunction: entityDetailsPageBreadcrumbLabelFunction,
+                icon: 'now_widgets'
+              } as BreadCrumbConfig<EntityDetailsPageComponent>,
+              auth: [Authority.SYS_ADMIN, Authority.TENANT_ADMIN],
+              title: 'widget.widgets',
+              hideTabs: true,
+              backNavigationCommands: ['../..']
+            },
+            resolve: {
+              entitiesTableConfig: WidgetTypesTableConfigResolver
+            }
+          }
+        ]
+      },
       ...widgetEditorRouter
     ]
   },
@@ -132,8 +165,7 @@ const widgetsBundlesRoutes: Routes = [
     path: 'widgets-bundles',
     data: {
       breadcrumb: {
-        label: 'widgets-bundle.widgets-bundles',
-        icon: 'now_widgets'
+        menuId: MenuId.widgets_bundles
       }
     },
     children: [
@@ -147,6 +179,29 @@ const widgetsBundlesRoutes: Routes = [
         resolve: {
           entitiesTableConfig: WidgetsBundlesTableConfigResolver
         }
+      },
+      {
+        path: 'details',
+        children: [
+          {
+            path: ':entityId',
+            component: EntityDetailsPageComponent,
+            canDeactivate: [ConfirmOnExitGuard],
+            data: {
+              breadcrumb: {
+                labelFunction: entityDetailsPageBreadcrumbLabelFunction,
+                icon: 'now_widgets'
+              } as BreadCrumbConfig<EntityDetailsPageComponent>,
+              auth: [Authority.SYS_ADMIN, Authority.TENANT_ADMIN],
+              title: 'widgets-bundle.widgets-bundles',
+              hideTabs: true,
+              backNavigationCommands: ['../..']
+            },
+            resolve: {
+              entitiesTableConfig: WidgetsBundlesTableConfigResolver
+            }
+          }
+        ]
       },
       {
         path: ':widgetsBundleId',
@@ -187,8 +242,7 @@ export const widgetsLibraryRoutes: Routes = [
     data: {
       auth: [Authority.SYS_ADMIN, Authority.TENANT_ADMIN],
       breadcrumb: {
-        label: 'widget.widget-library',
-        icon: 'now_widgets'
+        menuId: MenuId.widget_library
       }
     },
     children: [

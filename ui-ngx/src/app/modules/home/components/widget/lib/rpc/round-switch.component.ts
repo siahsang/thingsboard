@@ -1,5 +1,5 @@
 ///
-/// Copyright © 2016-2023 The Thingsboard Authors
+/// Copyright © 2016-2025 The Thingsboard Authors
 ///
 /// Licensed under the Apache License, Version 2.0 (the "License");
 /// you may not use this file except in compliance with the License.
@@ -24,7 +24,6 @@ import { isDefined } from '@core/utils';
 import { IWidgetSubscription, SubscriptionInfo, WidgetSubscriptionOptions } from '@core/api/widget-api.models';
 import { DatasourceType, widgetType } from '@shared/models/widget.models';
 import { EntityType } from '@shared/models/entity-type.models';
-import { ResizeObserver } from '@juggle/resize-observer';
 
 type RetrieveValueMethod = 'rpc' | 'attribute' | 'timeseries';
 
@@ -331,11 +330,16 @@ export class RoundSwitchComponent extends PageComponent implements OnInit, OnDes
       if (keyData && keyData.data && keyData.data[0]) {
         const attrValue = keyData.data[0][1];
         if (isDefined(attrValue)) {
-          let parsed = null;
+          let valueToParse = attrValue;
           try {
-            parsed = this.parseValueFunction(JSON.parse(attrValue));
-          } catch (e){/**/}
-          value = !!parsed;
+            valueToParse = JSON.parse(attrValue);
+          } catch (e) {/**/}
+
+          try {
+            value = !!this.parseValueFunction(valueToParse);
+          } catch (e) {
+            value = false;
+          }
         }
       }
     }

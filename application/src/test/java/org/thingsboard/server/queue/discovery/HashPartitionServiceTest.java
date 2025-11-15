@@ -1,5 +1,5 @@
 /**
- * Copyright © 2016-2023 The Thingsboard Authors
+ * Copyright © 2016-2025 The Thingsboard Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,12 +20,12 @@ import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.collections4.ListUtils;
 import org.apache.commons.lang3.RandomStringUtils;
-import org.junit.Assert;
-import org.junit.Before;
-import org.junit.Test;
-import org.junit.runner.RunWith;
+import org.junit.jupiter.api.Assertions;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
-import org.mockito.junit.MockitoJUnitRunner;
+import org.mockito.junit.jupiter.MockitoSettings;
+import org.mockito.quality.Strictness;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.test.util.ReflectionTestUtils;
 import org.thingsboard.server.common.data.DataConstants;
@@ -49,6 +49,7 @@ import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Random;
 import java.util.Set;
 import java.util.UUID;
@@ -63,19 +64,18 @@ import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 @Slf4j
-@RunWith(MockitoJUnitRunner.class)
+@MockitoSettings(strictness = Strictness.LENIENT)
 public class HashPartitionServiceTest {
 
     public static final int ITERATIONS = 1000000;
     public static final int SERVER_COUNT = 3;
-    private HashPartitionService clusterRoutingService;
+    private HashPartitionService partitionService;
 
-    private TbServiceInfoProvider discoveryService;
+    private TbServiceInfoProvider serviceInfoProvider;
     private TenantRoutingInfoService routingInfoService;
     private ApplicationEventPublisher applicationEventPublisher;
     private QueueRoutingInfoService queueRoutingInfoService;
@@ -83,21 +83,19 @@ public class HashPartitionServiceTest {
 
     private String hashFunctionName = "murmur3_128";
 
-    @Before
+    @BeforeEach
     public void setup() throws Exception {
-        discoveryService = mock(TbServiceInfoProvider.class);
+        serviceInfoProvider = mock(TbServiceInfoProvider.class);
         applicationEventPublisher = mock(ApplicationEventPublisher.class);
         routingInfoService = mock(TenantRoutingInfoService.class);
         queueRoutingInfoService = mock(QueueRoutingInfoService.class);
         topicService = mock(TopicService.class);
         when(topicService.buildTopicName(Mockito.any())).thenAnswer(i -> i.getArguments()[0]);
-        clusterRoutingService = createPartitionService();
+        partitionService = createPartitionService();
         ServiceInfo currentServer = ServiceInfo.newBuilder()
                 .setServiceId("tb-core-0")
                 .addAllServiceTypes(Collections.singletonList(ServiceType.TB_CORE.name()))
                 .build();
-//        when(queueService.resolve(Mockito.any(), Mockito.anyString())).thenAnswer(i -> i.getArguments()[1]);
-//        when(discoveryService.getServiceInfo()).thenReturn(currentServer);
         List<ServiceInfo> otherServers = new ArrayList<>();
         for (int i = 1; i < SERVER_COUNT; i++) {
             otherServers.add(ServiceInfo.newBuilder()
@@ -106,7 +104,7 @@ public class HashPartitionServiceTest {
                     .build());
         }
 
-        clusterRoutingService.recalculatePartitions(currentServer, otherServers);
+        partitionService.recalculatePartitions(currentServer, otherServers);
     }
 
     @Test
@@ -122,7 +120,7 @@ public class HashPartitionServiceTest {
         long start = System.currentTimeMillis();
         Map<Integer, Integer> map = new HashMap<>();
         for (DeviceId deviceId : devices) {
-            TopicPartitionInfo address = clusterRoutingService.resolve(ServiceType.TB_CORE, TenantId.SYS_TENANT_ID, deviceId);
+            TopicPartitionInfo address = partitionService.resolve(ServiceType.TB_CORE, TenantId.SYS_TENANT_ID, deviceId);
             Integer partition = address.getPartition().get();
             map.put(partition, map.getOrDefault(partition, 0) + 1);
         }
@@ -156,7 +154,7 @@ public class HashPartitionServiceTest {
             for (int queueIndex = 0; queueIndex < queueCount; queueIndex++) {
                 QueueKey queueKey = new QueueKey(ServiceType.TB_RULE_ENGINE, "queue" + queueIndex, tenantId);
                 for (int partition = 0; partition < partitionCount; partition++) {
-                    ServiceInfo serviceInfo = clusterRoutingService.resolveByPartitionIdx(services, queueKey, partition);
+                    ServiceInfo serviceInfo = partitionService.resolveByPartitionIdx(services, queueKey, partition, Collections.emptyMap()).get(0);
                     String serviceId = serviceInfo.getServiceId();
                     map.put(serviceId, map.get(serviceId) + 1);
                 }
@@ -176,7 +174,7 @@ public class HashPartitionServiceTest {
         for (Map.Entry<T, Integer> entry : data) {
             System.out.println(entry.getKey() + ": " + entry.getValue());
         }
-        Assert.assertTrue(diffPercent < maxDiffPercent);
+        Assertions.assertTrue(diffPercent < maxDiffPercent);
     }
 
     @Test
@@ -233,15 +231,34 @@ public class HashPartitionServiceTest {
         }
 
         Map<QueueKey, Map<ServiceInfo, List<Integer>>> serversPartitions = new HashMap<>();
-        clusterRoutingService.init();
+        when(serviceInfoProvider.isService(eq(ServiceType.TB_RULE_ENGINE))).thenReturn(true);
+        partitionService.init();
         for (ServiceInfo ruleEngine : ruleEngines) {
             List<ServiceInfo> other = new ArrayList<>(ruleEngines);
             other.removeIf(serviceInfo -> serviceInfo.getServiceId().equals(ruleEngine.getServiceId()));
 
-            clusterRoutingService.recalculatePartitions(ruleEngine, other);
-            clusterRoutingService.myPartitions.forEach((queueKey, partitions) -> {
+            partitionService.recalculatePartitions(ruleEngine, other);
+            partitionService.myPartitions.forEach((queueKey, partitions) -> {
                 serversPartitions.computeIfAbsent(queueKey, k -> new HashMap<>()).put(ruleEngine, partitions);
             });
+
+            Set<UUID> assignedTenantProfiles = ruleEngine.getAssignedTenantProfilesList().stream().map(UUID::fromString).collect(Collectors.toSet());
+            when(serviceInfoProvider.getAssignedTenantProfiles()).thenReturn(assignedTenantProfiles);
+            if (assignedTenantProfiles.isEmpty()) {
+                assertThat(partitionService.isManagedByCurrentService(TenantId.SYS_TENANT_ID)).isTrue();
+                tenants.forEach((tenantId, tenantProfileId) -> {
+                    assertThat(partitionService.isManagedByCurrentService(tenantId)).isFalse();
+                });
+            } else {
+                assertThat(partitionService.isManagedByCurrentService(TenantId.SYS_TENANT_ID)).isFalse();
+                tenants.forEach((tenantId, tenantProfileId) -> {
+                    if (assignedTenantProfiles.contains(tenantProfileId.getId())) {
+                        assertThat(partitionService.isManagedByCurrentService(tenantId)).isTrue();
+                    } else {
+                        assertThat(partitionService.isManagedByCurrentService(tenantId)).isFalse();
+                    }
+                });
+            }
         }
         assertThat(serversPartitions.keySet()).containsAll(queues.stream().map(queue -> new QueueKey(ServiceType.TB_RULE_ENGINE, queue)).collect(Collectors.toList()));
 
@@ -286,13 +303,13 @@ public class HashPartitionServiceTest {
         mockRoutingInfo(tenantId, tenantProfileId, false); // not isolated yet
         mockQueues(queues);
 
-        when(discoveryService.isService(eq(ServiceType.TB_RULE_ENGINE))).thenReturn(true);
+        when(serviceInfoProvider.isService(eq(ServiceType.TB_RULE_ENGINE))).thenReturn(true);
         Mockito.reset(applicationEventPublisher);
         HashPartitionService partitionService_common = createPartitionService();
         partitionService_common.recalculatePartitions(commonRuleEngine, List.of(dedicatedRuleEngine));
         verifyPartitionChangeEvent(event -> {
             QueueKey queueKey = new QueueKey(ServiceType.TB_RULE_ENGINE, DataConstants.MAIN_QUEUE_NAME, TenantId.SYS_TENANT_ID);
-            return event.getPartitionsMap().get(queueKey).size() == systemQueue.getPartitions();
+            return event.getNewPartitions().get(queueKey).size() == systemQueue.getPartitions();
         });
 
         Mockito.reset(applicationEventPublisher);
@@ -315,19 +332,19 @@ public class HashPartitionServiceTest {
                 .setPartitions(isolatedQueue.getPartitions())
                 .build();
 
-        partitionService_common.updateQueue(queueUpdateMsg);
+        partitionService_common.updateQueues(List.of(queueUpdateMsg));
         partitionService_common.recalculatePartitions(commonRuleEngine, List.of(dedicatedRuleEngine));
         // expecting event about no partitions for isolated queue key
         verifyPartitionChangeEvent(event -> {
             QueueKey queueKey = new QueueKey(ServiceType.TB_RULE_ENGINE, DataConstants.MAIN_QUEUE_NAME, tenantId);
-            return event.getPartitionsMap().get(queueKey).isEmpty();
+            return event.getNewPartitions().get(queueKey).isEmpty();
         });
 
-        partitionService_dedicated.updateQueue(queueUpdateMsg);
+        partitionService_dedicated.updateQueues(List.of(queueUpdateMsg));
         partitionService_dedicated.recalculatePartitions(dedicatedRuleEngine, List.of(commonRuleEngine));
         verifyPartitionChangeEvent(event -> {
             QueueKey queueKey = new QueueKey(ServiceType.TB_RULE_ENGINE, DataConstants.MAIN_QUEUE_NAME, tenantId);
-            return event.getPartitionsMap().get(queueKey).size() == isolatedQueue.getPartitions();
+            return event.getNewPartitions().get(queueKey).size() == isolatedQueue.getPartitions();
         });
 
 
@@ -342,32 +359,11 @@ public class HashPartitionServiceTest {
                 .setQueueIdLSB(isolatedQueue.getUuidId().getLeastSignificantBits())
                 .setQueueName(isolatedQueue.getName())
                 .build();
-        partitionService_dedicated.removeQueue(queueDeleteMsg);
+        partitionService_dedicated.removeQueues(List.of(queueDeleteMsg));
         verifyPartitionChangeEvent(event -> {
             QueueKey queueKey = new QueueKey(ServiceType.TB_RULE_ENGINE, DataConstants.MAIN_QUEUE_NAME, tenantId);
-            return event.getPartitionsMap().get(queueKey).isEmpty();
+            return event.getNewPartitions().get(queueKey).isEmpty();
         });
-    }
-
-    @Test
-    public void testIsManagedByCurrentServiceCheck() {
-        TenantProfileId isolatedProfileId = new TenantProfileId(UUID.randomUUID());
-        when(discoveryService.getAssignedTenantProfiles()).thenReturn(Set.of(isolatedProfileId.getId())); // dedicated server
-        TenantProfileId regularProfileId = new TenantProfileId(UUID.randomUUID());
-
-        TenantId isolatedTenantId = new TenantId(UUID.randomUUID());
-        mockRoutingInfo(isolatedTenantId, isolatedProfileId, true);
-        TenantId regularTenantId = new TenantId(UUID.randomUUID());
-        mockRoutingInfo(regularTenantId, regularProfileId, false);
-
-        assertThat(clusterRoutingService.isManagedByCurrentService(isolatedTenantId)).isTrue();
-        assertThat(clusterRoutingService.isManagedByCurrentService(regularTenantId)).isFalse();
-
-
-        when(discoveryService.getAssignedTenantProfiles()).thenReturn(Collections.emptySet()); // common server
-
-        assertThat(clusterRoutingService.isManagedByCurrentService(isolatedTenantId)).isTrue();
-        assertThat(clusterRoutingService.isManagedByCurrentService(regularTenantId)).isTrue();
     }
 
     @Test
@@ -386,12 +382,12 @@ public class HashPartitionServiceTest {
         Stream.concat(Stream.of(TenantId.SYS_TENANT_ID), Stream.generate(UUID::randomUUID).map(TenantId::new).limit(10)).forEach(tenantId -> {
             List<QueueKey> queues = Stream.generate(() -> RandomStringUtils.randomAlphabetic(10))
                     .map(queueName -> new QueueKey(ServiceType.TB_RULE_ENGINE, queueName, tenantId))
-                    .limit(100).collect(Collectors.toList());
+                    .limit(100).toList();
 
             for (int partition = 0; partition < 10; partition++) {
-                ServiceInfo expectedAssignedRuleEngine = clusterRoutingService.resolveByPartitionIdx(ruleEngines, new QueueKey(ServiceType.TB_RULE_ENGINE, tenantId), partition);
+                ServiceInfo expectedAssignedRuleEngine = partitionService.resolveByPartitionIdx(ruleEngines, new QueueKey(ServiceType.TB_RULE_ENGINE, tenantId), partition, Collections.emptyMap()).get(0);
                 for (QueueKey queueKey : queues) {
-                    ServiceInfo assignedRuleEngine = clusterRoutingService.resolveByPartitionIdx(ruleEngines, queueKey, partition);
+                    ServiceInfo assignedRuleEngine = partitionService.resolveByPartitionIdx(ruleEngines, queueKey, partition, Collections.emptyMap()).get(0);
                     assertThat(assignedRuleEngine).as(queueKey + "[" + partition + "] should be assigned to " + expectedAssignedRuleEngine.getServiceId())
                             .isEqualTo(expectedAssignedRuleEngine);
                 }
@@ -403,9 +399,9 @@ public class HashPartitionServiceTest {
         verify(applicationEventPublisher).publishEvent(argThat(event -> event instanceof PartitionChangeEvent && predicate.test((PartitionChangeEvent) event)));
     }
 
-    private void mockRoutingInfo(TenantId tenantId, TenantProfileId tenantProfileId, boolean isolatedTbRuleEngine) {
+    private void mockRoutingInfo(TenantId tenantId, TenantProfileId tenantProfileId, boolean isolated) {
         when(routingInfoService.getRoutingInfo(eq(tenantId)))
-                .thenReturn(new TenantRoutingInfo(tenantId, tenantProfileId, isolatedTbRuleEngine));
+                .thenReturn(new TenantRoutingInfo(tenantId, tenantProfileId, isolated));
     }
 
     private void mockQueues(List<Queue> queues) {
@@ -424,16 +420,23 @@ public class HashPartitionServiceTest {
     }
 
     private HashPartitionService createPartitionService() {
-        HashPartitionService partitionService = new HashPartitionService(discoveryService,
-                routingInfoService,
+        HashPartitionService partitionService = new HashPartitionService(
                 applicationEventPublisher,
-                queueRoutingInfoService,
+                serviceInfoProvider,
+                Optional.of(routingInfoService),
+                Optional.of(queueRoutingInfoService),
                 topicService);
         ReflectionTestUtils.setField(partitionService, "coreTopic", "tb.core");
         ReflectionTestUtils.setField(partitionService, "corePartitions", 10);
+        ReflectionTestUtils.setField(partitionService, "cfEventTopic", "tb_cf_event");
+        ReflectionTestUtils.setField(partitionService, "cfStateTopic", "tb_cf_state");
         ReflectionTestUtils.setField(partitionService, "vcTopic", "tb.vc");
         ReflectionTestUtils.setField(partitionService, "vcPartitions", 10);
         ReflectionTestUtils.setField(partitionService, "hashFunctionName", hashFunctionName);
+        ReflectionTestUtils.setField(partitionService, "edgeTopic", "tb.edge");
+        ReflectionTestUtils.setField(partitionService, "edgePartitions", 10);
+        ReflectionTestUtils.setField(partitionService, "edqsPartitions", 12);
+        ReflectionTestUtils.setField(partitionService, "defaultTasksPartitions", 12);
         partitionService.init();
         partitionService.partitionsInit();
         return partitionService;

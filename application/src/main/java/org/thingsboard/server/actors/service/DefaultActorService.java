@@ -1,5 +1,5 @@
 /**
- * Copyright © 2016-2023 The Thingsboard Authors
+ * Copyright © 2016-2025 The Thingsboard Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,6 +15,8 @@
  */
 package org.thingsboard.server.actors.service;
 
+import jakarta.annotation.PostConstruct;
+import jakarta.annotation.PreDestroy;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
@@ -31,12 +33,11 @@ import org.thingsboard.server.actors.app.AppActor;
 import org.thingsboard.server.actors.app.AppInitMsg;
 import org.thingsboard.server.actors.stats.StatsActor;
 import org.thingsboard.server.common.msg.queue.PartitionChangeMsg;
+import org.thingsboard.server.common.msg.queue.ServiceType;
 import org.thingsboard.server.queue.discovery.TbApplicationEventListener;
 import org.thingsboard.server.queue.discovery.event.PartitionChangeEvent;
 import org.thingsboard.server.queue.util.AfterStartUp;
 
-import javax.annotation.PostConstruct;
-import javax.annotation.PreDestroy;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -48,6 +49,8 @@ public class DefaultActorService extends TbApplicationEventListener<PartitionCha
     public static final String TENANT_DISPATCHER_NAME = "tenant-dispatcher";
     public static final String DEVICE_DISPATCHER_NAME = "device-dispatcher";
     public static final String RULE_DISPATCHER_NAME = "rule-dispatcher";
+    public static final String CF_MANAGER_DISPATCHER_NAME = "cf-manager-dispatcher";
+    public static final String CF_ENTITY_DISPATCHER_NAME = "cf-entity-dispatcher";
 
     @Autowired
     private ActorSystemContext actorContext;
@@ -77,6 +80,13 @@ public class DefaultActorService extends TbApplicationEventListener<PartitionCha
     @Value("${actors.system.rule_dispatcher_pool_size:8}")
     private int ruleDispatcherSize;
 
+    @Value("${actors.system.cfm_dispatcher_pool_size:2}")
+    private int calculatedFieldManagerDispatcherSize;
+
+    @Value("${actors.system.cfe_dispatcher_pool_size:8}")
+    private int calculatedFieldEntityDispatcherSize;
+
+
     @PostConstruct
     public void initActorSystem() {
         log.info("Initializing actor system.");
@@ -88,6 +98,8 @@ public class DefaultActorService extends TbApplicationEventListener<PartitionCha
         system.createDispatcher(TENANT_DISPATCHER_NAME, initDispatcherExecutor(TENANT_DISPATCHER_NAME, tenantDispatcherSize));
         system.createDispatcher(DEVICE_DISPATCHER_NAME, initDispatcherExecutor(DEVICE_DISPATCHER_NAME, deviceDispatcherSize));
         system.createDispatcher(RULE_DISPATCHER_NAME, initDispatcherExecutor(RULE_DISPATCHER_NAME, ruleDispatcherSize));
+        system.createDispatcher(CF_MANAGER_DISPATCHER_NAME, initDispatcherExecutor(CF_MANAGER_DISPATCHER_NAME, calculatedFieldManagerDispatcherSize));
+        system.createDispatcher(CF_ENTITY_DISPATCHER_NAME, initDispatcherExecutor(CF_ENTITY_DISPATCHER_NAME, calculatedFieldEntityDispatcherSize));
 
         actorContext.setActorSystem(system);
 
@@ -121,7 +133,12 @@ public class DefaultActorService extends TbApplicationEventListener<PartitionCha
     @Override
     protected void onTbApplicationEvent(PartitionChangeEvent event) {
         log.info("Received partition change event.");
-        this.appActor.tellWithHighPriority(new PartitionChangeMsg(event.getServiceType()));
+        appActor.tellWithHighPriority(new PartitionChangeMsg(event.getServiceType()));
+    }
+
+    @Override
+    protected boolean filterTbApplicationEvent(PartitionChangeEvent event) {
+        return event.getServiceType() == ServiceType.TB_RULE_ENGINE || event.getServiceType() == ServiceType.TB_CORE;
     }
 
     @PreDestroy

@@ -1,5 +1,5 @@
 /**
- * Copyright © 2016-2023 The Thingsboard Authors
+ * Copyright © 2016-2025 The Thingsboard Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,6 +22,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.thingsboard.common.util.JacksonUtil;
 import org.thingsboard.server.cluster.TbClusterService;
+import org.thingsboard.server.common.data.AttributeScope;
 import org.thingsboard.server.common.data.DataConstants;
 import org.thingsboard.server.common.data.EntityType;
 import org.thingsboard.server.common.data.HasName;
@@ -127,20 +128,20 @@ public class EntityActionService {
                 } else {
                     entityNode = JacksonUtil.newObjectNode();
                     if (actionType == ActionType.ATTRIBUTES_UPDATED) {
-                        String scope = extractParameter(String.class, 0, additionalInfo);
+                        AttributeScope scope = extractParameter(AttributeScope.class, 0, additionalInfo);
                         @SuppressWarnings("unchecked")
                         List<AttributeKvEntry> attributes = extractParameter(List.class, 1, additionalInfo);
-                        metaData.putValue(DataConstants.SCOPE, scope);
+                        metaData.putValue(DataConstants.SCOPE, scope.name());
                         if (attributes != null) {
                             for (AttributeKvEntry attr : attributes) {
                                 JacksonUtil.addKvEntry(entityNode, attr);
                             }
                         }
                     } else if (actionType == ActionType.ATTRIBUTES_DELETED) {
-                        String scope = extractParameter(String.class, 0, additionalInfo);
+                        AttributeScope scope = extractParameter(AttributeScope.class, 0, additionalInfo);
                         @SuppressWarnings("unchecked")
                         List<String> keys = extractParameter(List.class, 1, additionalInfo);
-                        metaData.putValue(DataConstants.SCOPE, scope);
+                        metaData.putValue(DataConstants.SCOPE, scope.name());
                         ArrayNode attrsArrayNode = entityNode.putArray("attributes");
                         if (keys != null) {
                             keys.forEach(attrsArrayNode::add);
@@ -171,7 +172,14 @@ public class EntityActionService {
                 if (tenantId != null && !tenantId.isSysTenantId()) {
                     processNotificationRules(tenantId, entityId, entity, actionType, user, additionalInfo);
                 }
-                TbMsg tbMsg = TbMsg.newMsg(msgType.get(), entityId, customerId, metaData, TbMsgDataType.JSON, JacksonUtil.toString(entityNode));
+                TbMsg tbMsg = TbMsg.newMsg()
+                        .type(msgType.get())
+                        .originator(entityId)
+                        .customerId(customerId)
+                        .copyMetaData(metaData)
+                        .dataType(TbMsgDataType.JSON)
+                        .data(JacksonUtil.toString(entityNode))
+                        .build();
                 tbClusterService.pushMsgToRuleEngine(tenantId, entityId, tbMsg, null);
             } catch (Exception e) {
                 log.warn("[{}] Failed to push entity action to rule engine: {}", entityId, actionType, e);
@@ -249,7 +257,7 @@ public class EntityActionService {
         return result;
     }
 
-    private void addTimeseries(ObjectNode entityNode, List<TsKvEntry> timeseries) throws Exception {
+    private void addTimeseries(ObjectNode entityNode, List<TsKvEntry> timeseries) {
         if (timeseries != null && !timeseries.isEmpty()) {
             ArrayNode result = entityNode.putArray("timeseries");
             Map<Long, List<TsKvEntry>> groupedTelemetry = timeseries.stream()

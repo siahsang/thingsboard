@@ -1,5 +1,5 @@
 /**
- * Copyright © 2016-2023 The Thingsboard Authors
+ * Copyright © 2016-2025 The Thingsboard Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,6 +16,8 @@
 package org.thingsboard.server.msa;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.node.ArrayNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import io.restassured.RestAssured;
 import io.restassured.common.mapper.TypeRef;
 import io.restassured.config.HeaderConfig;
@@ -23,33 +25,49 @@ import io.restassured.config.RestAssuredConfig;
 import io.restassured.filter.log.RequestLoggingFilter;
 import io.restassured.filter.log.ResponseLoggingFilter;
 import io.restassured.http.ContentType;
+import io.restassured.internal.ValidatableResponseImpl;
 import io.restassured.path.json.JsonPath;
 import io.restassured.response.ValidatableResponse;
 import io.restassured.specification.RequestSpecification;
+import org.thingsboard.server.common.data.AttributeScope;
 import org.thingsboard.server.common.data.Customer;
 import org.thingsboard.server.common.data.Dashboard;
 import org.thingsboard.server.common.data.Device;
 import org.thingsboard.server.common.data.DeviceProfile;
 import org.thingsboard.server.common.data.EntityView;
+import org.thingsboard.server.common.data.EventInfo;
+import org.thingsboard.server.common.data.TbResource;
+import org.thingsboard.server.common.data.Tenant;
 import org.thingsboard.server.common.data.User;
 import org.thingsboard.server.common.data.alarm.Alarm;
 import org.thingsboard.server.common.data.asset.Asset;
 import org.thingsboard.server.common.data.asset.AssetProfile;
+import org.thingsboard.server.common.data.cf.CalculatedField;
+import org.thingsboard.server.common.data.edqs.EdqsState;
+import org.thingsboard.server.common.data.event.EventType;
 import org.thingsboard.server.common.data.id.AlarmId;
 import org.thingsboard.server.common.data.id.AssetId;
 import org.thingsboard.server.common.data.id.AssetProfileId;
+import org.thingsboard.server.common.data.id.CalculatedFieldId;
 import org.thingsboard.server.common.data.id.CustomerId;
 import org.thingsboard.server.common.data.id.DashboardId;
 import org.thingsboard.server.common.data.id.DeviceId;
 import org.thingsboard.server.common.data.id.DeviceProfileId;
 import org.thingsboard.server.common.data.id.EntityId;
 import org.thingsboard.server.common.data.id.EntityViewId;
+import org.thingsboard.server.common.data.id.RpcId;
 import org.thingsboard.server.common.data.id.RuleChainId;
+import org.thingsboard.server.common.data.id.TenantId;
 import org.thingsboard.server.common.data.id.UserId;
 import org.thingsboard.server.common.data.page.PageData;
 import org.thingsboard.server.common.data.page.PageLink;
+import org.thingsboard.server.common.data.page.TimePageLink;
+import org.thingsboard.server.common.data.query.EntityCountQuery;
+import org.thingsboard.server.common.data.query.EntityData;
+import org.thingsboard.server.common.data.query.EntityDataQuery;
 import org.thingsboard.server.common.data.relation.EntityRelation;
 import org.thingsboard.server.common.data.relation.RelationTypeGroup;
+import org.thingsboard.server.common.data.rpc.Rpc;
 import org.thingsboard.server.common.data.rule.RuleChain;
 import org.thingsboard.server.common.data.rule.RuleChainMetaData;
 import org.thingsboard.server.common.data.security.DeviceCredentials;
@@ -59,6 +77,7 @@ import java.util.List;
 import java.util.Map;
 
 import static io.restassured.RestAssured.given;
+import static java.net.HttpURLConnection.HTTP_BAD_REQUEST;
 import static java.net.HttpURLConnection.HTTP_NOT_FOUND;
 import static java.net.HttpURLConnection.HTTP_OK;
 import static org.hamcrest.Matchers.is;
@@ -99,6 +118,20 @@ public class TestRestClient {
         requestSpec.header(JWT_TOKEN_HEADER_PARAM, "Bearer " + token);
     }
 
+    public void resetToken() {
+        token = null;
+        refreshToken = null;
+    }
+
+    public Tenant postTenant(Tenant tenant) {
+        return given().spec(requestSpec).body(tenant)
+                .post("/api/tenant")
+                .then()
+                .statusCode(HTTP_OK)
+                .extract()
+                .as(Tenant.class);
+    }
+
     public Device postDevice(String accessToken, Device device) {
         return given().spec(requestSpec).body(device)
                 .pathParams("accessToken", accessToken)
@@ -107,6 +140,24 @@ public class TestRestClient {
                 .statusCode(HTTP_OK)
                 .extract()
                 .as(Device.class);
+    }
+
+    public ObjectNode postRpcLwm2mParams(String deviceIdStr, String body) {
+        return given().spec(requestSpec).body(body)
+                .post("/api/plugins/rpc/twoway/" + deviceIdStr)
+                .then()
+                .statusCode(HTTP_OK)
+                .extract()
+                .as(ObjectNode.class);
+    }
+
+    public CalculatedField postCalculatedField(CalculatedField calculatedField) {
+        return given().spec(requestSpec).body(calculatedField)
+                .post("/api/calculatedField")
+                .then()
+                .statusCode(HTTP_OK)
+                .extract()
+                .as(CalculatedField.class);
     }
 
     public Device getDeviceByName(String deviceName) {
@@ -174,16 +225,23 @@ public class TestRestClient {
                 .statusCode(anyOf(is(HTTP_OK), is(HTTP_NOT_FOUND)));
     }
 
-    public ValidatableResponse postTelemetryAttribute(String entityType, DeviceId deviceId, String scope, JsonNode attribute) {
+    public ValidatableResponse deleteCalculatedFieldIfExists(CalculatedFieldId calculatedFieldId) {
+        return given().spec(requestSpec)
+                .delete("/api/calculatedField/{calculatedFieldId}", calculatedFieldId.getId())
+                .then()
+                .statusCode(anyOf(is(HTTP_OK), is(HTTP_NOT_FOUND)));
+    }
+
+    public ValidatableResponse postTelemetryAttribute(EntityId entityId, AttributeScope scope, JsonNode attribute) {
         return given().spec(requestSpec).body(attribute)
-                .post("/api/plugins/telemetry/{entityType}/{entityId}/attributes/{scope}", entityType, deviceId.getId(), scope)
+                .post("/api/plugins/telemetry/{entityType}/{entityId}/attributes/{scope}", entityId.getEntityType(), entityId.getId(), scope.name())
                 .then()
                 .statusCode(HTTP_OK);
     }
 
     public ValidatableResponse postAttribute(String accessToken, JsonNode attribute) {
         return given().spec(requestSpec).body(attribute)
-                .post("/api/v1/{accessToken}/attributes/", accessToken)
+                .post("/api/v1/{accessToken}/attributes", accessToken)
                 .then()
                 .statusCode(HTTP_OK);
     }
@@ -193,6 +251,51 @@ public class TestRestClient {
                 .queryParam("clientKeys", clientKeys)
                 .queryParam("sharedKeys", sharedKeys)
                 .get("/api/v1/{accessToken}/attributes", accessToken)
+                .then()
+                .statusCode(HTTP_OK)
+                .extract()
+                .as(JsonNode.class);
+    }
+
+    public ArrayNode getAttributes(EntityId entityId, AttributeScope scope, String keys) {
+        return given().spec(requestSpec)
+                .get("/api/plugins/telemetry/{entityType}/{entityId}/values/attributes/{scope}?keys={keys}", entityId.getEntityType(), entityId.getId(), scope, keys)
+                .then()
+                .statusCode(HTTP_OK)
+                .extract()
+                .as(ArrayNode.class);
+    }
+
+
+    public ValidatableResponse deleteEntityAttributes(EntityId entityId, AttributeScope scope, String keys) {
+        Map<String, String> pathParams = new HashMap<>();
+        pathParams.put("entityId", entityId.getId().toString());
+        pathParams.put("entityType", entityId.getEntityType().name());
+        pathParams.put("scope", scope.name());
+        return given().spec(requestSpec)
+                .pathParams(pathParams)
+                .queryParam("keys", keys)
+                .delete("/api/plugins/telemetry/{entityType}/{entityId}/{scope}")
+                .then()
+                .statusCode(HTTP_OK);
+    }
+
+    public ValidatableResponse deleteEntityTimeseries(EntityId entityId, String keys, boolean deleteAllDataForKeys) {
+        Map<String, String> pathParams = new HashMap<>();
+        pathParams.put("entityType", entityId.getEntityType().name());
+        pathParams.put("entityId", entityId.getId().toString());
+        return given().spec(requestSpec)
+                .pathParams(pathParams)
+                .queryParam("keys", keys)
+                .queryParam("deleteAllDataForKeys", Boolean.toString(deleteAllDataForKeys))
+                .delete("/api/plugins/telemetry/{entityType}/{entityId}/timeseries/delete")
+                .then()
+                .statusCode(HTTP_OK);
+    }
+
+    public JsonNode getLatestTelemetry(EntityId entityId) {
+        return given().spec(requestSpec)
+                .get("/api/plugins/telemetry/" + entityId.getEntityType().name() + "/" + entityId.getId() + "/values/timeseries")
                 .then()
                 .statusCode(HTTP_OK)
                 .extract()
@@ -292,6 +395,33 @@ public class TestRestClient {
                 });
     }
 
+    public EntityRelation postEntityRelation(EntityRelation entityRelation) {
+        return given().spec(requestSpec)
+                .body(entityRelation)
+                .post("/api/v2/relation")
+                .then()
+                .statusCode(HTTP_OK)
+                .extract()
+                .as(EntityRelation.class);
+    }
+
+
+    public EntityRelation deleteEntityRelation(EntityId fromId, String relationType, EntityId toId) {
+        Map<String, String> queryParams = new HashMap<>();
+        queryParams.put("fromId", fromId.getId().toString());
+        queryParams.put("fromType", fromId.getEntityType().name());
+        queryParams.put("relationType", relationType);
+        queryParams.put("toId", toId.getId().toString());
+        queryParams.put("toType", toId.getEntityType().name());
+        return given().spec(requestSpec)
+                .queryParams(queryParams)
+                .delete("/api/v2/relation")
+                .then()
+                .statusCode(HTTP_OK)
+                .extract()
+                .as(EntityRelation.class);
+    }
+
     public JsonNode postServerSideRpc(DeviceId deviceId, JsonNode serverRpcPayload) {
         return given().spec(requestSpec)
                 .body(serverRpcPayload)
@@ -300,6 +430,27 @@ public class TestRestClient {
                 .statusCode(HTTP_OK)
                 .extract()
                 .as(JsonNode.class);
+    }
+
+    public Rpc getPersistedRpc(RpcId rpcId) {
+        return given().spec(requestSpec)
+                .get("/api/rpc/persistent/{rpcId}", rpcId.toString())
+                .then()
+                .statusCode(HTTP_OK)
+                .extract()
+                .as(Rpc.class);
+    }
+
+    public PageData<Rpc> getPersistedRpcByDevice(DeviceId deviceId, PageLink pageLink) {
+        Map<String, String> params = new HashMap<>();
+        addPageLinkToParam(params, pageLink);
+        return given().spec(requestSpec).queryParams(params)
+                .get("/api/rpc/persistent/device/{deviceId}", deviceId.toString())
+                .then()
+                .statusCode(HTTP_OK)
+                .extract()
+                .as(new TypeRef<>() {
+                });
     }
 
     public PageData<DeviceProfile> getDeviceProfiles(PageLink pageLink) {
@@ -437,6 +588,28 @@ public class TestRestClient {
                 .as(User.class);
     }
 
+    public UserId createUserAndLogin(User user, String password) {
+        UserId userId = postUser(user).getId();
+        getAndSetUserToken(userId);
+        return userId;
+    }
+
+    public void getAndSetUserToken(UserId id) {
+        ObjectNode tokenInfo = given().spec(requestSpec)
+                .get("/api/user/" + id.getId().toString() + "/token")
+                .then()
+                .extract()
+                .as(ObjectNode.class);
+        token = tokenInfo.get("token").asText();
+        refreshToken = tokenInfo.get("refreshToken").asText();
+        requestSpec.header(JWT_TOKEN_HEADER_PARAM, "Bearer " + token);
+    }
+
+    protected void resetTokens() {
+        this.token = null;
+        this.refreshToken = null;
+    }
+
     public void deleteUser(UserId userId) {
         given().spec(requestSpec)
                 .delete("/api/user/{userId}", userId.getId())
@@ -524,6 +697,122 @@ public class TestRestClient {
     public void setDevicePublic(DeviceId deviceId) {
         given().spec(requestSpec)
                 .post("/api/customer/public/device/{deviceId}", deviceId.getId())
+                .then()
+                .statusCode(HTTP_OK);
+    }
+
+    public PageData<EventInfo> getEvents(EntityId entityId, EventType eventType, TenantId tenantId, TimePageLink pageLink) {
+        Map<String, String> params = new HashMap<>();
+        params.put("entityType", entityId.getEntityType().name());
+        params.put("entityId", entityId.getId().toString());
+        params.put("eventType", eventType.name());
+        params.put("tenantId", tenantId.getId().toString());
+        addTimePageLinkToParam(params, pageLink);
+
+        return given().spec(requestSpec)
+                .get("/api/events/{entityType}/{entityId}/{eventType}?tenantId={tenantId}&" + getTimeUrlParams(pageLink), params)
+                .then()
+                .statusCode(HTTP_OK)
+                .extract()
+                .as(new TypeRef<>() {});
+    }
+
+    public ValidatableResponse postTbResourceIfNotExists(TbResource lwModel) {
+        return given().spec(requestSpec).body(lwModel)
+                .post("/api/resource")
+                .then()
+                .statusCode(anyOf(is(HTTP_OK), is(HTTP_BAD_REQUEST)));
+    }
+
+    public void deleteDeviceProfileIfExists(DeviceProfile deviceProfile) {
+        given().spec(requestSpec)
+                .delete("/api/deviceProfile/" + deviceProfile.getId().getId().toString())
+                .then()
+                .statusCode(anyOf(is(HTTP_OK), is(HTTP_NOT_FOUND)));
+    }
+
+    public Device getDeviceByNameIfExists(String deviceName) {
+        ValidatableResponse response = given().spec(requestSpec)
+                .pathParams("deviceName", deviceName)
+                .get("/api/tenant/devices?deviceName={deviceName}")
+                .then()
+                .statusCode(anyOf(is(HTTP_OK), is(HTTP_NOT_FOUND)));
+        if (((ValidatableResponseImpl) response).extract().response().getStatusCode() == HTTP_OK) {
+            return response.extract()
+                    .as(Device.class);
+        } else {
+            return null;
+        }
+    }
+
+    public DeviceCredentials postDeviceCredentials(DeviceCredentials deviceCredentials) {
+        return given().spec(requestSpec).body(deviceCredentials)
+                .post("/api/device/credentials")
+                .then()
+                .assertThat()
+                .statusCode(HTTP_OK)
+                .extract()
+                .as(DeviceCredentials.class);
+    }
+
+    private void addTimePageLinkToParam(Map<String, String> params, TimePageLink pageLink) {
+        this.addPageLinkToParam(params, pageLink);
+        if (pageLink.getStartTime() != null) {
+            params.put("startTime", String.valueOf(pageLink.getStartTime()));
+        }
+        if (pageLink.getEndTime() != null) {
+            params.put("endTime", String.valueOf(pageLink.getEndTime()));
+        }
+    }
+
+    private String getTimeUrlParams(TimePageLink pageLink) {
+        String urlParams = getUrlParams(pageLink);
+        if (pageLink.getStartTime() != null) {
+            urlParams += "&startTime={startTime}";
+        }
+        if (pageLink.getEndTime() != null) {
+            urlParams += "&endTime={endTime}";
+        }
+        return urlParams;
+    }
+
+    public PageData<EntityData> postEntityDataQuery(EntityDataQuery entityDataQuery) {
+        return given().spec(requestSpec).body(entityDataQuery)
+                .post("/api/entitiesQuery/find")
+                .then()
+                .statusCode(HTTP_OK)
+                .extract()
+                .as(new TypeRef<>() {});
+    }
+
+    public Long postCountDataQuery(EntityCountQuery entityCountQuery) {
+        return given().spec(requestSpec).body(entityCountQuery)
+                .post("/api/entitiesQuery/count")
+                .then()
+                .statusCode(HTTP_OK)
+                .extract()
+                .as(Long.class);
+    }
+
+    public EdqsState getEdqsState() {
+        return given().spec(requestSpec)
+                .get("/api/edqs/state")
+                .then()
+                .statusCode(HTTP_OK)
+                .extract()
+                .as(EdqsState.class);
+    }
+
+    public void assignDeviceToCustomer(CustomerId customerId, DeviceId id) {
+        given().spec(requestSpec)
+                .post("/api/customer/" + customerId.getId().toString() + "/device/" + id.getId().toString())
+                .then()
+                .statusCode(HTTP_OK);
+    }
+
+    public void deleteTenant(TenantId tenantId) {
+        given().spec(requestSpec)
+                .delete("/api/tenant/" + tenantId.getId().toString())
                 .then()
                 .statusCode(HTTP_OK);
     }

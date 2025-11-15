@@ -1,5 +1,5 @@
 ///
-/// Copyright © 2016-2023 The Thingsboard Authors
+/// Copyright © 2016-2025 The Thingsboard Authors
 ///
 /// Licensed under the Apache License, Version 2.0 (the "License");
 /// you may not use this file except in compliance with the License.
@@ -46,16 +46,9 @@ import { EntityFilterComponent } from '@home/components/entity/entity-filter.com
 import { RelationFiltersComponent } from '@home/components/relation/relation-filters.component';
 import { ManageWidgetActionsComponent } from '@home/components/widget/action/manage-widget-actions.component';
 import { WidgetActionDialogComponent } from '@home/components/widget/action/widget-action-dialog.component';
-import { CustomActionPrettyResourcesTabsComponent } from '@home/components/widget/action/custom-action-pretty-resources-tabs.component';
-import { CustomActionPrettyEditorComponent } from '@home/components/widget/action/custom-action-pretty-editor.component';
-import { MobileActionEditorComponent } from '@home/components/widget/action/mobile-action-editor.component';
 import { CustomDialogService } from '@home/components/widget/dialog/custom-dialog.service';
 import { CustomDialogContainerComponent } from '@home/components/widget/dialog/custom-dialog-container.component';
-import { ImportExportService } from '@home/components/import-export/import-export.service';
-import { ImportDialogComponent } from '@home/components/import-export/import-dialog.component';
 import { AddWidgetToDashboardDialogComponent } from '@home/components/attribute/add-widget-to-dashboard-dialog.component';
-import { ImportDialogCsvComponent } from '@home/components/import-export/import-dialog-csv.component';
-import { TableColumnsAssignmentComponent } from '@home/components/import-export/table-columns-assignment.component';
 import { EventContentDialogComponent } from '@home/components/event/event-content-dialog.component';
 import { SharedHomeComponentsModule } from '@home/components/shared-home-components.module';
 import { SelectTargetLayoutDialogComponent } from '@home/components/dashboard/select-target-layout-dialog.component';
@@ -121,6 +114,9 @@ import { EditWidgetComponent } from '@home/components/dashboard-page/edit-widget
 import { DashboardWidgetSelectComponent } from '@home/components/dashboard-page/dashboard-widget-select.component';
 import { AddWidgetDialogComponent } from '@home/components/dashboard-page/add-widget-dialog.component';
 import { ManageDashboardLayoutsDialogComponent } from '@home/components/dashboard-page/layout/manage-dashboard-layouts-dialog.component';
+import {
+  AddNewBreakpointDialogComponent
+} from '@home/components/dashboard-page/layout/add-new-breakpoint-dialog.component';
 import { DashboardSettingsDialogComponent } from '@home/components/dashboard-page/dashboard-settings-dialog.component';
 import { ManageDashboardStatesDialogComponent } from '@home/components/dashboard-page/states/manage-dashboard-states-dialog.component';
 import { DashboardStateDialogComponent } from '@home/components/dashboard-page/states/dashboard-state-dialog.component';
@@ -131,7 +127,10 @@ import { EdgeDownlinkTableHeaderComponent } from '@home/components/edge/edge-dow
 import { DisplayWidgetTypesPanelComponent } from '@home/components/dashboard-page/widget-types-panel.component';
 import { AlarmDurationPredicateValueComponent } from '@home/components/profile/alarm/alarm-duration-predicate-value.component';
 import { DashboardImageDialogComponent } from '@home/components/dashboard-page/dashboard-image-dialog.component';
-import { WidgetContainerComponent } from '@home/components/widget/widget-container.component';
+import {
+  EditWidgetActionsTooltipComponent,
+  WidgetContainerComponent
+} from '@home/components/widget/widget-container.component';
 import { SnmpDeviceProfileTransportModule } from '@home/components/profile/device/snmp/snmp-device-profile-transport.module';
 import { DeviceCredentialsModule } from '@home/components/device/device-credentials.module';
 import { DeviceProfileCommonModule } from '@home/components/profile/device/common/device-profile-common.module';
@@ -178,10 +177,26 @@ import {
 import { WidgetConfigComponentsModule } from '@home/components/widget/config/widget-config-components.module';
 import { BasicWidgetConfigModule } from '@home/components/widget/config/basic/basic-widget-config.module';
 import { DeleteTimeseriesPanelComponent } from '@home/components/attribute/delete-timeseries-panel.component';
+import { MoveWidgetsDialogComponent } from '@home/components/dashboard-page/layout/move-widgets-dialog.component';
 import {
-  ExportWidgetsBundleDialogComponent
-} from '@home/components/import-export/export-widgets-bundle-dialog.component';
-import { ScrollGridComponent } from '@home/components/grid/scroll-grid.component';
+  SelectDashboardBreakpointComponent
+} from '@home/components/dashboard-page/layout/select-dashboard-breakpoint.component';
+import { EntityChipsComponent } from '@home/components/entity/entity-chips.component';
+import { DashboardViewComponent } from '@home/components/dashboard-view/dashboard-view.component';
+import {
+  EntityDebugSettingsButtonComponent
+} from '@home/components/entity/debug/entity-debug-settings-button.component';
+import { CheckConnectivityDialogComponent } from '@home/components/ai-model/check-connectivity-dialog.component';
+import { AIModelDialogComponent } from '@home/components/ai-model/ai-model-dialog.component';
+import { ResourcesDialogComponent } from "@home/components/resources/resources-dialog.component";
+import { ResourcesLibraryComponent } from "@home/components/resources/resources-library.component";
+import { CalculatedFieldsTableComponent } from '@home/components/calculated-fields/calculated-fields-table.component';
+import {
+  CalculatedFieldDebugDialogComponent
+} from '@home/components/calculated-fields/components/debug-dialog/calculated-field-debug-dialog.component';
+import { CalculatedFieldsModule } from '@home/components/calculated-fields/calculated-field.module';
+import { AlarmRuleModule } from "@home/components/alarm-rules/alarm-rule.module";
+import { AlarmRulesTableComponent } from "@home/components/alarm-rules/alarm-rules-table.component";
 
 @NgModule({
   declarations:
@@ -194,6 +209,9 @@ import { ScrollGridComponent } from '@home/components/grid/scroll-grid.component
       EntityDetailsPageComponent,
       AuditLogTableComponent,
       AuditLogDetailsDialogComponent,
+      CalculatedFieldsTableComponent,
+      CalculatedFieldDebugDialogComponent,
+      AlarmRulesTableComponent,
       EventContentDialogComponent,
       EventTableHeaderComponent,
       EventTableComponent,
@@ -218,6 +236,7 @@ import { ScrollGridComponent } from '@home/components/grid/scroll-grid.component
       EntityAliasDialogComponent,
       DashboardComponent,
       WidgetContainerComponent,
+      EditWidgetActionsTooltipComponent,
       WidgetComponent,
       WidgetConfigComponent,
       WidgetPreviewComponent,
@@ -226,17 +245,10 @@ import { ScrollGridComponent } from '@home/components/grid/scroll-grid.component
       ManageWidgetActionsComponent,
       WidgetActionDialogComponent,
       ManageWidgetActionsDialogComponent,
-      CustomActionPrettyResourcesTabsComponent,
-      CustomActionPrettyEditorComponent,
-      MobileActionEditorComponent,
       CustomDialogContainerComponent,
-      ImportDialogComponent,
-      ImportDialogCsvComponent,
-      ExportWidgetsBundleDialogComponent,
       SelectTargetLayoutDialogComponent,
       SelectTargetStateDialogComponent,
       AddWidgetToDashboardDialogComponent,
-      TableColumnsAssignmentComponent,
       BooleanFilterPredicateComponent,
       StringFilterPredicateComponent,
       NumericFilterPredicateComponent,
@@ -298,10 +310,13 @@ import { ScrollGridComponent } from '@home/components/grid/scroll-grid.component
       DashboardPageComponent,
       DashboardStateComponent,
       DashboardLayoutComponent,
+      SelectDashboardBreakpointComponent,
       EditWidgetComponent,
       DashboardWidgetSelectComponent,
       AddWidgetDialogComponent,
+      MoveWidgetsDialogComponent,
       ManageDashboardLayoutsDialogComponent,
+      AddNewBreakpointDialogComponent,
       DashboardSettingsDialogComponent,
       ManageDashboardStatesDialogComponent,
       DashboardStateDialogComponent,
@@ -327,19 +342,27 @@ import { ScrollGridComponent } from '@home/components/grid/scroll-grid.component
       RateLimitsTextComponent,
       RateLimitsDetailsDialogComponent,
       SendNotificationButtonComponent,
-      ScrollGridComponent
+      EntityChipsComponent,
+      DashboardViewComponent,
+      CheckConnectivityDialogComponent,
+      AIModelDialogComponent,
+      ResourcesDialogComponent,
+      ResourcesLibraryComponent,
     ],
   imports: [
     CommonModule,
     SharedModule,
     SharedHomeComponentsModule,
+    CalculatedFieldsModule,
+    AlarmRuleModule,
     WidgetConfigComponentsModule,
     BasicWidgetConfigModule,
     Lwm2mProfileComponentsModule,
     SnmpDeviceProfileTransportModule,
     StatesControllerModule,
     DeviceCredentialsModule,
-    DeviceProfileCommonModule
+    DeviceProfileCommonModule,
+    EntityDebugSettingsButtonComponent
   ],
   exports: [
     RouterTabsComponent,
@@ -349,6 +372,8 @@ import { ScrollGridComponent } from '@home/components/grid/scroll-grid.component
     EntityDetailsPanelComponent,
     EntityDetailsPageComponent,
     AuditLogTableComponent,
+    CalculatedFieldsTableComponent,
+    AlarmRulesTableComponent,
     EventTableComponent,
     EdgeDownlinkTableHeaderComponent,
     EdgeDownlinkTableComponent,
@@ -364,6 +389,7 @@ import { ScrollGridComponent } from '@home/components/grid/scroll-grid.component
     EntityAliasDialogComponent,
     DashboardComponent,
     WidgetContainerComponent,
+    EditWidgetActionsTooltipComponent,
     WidgetComponent,
     WidgetConfigComponent,
     WidgetPreviewComponent,
@@ -372,14 +398,7 @@ import { ScrollGridComponent } from '@home/components/grid/scroll-grid.component
     ManageWidgetActionsComponent,
     WidgetActionDialogComponent,
     ManageWidgetActionsDialogComponent,
-    CustomActionPrettyResourcesTabsComponent,
-    CustomActionPrettyEditorComponent,
-    MobileActionEditorComponent,
     CustomDialogContainerComponent,
-    ImportDialogComponent,
-    ImportDialogCsvComponent,
-    ExportWidgetsBundleDialogComponent,
-    TableColumnsAssignmentComponent,
     SelectTargetLayoutDialogComponent,
     SelectTargetStateDialogComponent,
     BooleanFilterPredicateComponent,
@@ -437,10 +456,13 @@ import { ScrollGridComponent } from '@home/components/grid/scroll-grid.component
     DashboardPageComponent,
     DashboardStateComponent,
     DashboardLayoutComponent,
+    SelectDashboardBreakpointComponent,
     EditWidgetComponent,
     DashboardWidgetSelectComponent,
     AddWidgetDialogComponent,
+    MoveWidgetsDialogComponent,
     ManageDashboardLayoutsDialogComponent,
+    AddNewBreakpointDialogComponent,
     DashboardSettingsDialogComponent,
     ManageDashboardStatesDialogComponent,
     DashboardStateDialogComponent,
@@ -466,12 +488,16 @@ import { ScrollGridComponent } from '@home/components/grid/scroll-grid.component
     RateLimitsTextComponent,
     RateLimitsDetailsDialogComponent,
     SendNotificationButtonComponent,
-    ScrollGridComponent
+    EntityChipsComponent,
+    DashboardViewComponent,
+    CheckConnectivityDialogComponent,
+    AIModelDialogComponent,
+    ResourcesDialogComponent,
+    ResourcesLibraryComponent,
   ],
   providers: [
     WidgetComponentService,
     CustomDialogService,
-    ImportExportService,
     {provide: EMBED_DASHBOARD_DIALOG_TOKEN, useValue: EmbedDashboardDialogComponent},
     {provide: COMPLEX_FILTER_PREDICATE_DIALOG_COMPONENT_TOKEN, useValue: ComplexFilterPredicateDialogComponent},
     {provide: DASHBOARD_PAGE_COMPONENT_TOKEN, useValue: DashboardPageComponent},

@@ -1,5 +1,5 @@
 /**
- * Copyright © 2016-2023 The Thingsboard Authors
+ * Copyright © 2016-2025 The Thingsboard Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,6 +23,7 @@ import org.springframework.stereotype.Service;
 import org.thingsboard.server.common.data.EntityType;
 import org.thingsboard.server.common.data.EventInfo;
 import org.thingsboard.server.common.data.StringUtils;
+import org.thingsboard.server.common.data.event.CalculatedFieldDebugEvent;
 import org.thingsboard.server.common.data.event.ErrorEvent;
 import org.thingsboard.server.common.data.event.Event;
 import org.thingsboard.server.common.data.event.EventFilter;
@@ -37,6 +38,7 @@ import org.thingsboard.server.common.data.page.TimePageLink;
 import org.thingsboard.server.dao.service.DataValidator;
 
 import java.util.List;
+import java.util.Optional;
 import java.util.function.BiConsumer;
 import java.util.function.Function;
 import java.util.stream.Collectors;
@@ -87,6 +89,11 @@ public class BaseEventService implements EventService {
                 ErrorEvent eEvent = (ErrorEvent) event;
                 truncateField(eEvent, ErrorEvent::getError, ErrorEvent::setError);
                 break;
+            case DEBUG_CALCULATED_FIELD:
+                CalculatedFieldDebugEvent cfEvent = (CalculatedFieldDebugEvent) event;
+                truncateField(cfEvent, CalculatedFieldDebugEvent::getArguments, CalculatedFieldDebugEvent::setArguments);
+                truncateField(cfEvent, CalculatedFieldDebugEvent::getResult, CalculatedFieldDebugEvent::setResult);
+                truncateField(cfEvent, CalculatedFieldDebugEvent::getError, CalculatedFieldDebugEvent::setError);
         }
     }
 
@@ -104,6 +111,11 @@ public class BaseEventService implements EventService {
     @Override
     public List<EventInfo> findLatestEvents(TenantId tenantId, EntityId entityId, EventType eventType, int limit) {
         return convert(entityId.getEntityType(), eventDao.findLatestEvents(tenantId.getId(), entityId.getId(), eventType, limit));
+    }
+
+    @Override
+    public EventInfo findLatestDebugRuleNodeInEvent(TenantId tenantId, EntityId entityId) {
+        return convert(entityId.getEntityType(), eventDao.findLatestDebugRuleNodeInEvent(tenantId.getId(), entityId.getId()));
     }
 
     @Override
@@ -130,11 +142,6 @@ public class BaseEventService implements EventService {
         eventDao.cleanupEvents(regularEventExpTs, debugEventExpTs, cleanupDb);
     }
 
-    @Override
-    public void migrateEvents() {
-        eventDao.migrateEvents(ttlInSec > 0 ? (System.currentTimeMillis() - ttlInSec * 1000) : 0, debugTtlInSec > 0 ? (System.currentTimeMillis() - debugTtlInSec * 1000) : 0);
-    }
-
     private PageData<EventInfo> convert(EntityType entityType, PageData<? extends Event> pd) {
         return new PageData<>(pd.getData() == null ? null :
                 pd.getData().stream().map(e -> e.toInfo(entityType)).collect(Collectors.toList())
@@ -143,6 +150,10 @@ public class BaseEventService implements EventService {
 
     private List<EventInfo> convert(EntityType entityType, List<? extends Event> list) {
         return list == null ? null : list.stream().map(e -> e.toInfo(entityType)).collect(Collectors.toList());
+    }
+
+    private EventInfo convert(EntityType entityType, Event event) {
+        return Optional.ofNullable(event).map(e -> e.toInfo(entityType)).orElse(null);
     }
 
 }

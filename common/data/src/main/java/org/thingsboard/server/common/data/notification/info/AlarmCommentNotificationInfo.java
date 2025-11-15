@@ -1,5 +1,5 @@
 /**
- * Copyright © 2016-2023 The Thingsboard Authors
+ * Copyright © 2016-2025 The Thingsboard Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,6 +23,7 @@ import org.thingsboard.server.common.data.User;
 import org.thingsboard.server.common.data.alarm.AlarmSeverity;
 import org.thingsboard.server.common.data.alarm.AlarmStatus;
 import org.thingsboard.server.common.data.id.CustomerId;
+import org.thingsboard.server.common.data.id.DashboardId;
 import org.thingsboard.server.common.data.id.EntityId;
 
 import java.util.Map;
@@ -47,9 +48,11 @@ public class AlarmCommentNotificationInfo implements RuleOriginatedNotificationI
     private UUID alarmId;
     private EntityId alarmOriginator;
     private String alarmOriginatorName;
+    private String alarmOriginatorLabel;
     private AlarmSeverity alarmSeverity;
     private AlarmStatus alarmStatus;
     private CustomerId alarmCustomerId;
+    private DashboardId dashboardId;
 
     @Override
     public Map<String, String> getTemplateData() {
@@ -66,7 +69,8 @@ public class AlarmCommentNotificationInfo implements RuleOriginatedNotificationI
                 "alarmStatus", alarmStatus.toString(),
                 "alarmOriginatorEntityType", alarmOriginator.getEntityType().getNormalName(),
                 "alarmOriginatorId", alarmOriginator.getId().toString(),
-                "alarmOriginatorName", alarmOriginatorName
+                "alarmOriginatorName", alarmOriginatorName,
+                "alarmOriginatorLabel", alarmOriginatorLabel
         );
     }
 
@@ -78,6 +82,11 @@ public class AlarmCommentNotificationInfo implements RuleOriginatedNotificationI
     @Override
     public EntityId getStateEntityId() {
         return alarmOriginator;
+    }
+
+    @Override
+    public DashboardId getDashboardId() {
+        return dashboardId;
     }
 
 }

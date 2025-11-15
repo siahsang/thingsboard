@@ -1,5 +1,5 @@
 /**
- * Copyright © 2016-2023 The Thingsboard Authors
+ * Copyright © 2016-2025 The Thingsboard Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,9 +15,7 @@
  */
 package org.thingsboard.rule.engine.mail;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
-import lombok.extern.slf4j.Slf4j;
 import org.thingsboard.common.util.JacksonUtil;
 import org.thingsboard.rule.engine.api.RuleNode;
 import org.thingsboard.rule.engine.api.TbContext;
@@ -32,21 +30,19 @@ import org.thingsboard.server.common.data.msg.TbNodeConnectionType;
 import org.thingsboard.server.common.data.plugin.ComponentType;
 import org.thingsboard.server.common.msg.TbMsg;
 
-import java.io.IOException;
 import java.util.HashMap;
 import java.util.Map;
 
-@Slf4j
 @RuleNode(
         type = ComponentType.TRANSFORMATION,
         name = "to email",
         configClazz = TbMsgToEmailNodeConfiguration.class,
         nodeDescription = "Transforms message to email message",
-        nodeDetails = "Transforms message to email message by populating email fields using values derived from message metadata. " +
-                      "Set 'SEND_EMAIL' output message type.",
-        uiResources = {"static/rulenode/rulenode-core-config.js"},
+        nodeDetails = "Transforms message to email message. If transformation completed successfully output message type will be set to <code>SEND_EMAIL</code>.<br><br>" +
+                "Output connections: <code>Success</code>, <code>Failure</code>.",
         configDirective = "tbTransformationNodeToEmailConfig",
-        icon = "email"
+        icon = "email",
+        docUrl = "https://thingsboard.io/docs/user-guide/rule-engine-2-0/nodes/transformation/to-email/"
 )
 public class TbMsgToEmailNode implements TbNode {
 
@@ -54,44 +50,37 @@ public class TbMsgToEmailNode implements TbNode {
     private static final String DYNAMIC = "dynamic";
 
     private TbMsgToEmailNodeConfiguration config;
-    private boolean isDynamicHtmlTemplate;
+    private boolean dynamicMailBodyType;
 
     @Override
     public void init(TbContext ctx, TbNodeConfiguration configuration) throws TbNodeException {
-        this.config = TbNodeUtils.convert(configuration, TbMsgToEmailNodeConfiguration.class);
-        this.isDynamicHtmlTemplate = DYNAMIC.equals(this.config.getMailBodyType());
-     }
+        config = TbNodeUtils.convert(configuration, TbMsgToEmailNodeConfiguration.class);
+        dynamicMailBodyType = DYNAMIC.equals(config.getMailBodyType());
+    }
 
     @Override
     public void onMsg(TbContext ctx, TbMsg msg) {
-        try {
-            TbEmail email = convert(msg);
-            TbMsg emailMsg = buildEmailMsg(ctx, msg, email);
-            ctx.tellNext(emailMsg, TbNodeConnectionType.SUCCESS);
-        } catch (Exception ex) {
-            log.warn("Can not convert message to email " + ex.getMessage());
-            ctx.tellFailure(msg, ex);
-        }
+        TbEmail email = convert(msg);
+        TbMsg emailMsg = buildEmailMsg(ctx, msg, email);
+        ctx.tellNext(emailMsg, TbNodeConnectionType.SUCCESS);
     }
 
-    private TbMsg buildEmailMsg(TbContext ctx, TbMsg msg, TbEmail email) throws JsonProcessingException {
+    private TbMsg buildEmailMsg(TbContext ctx, TbMsg msg, TbEmail email) {
         String emailJson = JacksonUtil.toString(email);
         return ctx.transformMsg(msg, TbMsgType.SEND_EMAIL, msg.getOriginator(), msg.getMetaData().copy(), emailJson);
     }
 
-    private TbEmail convert(TbMsg msg) throws IOException {
+    private TbEmail convert(TbMsg msg) {
         TbEmail.TbEmailBuilder builder = TbEmail.builder();
-        builder.from(fromTemplate(this.config.getFromTemplate(), msg));
-        builder.to(fromTemplate(this.config.getToTemplate(), msg));
-        builder.cc(fromTemplate(this.config.getCcTemplate(), msg));
-        builder.bcc(fromTemplate(this.config.getBccTemplate(), msg));
-        if(isDynamicHtmlTemplate) {
-            builder.html(Boolean.parseBoolean(fromTemplate(this.config.getIsHtmlTemplate(), msg)));
-        } else {
-            builder.html(Boolean.parseBoolean(this.config.getMailBodyType()));
-        }
-        builder.subject(fromTemplate(this.config.getSubjectTemplate(), msg));
-        builder.body(fromTemplate(this.config.getBodyTemplate(), msg));
+        builder.from(fromTemplate(config.getFromTemplate(), msg));
+        builder.to(fromTemplate(config.getToTemplate(), msg));
+        builder.cc(fromTemplate(config.getCcTemplate(), msg));
+        builder.bcc(fromTemplate(config.getBccTemplate(), msg));
+        String htmlStr = dynamicMailBodyType ?
+                fromTemplate(config.getIsHtmlTemplate(), msg) : config.getMailBodyType();
+        builder.html(Boolean.parseBoolean(htmlStr));
+        builder.subject(fromTemplate(config.getSubjectTemplate(), msg));
+        builder.body(fromTemplate(config.getBodyTemplate(), msg));
         String imagesStr = msg.getMetaData().getValue(IMAGES);
         if (!StringUtils.isEmpty(imagesStr)) {
             Map<String, String> imgMap = JacksonUtil.fromString(imagesStr, new TypeReference<HashMap<String, String>>() {});
@@ -101,11 +90,7 @@ public class TbMsgToEmailNode implements TbNode {
     }
 
     private String fromTemplate(String template, TbMsg msg) {
-        if (!StringUtils.isEmpty(template)) {
-            return TbNodeUtils.processPattern(template, msg);
-        } else {
-            return null;
-        }
+        return StringUtils.isNotEmpty(template) ? TbNodeUtils.processPattern(template, msg) : null;
     }
 
 }

@@ -1,5 +1,5 @@
 /**
- * Copyright © 2016-2023 The Thingsboard Authors
+ * Copyright © 2016-2025 The Thingsboard Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,28 +15,22 @@
  */
 package org.thingsboard.server.queue.kafka;
 
+import jakarta.annotation.PostConstruct;
+import jakarta.annotation.PreDestroy;
 import lombok.Builder;
 import lombok.Data;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.kafka.clients.admin.AdminClient;
 import org.apache.kafka.clients.consumer.Consumer;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
 import org.apache.kafka.clients.consumer.OffsetAndMetadata;
 import org.apache.kafka.common.TopicPartition;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
-import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Component;
-import org.thingsboard.common.util.ThingsBoardThreadFactory;
+import org.thingsboard.common.util.ThingsBoardExecutors;
 import org.thingsboard.server.common.data.StringUtils;
-import org.thingsboard.server.common.data.id.TenantId;
-import org.thingsboard.server.common.msg.queue.ServiceType;
-import org.thingsboard.server.queue.discovery.PartitionService;
+import org.thingsboard.server.queue.util.TbKafkaComponent;
 
-import javax.annotation.PostConstruct;
-import javax.annotation.PreDestroy;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
@@ -44,25 +38,20 @@ import java.util.Map;
 import java.util.Properties;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 
 @Slf4j
 @Component
 @RequiredArgsConstructor
-@ConditionalOnProperty(prefix = "queue", value = "type", havingValue = "kafka")
+@TbKafkaComponent
 public class TbKafkaConsumerStatsService {
     private final Set<String> monitoredGroups = ConcurrentHashMap.newKeySet();
 
     private final TbKafkaSettings kafkaSettings;
+    private final KafkaAdmin kafkaAdmin;
     private final TbKafkaConsumerStatisticConfig statsConfig;
 
-    @Lazy
-    @Autowired
-    private PartitionService partitionService;
-
-    private AdminClient adminClient;
     private Consumer<String, byte[]> consumer;
     private ScheduledExecutorService statsPrintScheduler;
 
@@ -71,8 +60,7 @@ public class TbKafkaConsumerStatsService {
         if (!statsConfig.getEnabled()) {
             return;
         }
-        this.adminClient = AdminClient.create(kafkaSettings.toAdminProps());
-        this.statsPrintScheduler = Executors.newSingleThreadScheduledExecutor(ThingsBoardThreadFactory.forName("kafka-consumer-stats"));
+        this.statsPrintScheduler = ThingsBoardExecutors.newSingleThreadScheduledExecutor("kafka-consumer-stats");
 
         Properties consumerProps = kafkaSettings.toConsumerProps(null);
         consumerProps.put(ConsumerConfig.CLIENT_ID_CONFIG, "consumer-stats-loader-client");
@@ -90,7 +78,7 @@ public class TbKafkaConsumerStatsService {
             }
             for (String groupId : monitoredGroups) {
                 try {
-                    Map<TopicPartition, OffsetAndMetadata> groupOffsets = adminClient.listConsumerGroupOffsets(groupId).partitionsToOffsetAndMetadata()
+                    Map<TopicPartition, OffsetAndMetadata> groupOffsets = kafkaSettings.getAdmin().getClient().listConsumerGroupOffsets(groupId).partitionsToOffsetAndMetadata()
                             .get(statsConfig.getKafkaResponseTimeoutMs(), TimeUnit.MILLISECONDS);
                     Map<TopicPartition, Long> endOffsets = consumer.endOffsets(groupOffsets.keySet(), timeoutDuration);
 
@@ -106,8 +94,7 @@ public class TbKafkaConsumerStatsService {
                         log.info("[{}] Topic partitions with lag: [{}].", groupId, builder.toString());
                     }
                 } catch (Exception e) {
-                    log.warn("[{}] Failed to get consumer group stats. Reason - {}.", groupId, e.getMessage());
-                    log.trace("Detailed error: ", e);
+                    log.warn("[{}] Failed to get consumer group stats", groupId, e);
                 }
             }
 
@@ -115,9 +102,7 @@ public class TbKafkaConsumerStatsService {
     }
 
     private boolean isStatsPrintRequired() {
-        boolean isMyRuleEnginePartition = partitionService.resolve(ServiceType.TB_RULE_ENGINE, TenantId.SYS_TENANT_ID, TenantId.SYS_TENANT_ID).isMyPartition();
-        boolean isMyCorePartition = partitionService.resolve(ServiceType.TB_CORE, TenantId.SYS_TENANT_ID, TenantId.SYS_TENANT_ID).isMyPartition();
-        return log.isInfoEnabled() && (isMyRuleEnginePartition || isMyCorePartition);
+        return log.isInfoEnabled();
     }
 
     private List<GroupTopicStats> getTopicsStatsWithLag(Map<TopicPartition, OffsetAndMetadata> groupOffsets, Map<TopicPartition, Long> endOffsets) {
@@ -157,9 +142,6 @@ public class TbKafkaConsumerStatsService {
         if (statsPrintScheduler != null) {
             statsPrintScheduler.shutdownNow();
         }
-        if (adminClient != null) {
-            adminClient.close();
-        }
         if (consumer != null) {
             consumer.close();
         }
@@ -178,12 +160,14 @@ public class TbKafkaConsumerStatsService {
         @Override
         public String toString() {
             return "[" +
-                    "topic=[" + topic + ']' +
-                    ", partition=[" + partition + "]" +
-                    ", committedOffset=[" + committedOffset + "]" +
-                    ", endOffset=[" + endOffset + "]" +
-                    ", lag=[" + lag + "]" +
-                    "]";
+                   "topic=[" + topic + ']' +
+                   ", partition=[" + partition + "]" +
+                   ", committedOffset=[" + committedOffset + "]" +
+                   ", endOffset=[" + endOffset + "]" +
+                   ", lag=[" + lag + "]" +
+                   "]";
         }
+
     }
+
 }

@@ -38,10 +38,10 @@ import java.util.stream.Collectors;
  */
 public class NetworkReceive implements Receive {
 
-    public final static String UNKNOWN_SOURCE = "";
-    public final static int UNLIMITED = -1;
-    public final static int TB_MAX_REQUESTED_BUFFER_SIZE = 100 * 1024 * 1024;
-    public final static int TB_LOG_REQUESTED_BUFFER_SIZE = 10 * 1024 * 1024;
+    public static final String UNKNOWN_SOURCE = "";
+    public static final int UNLIMITED = -1;
+    public static final int TB_MAX_REQUESTED_BUFFER_SIZE = 100 * 1024 * 1024;
+    public static final int TB_LOG_REQUESTED_BUFFER_SIZE = 10 * 1024 * 1024;
     private static final Logger log = LoggerFactory.getLogger(NetworkReceive.class);
     private static final ByteBuffer EMPTY_BUFFER = ByteBuffer.allocate(0);
 
@@ -54,27 +54,16 @@ public class NetworkReceive implements Receive {
 
 
     public NetworkReceive(String source, ByteBuffer buffer) {
-        this.source = source;
+        this(TB_MAX_REQUESTED_BUFFER_SIZE, source);
         this.buffer = buffer;
-        this.size = null;
-        this.maxSize = TB_MAX_REQUESTED_BUFFER_SIZE;
-        this.memoryPool = MemoryPool.NONE;
     }
 
     public NetworkReceive(String source) {
-        this.source = source;
-        this.size = ByteBuffer.allocate(4);
-        this.buffer = null;
-        this.maxSize = TB_MAX_REQUESTED_BUFFER_SIZE;
-        this.memoryPool = MemoryPool.NONE;
+        this(TB_MAX_REQUESTED_BUFFER_SIZE, source);
     }
 
     public NetworkReceive(int maxSize, String source) {
-        this.source = source;
-        this.size = ByteBuffer.allocate(4);
-        this.buffer = null;
-        this.maxSize = getMaxSize(maxSize);
-        this.memoryPool = MemoryPool.NONE;
+        this(maxSize, source, MemoryPool.NONE);
     }
 
     public NetworkReceive(int maxSize, String source, MemoryPool memoryPool) {
@@ -114,13 +103,13 @@ public class NetworkReceive implements Receive {
                 if (maxSize != UNLIMITED && receiveSize > maxSize) {
                     throw new ThingsboardKafkaClientError("Invalid receive (size = " + receiveSize + " larger than " + maxSize + ")");
                 }
-                requestedBufferSize = receiveSize; //may be 0 for some payloads (SASL)
+                requestedBufferSize = receiveSize; // may be 0 for some payloads (SASL)
                 if (receiveSize == 0) {
                     buffer = EMPTY_BUFFER;
                 }
             }
         }
-        if (buffer == null && requestedBufferSize != -1) { //we know the size we want but havent been able to allocate it yet
+        if (buffer == null && requestedBufferSize != -1) { // we know the size we want but haven't been able to allocate it yet
             if (requestedBufferSize > TB_LOG_REQUESTED_BUFFER_SIZE) {
                 String stackTrace = Arrays.stream(Thread.currentThread().getStackTrace()).map(StackTraceElement::toString).collect(Collectors.joining("|"));
                 log.error("Allocating buffer of size {} for source {}", requestedBufferSize, source);

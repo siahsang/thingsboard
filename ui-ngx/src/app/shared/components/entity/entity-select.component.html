@@ -1,6 +1,6 @@
 <!--
 
-    Copyright © 2016-2023 The Thingsboard Authors
+    Copyright © 2016-2025 The Thingsboard Authors
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -15,23 +15,25 @@
     limitations under the License.
 
 -->
-<div fxLayout="row" class="tb-entity-select" [formGroup]="entitySelectFormGroup">
+<div [formGroup]="entitySelectFormGroup" class="flex flex-row gap-4 xs:flex-col xs:gap-0">
   <tb-entity-type-select
-    style="min-width: 100px; padding-right: 8px;"
     *ngIf="displayEntityTypeSelect"
+    class="flex-1"
+    [appearance]="appearance"
     [showLabel]="true"
     [required]="required"
     [useAliasEntityTypes]="useAliasEntityTypes"
     [allowedEntityTypes]="allowedEntityTypes"
+    [additionEntityTypes]="additionEntityTypes"
     formControlName="entityType">
   </tb-entity-type-select>
   <tb-entity-autocomplete
-    fxFlex
-    *ngIf="modelValue.entityType && modelValue.entityType !== AliasEntityType.CURRENT_TENANT
-                                 && modelValue.entityType !== AliasEntityType.CURRENT_USER
-                                 && modelValue.entityType !== AliasEntityType.CURRENT_USER_OWNER"
+    *ngIf="modelValue.entityType && !entityTypeNullUUID.has(modelValue.entityType)"
+    class="flex-1"
+    [appearance]="appearance"
     [required]="required"
     [entityType]="modelValue.entityType"
+    [useEntityDisplayName]="useEntityDisplayName"
     formControlName="entityId">
   </tb-entity-autocomplete>
 </div>

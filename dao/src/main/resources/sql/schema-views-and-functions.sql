@@ -1,5 +1,5 @@
 --
--- Copyright © 2016-2023 The Thingsboard Authors
+-- Copyright © 2016-2025 The Thingsboard Authors
 --
 -- Licensed under the Apache License, Version 2.0 (the "License");
 -- you may not use this file except in compliance with the License.
@@ -23,7 +23,7 @@ SELECT d.*
        , COALESCE(da.bool_v, FALSE) as active
 FROM device d
          LEFT JOIN customer c ON c.id = d.customer_id
-         LEFT JOIN attribute_kv da ON da.entity_type = 'DEVICE' AND da.entity_id = d.id AND da.attribute_type = 'SERVER_SCOPE' AND da.attribute_key = 'active';
+         LEFT JOIN attribute_kv da ON da.entity_id = d.id AND da.attribute_type = 2 AND da.attribute_key = (select key_id from key_dictionary  where key = 'active');
 
 DROP VIEW IF EXISTS device_info_active_ts_view CASCADE;
 CREATE OR REPLACE VIEW device_info_active_ts_view AS
@@ -34,7 +34,7 @@ SELECT d.*
        , COALESCE(dt.bool_v, FALSE) as active
 FROM device d
          LEFT JOIN customer c ON c.id = d.customer_id
-         LEFT JOIN ts_kv_latest dt ON dt.entity_id = d.id and dt.key = (select key_id from ts_kv_dictionary where key = 'active');
+         LEFT JOIN ts_kv_latest dt ON dt.entity_id = d.id and dt.key = (select key_id from key_dictionary where key = 'active');
 
 DROP VIEW IF EXISTS device_info_view CASCADE;
 CREATE OR REPLACE VIEW device_info_view AS SELECT * FROM device_info_active_attribute_view;
@@ -71,6 +71,26 @@ COALESCE(CASE WHEN a.originator_type = 0 THEN (select title from tenant where id
 u.first_name as assignee_first_name, u.last_name as assignee_last_name, u.email as assignee_email
 FROM alarm a
 LEFT JOIN tb_user u ON u.id = a.assignee_id;
+
+DROP VIEW IF EXISTS edge_active_attribute_view CASCADE;
+CREATE OR REPLACE VIEW edge_active_attribute_view AS
+SELECT ee.id
+        , ee.created_time
+        , ee.additional_info
+        , ee.customer_id
+        , ee.root_rule_chain_id
+        , ee.type
+        , ee.name
+        , ee.label
+        , ee.routing_key
+        , ee.secret
+        , ee.tenant_id
+        , ee.version
+FROM edge ee
+        JOIN attribute_kv ON ee.id = attribute_kv.entity_id
+        JOIN key_dictionary ON attribute_kv.attribute_key = key_dictionary.key_id
+WHERE attribute_kv.bool_v = true AND key_dictionary.key = 'active'
+ORDER BY ee.id;
 
 CREATE OR REPLACE FUNCTION create_or_update_active_alarm(
                                         t_id uuid, c_id uuid, a_id uuid, a_created_ts bigint,
@@ -288,6 +308,85 @@ $$;
 
 DROP VIEW IF EXISTS widget_type_info_view CASCADE;
 CREATE OR REPLACE VIEW widget_type_info_view AS
-SELECT t.*
-     , COALESCE((t.descriptor::json->>'type')::text, '') as widget_type
+SELECT t.*,
+       COALESCE((t.descriptor::json->>'type')::text, '') as widget_type,
+       array_to_json(ARRAY(
+           SELECT json_build_object('id', wb.widgets_bundle_id, 'name', b.title)
+           FROM widgets_bundle_widget wb
+           JOIN widgets_bundle b ON wb.widgets_bundle_id = b.id
+           WHERE wb.widget_type_id = t.id
+           ORDER BY b.title
+       )) AS bundles
 FROM widget_type t;
+
+CREATE OR REPLACE PROCEDURE cleanup_timeseries_by_ttl(IN null_uuid uuid,
+                                                      IN system_ttl bigint, INOUT deleted bigint)
+    LANGUAGE plpgsql AS
+$$
+DECLARE
+    tenant_cursor CURSOR FOR select tenant.id as tenant_id
+                             from tenant;
+    tenant_id_record     uuid;
+    customer_id_record   uuid;
+    tenant_ttl           bigint;
+    customer_ttl         bigint;
+    deleted_for_entities bigint;
+    tenant_ttl_ts        bigint;
+    customer_ttl_ts      bigint;
+BEGIN
+    OPEN tenant_cursor;
+    FETCH tenant_cursor INTO tenant_id_record;
+    WHILE FOUND
+        LOOP
+            EXECUTE format(
+                    'select attribute_kv.long_v from attribute_kv where attribute_kv.entity_id = %L and attribute_kv.attribute_key = (select key_id from key_dictionary where key = %L)',
+                    tenant_id_record, 'TTL') INTO tenant_ttl;
+            if tenant_ttl IS NULL THEN
+                tenant_ttl := system_ttl;
+            END IF;
+            IF tenant_ttl > 0 THEN
+                tenant_ttl_ts := (EXTRACT(EPOCH FROM current_timestamp) * 1000 - tenant_ttl::bigint * 1000)::bigint;
+                deleted_for_entities := delete_device_records_from_ts_kv(tenant_id_record, null_uuid, tenant_ttl_ts);
+                deleted := deleted + deleted_for_entities;
+                RAISE NOTICE '% telemetry removed for devices where tenant_id = %', deleted_for_entities, tenant_id_record;
+                deleted_for_entities := delete_asset_records_from_ts_kv(tenant_id_record, null_uuid, tenant_ttl_ts);
+                deleted := deleted + deleted_for_entities;
+                RAISE NOTICE '% telemetry removed for assets where tenant_id = %', deleted_for_entities, tenant_id_record;
+            END IF;
+            FOR customer_id_record IN
+                SELECT customer.id AS customer_id FROM customer WHERE customer.tenant_id = tenant_id_record
+                LOOP
+                    EXECUTE format(
+                            'select attribute_kv.long_v from attribute_kv where attribute_kv.entity_id = %L and attribute_kv.attribute_key = (select key_id from key_dictionary where key = %L)',
+                            customer_id_record, 'TTL') INTO customer_ttl;
+                    IF customer_ttl IS NULL THEN
+                        customer_ttl_ts := tenant_ttl_ts;
+                    ELSE
+                        IF customer_ttl > 0 THEN
+                            customer_ttl_ts :=
+                                    (EXTRACT(EPOCH FROM current_timestamp) * 1000 -
+                                     customer_ttl::bigint * 1000)::bigint;
+                        END IF;
+                    END IF;
+                    IF customer_ttl_ts IS NOT NULL AND customer_ttl_ts > 0 THEN
+                        deleted_for_entities :=
+                                delete_customer_records_from_ts_kv(tenant_id_record, customer_id_record,
+                                                                   customer_ttl_ts);
+                        deleted := deleted + deleted_for_entities;
+                        RAISE NOTICE '% telemetry removed for customer with id = % where tenant_id = %', deleted_for_entities, customer_id_record, tenant_id_record;
+                        deleted_for_entities :=
+                                delete_device_records_from_ts_kv(tenant_id_record, customer_id_record,
+                                                                 customer_ttl_ts);
+                        deleted := deleted + deleted_for_entities;
+                        RAISE NOTICE '% telemetry removed for devices where tenant_id = % and customer_id = %', deleted_for_entities, tenant_id_record, customer_id_record;
+                        deleted_for_entities := delete_asset_records_from_ts_kv(tenant_id_record,
+                                                                                customer_id_record,
+                                                                                customer_ttl_ts);
+                        deleted := deleted + deleted_for_entities;
+                        RAISE NOTICE '% telemetry removed for assets where tenant_id = % and customer_id = %', deleted_for_entities, tenant_id_record, customer_id_record;
+                    END IF;
+                END LOOP;
+            FETCH tenant_cursor INTO tenant_id_record;
+        END LOOP;
+END
+$$;

@@ -1,5 +1,5 @@
 /**
- * Copyright © 2016-2023 The Thingsboard Authors
+ * Copyright © 2016-2025 The Thingsboard Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -28,14 +28,17 @@ import org.junit.Before;
 import org.junit.Ignore;
 import org.junit.Test;
 import org.mockito.AdditionalAnswers;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mockito;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.mock.mockito.SpyBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Primary;
 import org.springframework.test.context.ContextConfiguration;
+import org.testcontainers.shaded.org.awaitility.Awaitility;
 import org.thingsboard.common.util.JacksonUtil;
 import org.thingsboard.common.util.ThingsBoardExecutors;
+import org.thingsboard.server.common.data.AttributeScope;
 import org.thingsboard.server.common.data.Customer;
 import org.thingsboard.server.common.data.Device;
 import org.thingsboard.server.common.data.DeviceInfo;
@@ -51,13 +54,13 @@ import org.thingsboard.server.common.data.User;
 import org.thingsboard.server.common.data.alarm.Alarm;
 import org.thingsboard.server.common.data.alarm.AlarmInfo;
 import org.thingsboard.server.common.data.alarm.AlarmSeverity;
-import org.thingsboard.server.common.data.asset.Asset;
 import org.thingsboard.server.common.data.audit.ActionType;
 import org.thingsboard.server.common.data.edge.Edge;
 import org.thingsboard.server.common.data.id.CustomerId;
 import org.thingsboard.server.common.data.id.DeviceCredentialsId;
 import org.thingsboard.server.common.data.id.DeviceId;
 import org.thingsboard.server.common.data.id.EntityId;
+import org.thingsboard.server.common.data.kv.AttributeKvEntry;
 import org.thingsboard.server.common.data.page.PageData;
 import org.thingsboard.server.common.data.page.PageLink;
 import org.thingsboard.server.common.data.relation.EntityRelation;
@@ -73,15 +76,24 @@ import org.thingsboard.server.dao.exception.DataValidationException;
 import org.thingsboard.server.dao.exception.DeviceCredentialsValidationException;
 import org.thingsboard.server.dao.model.ModelConstants;
 import org.thingsboard.server.dao.service.DaoSqlTest;
+import org.thingsboard.server.gen.transport.TransportProtos;
 import org.thingsboard.server.service.gateway_device.GatewayNotificationsService;
+import org.thingsboard.server.service.state.DeviceStateService;
+import org.thingsboard.server.utils.CsvUtils;
 
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.awaitility.Awaitility.await;
 import static org.hamcrest.Matchers.containsString;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -106,6 +118,9 @@ public class DeviceControllerTest extends AbstractControllerTest {
     @SpyBean
     private GatewayNotificationsService gatewayNotificationsService;
 
+    @SpyBean
+    private DeviceStateService deviceStateService;
+
     @Autowired
     private DeviceDao deviceDao;
 
@@ -125,7 +140,7 @@ public class DeviceControllerTest extends AbstractControllerTest {
 
         Tenant tenant = new Tenant();
         tenant.setTitle("My tenant");
-        savedTenant = doPost("/api/tenant", tenant, Tenant.class);
+        savedTenant = saveTenant(tenant);
         Assert.assertNotNull(savedTenant);
 
         tenantAdmin = new User();
@@ -144,8 +159,7 @@ public class DeviceControllerTest extends AbstractControllerTest {
 
         loginSysAdmin();
 
-        doDelete("/api/tenant/" + savedTenant.getId().getId())
-                .andExpect(status().isOk());
+        deleteTenant(savedTenant.getId());
     }
 
     @Test
@@ -185,7 +199,7 @@ public class DeviceControllerTest extends AbstractControllerTest {
         Mockito.reset(tbClusterService, auditLogService, gatewayNotificationsService);
 
         savedDevice.setName("My new device");
-        doPost("/api/device", savedDevice, Device.class);
+        savedDevice = doPost("/api/device", savedDevice, Device.class);
 
         testNotifyEntityAllOneTime(savedDevice, savedDevice.getId(), savedDevice.getId(), savedTenant.getId(),
                 tenantAdmin.getCustomerId(), tenantAdmin.getId(), tenantAdmin.getEmail(), ActionType.UPDATED);
@@ -240,7 +254,7 @@ public class DeviceControllerTest extends AbstractControllerTest {
         Mockito.reset(tbClusterService, auditLogService, gatewayNotificationsService);
 
         savedDevice.setName("My new device");
-        doPost("/api/device", savedDevice, Device.class);
+        savedDevice = doPost("/api/device", savedDevice, Device.class);
 
         testNotifyEntityAllOneTime(savedDevice, savedDevice.getId(), savedDevice.getId(), savedTenant.getId(),
                 tenantAdmin.getCustomerId(), tenantAdmin.getId(), tenantAdmin.getEmail(), ActionType.UPDATED);
@@ -378,6 +392,48 @@ public class DeviceControllerTest extends AbstractControllerTest {
         device.setDeviceProfileId(differentProfile.getId());
         doPost("/api/device", device).andExpect(status().isBadRequest())
                 .andExpect(statusReason(containsString("Device can`t be referencing to device profile from different tenant!")));
+    }
+
+    @Test
+    public void testSaveDeviceWithFirmware() throws Exception {
+        loginTenantAdmin();
+        DeviceProfile profile = createDeviceProfile("Profile to test ota updates");
+        profile = doPost("/api/deviceProfile", profile, DeviceProfile.class);
+
+        SaveOtaPackageInfoRequest firmwareInfo = new SaveOtaPackageInfoRequest();
+        firmwareInfo.setDeviceProfileId(profile.getId());
+        firmwareInfo.setType(FIRMWARE);
+        String title = "title";
+        firmwareInfo.setTitle(title);
+        String fwVersion = "1.0";
+        firmwareInfo.setVersion(fwVersion);
+        String url = "test.url";
+        firmwareInfo.setUrl(url);
+        firmwareInfo.setUsesUrl(true);
+        OtaPackageInfo savedFw = doPost("/api/otaPackage", firmwareInfo, OtaPackageInfo.class);
+
+        Device device = new Device();
+        device.setName("My ota device");
+        device.setDeviceProfileId(profile.getId());
+        device.setFirmwareId(savedFw.getId());
+        device = doPost("/api/device", device, Device.class);
+
+        //check shared attributes
+        Device finalDevice = device;
+        await().atMost(TIMEOUT, TimeUnit.SECONDS).until(() -> {
+            List<Map<String, Object>> attributes = doGetAsyncTyped("/api/plugins/telemetry/DEVICE/" + finalDevice.getId() +
+                    "/values/attributes/SHARED_SCOPE", new TypeReference<List<Map<String, Object>>>() {
+            });
+            return findAttrValue("fw_version", attributes).equals(fwVersion) &&
+                    findAttrValue("fw_title", attributes).equals(title) &&
+                    findAttrValue("fw_url", attributes).equals(url);
+        });
+    }
+
+    private static Object findAttrValue(String key, List<Map<String, Object>> attributes) {
+        Optional<Map<String, Object>> attr = attributes.stream()
+                .filter(att -> att.get("key").equals(key)).findFirst();
+        return attr.isPresent() ? attr.get().get("value") : "";
     }
 
     @Test
@@ -680,7 +736,7 @@ public class DeviceControllerTest extends AbstractControllerTest {
 
         Tenant tenant2 = new Tenant();
         tenant2.setTitle("Different tenant");
-        Tenant savedTenant2 = doPost("/api/tenant", tenant2, Tenant.class);
+        Tenant savedTenant2 = saveTenant(tenant2);
         Assert.assertNotNull(savedTenant2);
 
         User tenantAdmin2 = new User();
@@ -714,9 +770,7 @@ public class DeviceControllerTest extends AbstractControllerTest {
         testNotificationUpdateGatewayNever();
 
         loginSysAdmin();
-
-        doDelete("/api/tenant/" + savedTenant2.getId().getId())
-                .andExpect(status().isOk());
+        deleteTenant(savedTenant2.getId());
     }
 
     @Test
@@ -744,8 +798,7 @@ public class DeviceControllerTest extends AbstractControllerTest {
 
         Mockito.reset(tbClusterService, auditLogService, gatewayNotificationsService);
 
-        doPost("/api/device/credentials", deviceCredentials)
-                .andExpect(status().isOk());
+        deviceCredentials = doPost("/api/device/credentials", deviceCredentials, DeviceCredentials.class);
 
         testNotifyEntityMsgToEdgePushMsgToCoreOneTime(savedDevice, savedDevice.getId(), savedDevice.getId(), savedTenant.getId(),
                 tenantAdmin.getCustomerId(), tenantAdmin.getId(), tenantAdmin.getEmail(), ActionType.CREDENTIALS_UPDATED, deviceCredentials);
@@ -907,7 +960,7 @@ public class DeviceControllerTest extends AbstractControllerTest {
 
         testNotifyManyEntityManyTimeMsgToEdgeServiceEntityEqAnyAdditionalInfoAny(new Device(), new Device(),
                 savedTenant.getId(), tenantAdmin.getCustomerId(), tenantAdmin.getId(), tenantAdmin.getEmail(),
-                ActionType.DELETED, ActionType.DELETED, cntEntity, cntEntity,1);
+                ActionType.DELETED, ActionType.DELETED, cntEntity, cntEntity, 1);
         testNotificationUpdateGatewayNever();
     }
 
@@ -1312,7 +1365,7 @@ public class DeviceControllerTest extends AbstractControllerTest {
         loginSysAdmin();
         Tenant tenant = new Tenant();
         tenant.setTitle("Different tenant");
-        Tenant savedDifferentTenant = doPost("/api/tenant", tenant, Tenant.class);
+        Tenant savedDifferentTenant = saveTenant(tenant);
         Assert.assertNotNull(savedDifferentTenant);
 
         User user = new User();
@@ -1340,6 +1393,28 @@ public class DeviceControllerTest extends AbstractControllerTest {
                 ActionType.ASSIGNED_TO_TENANT, savedDifferentTenant.getId().getId().toString(), savedDifferentTenant.getTitle());
         testNotificationUpdateGatewayNever();
 
+        ArgumentCaptor<TransportProtos.DeviceStateServiceMsgProto> protoCaptor = ArgumentCaptor.forClass(TransportProtos.DeviceStateServiceMsgProto.class);
+
+        Awaitility.await().atMost(5, TimeUnit.SECONDS).until(() -> {
+            Mockito.verify(deviceStateService, Mockito.atLeastOnce()).onQueueMsg(protoCaptor.capture(), any());
+            return protoCaptor.getAllValues().stream().anyMatch(proto ->
+                    proto.getTenantIdMSB() == savedTenant.getUuidId().getMostSignificantBits() &&
+                            proto.getTenantIdLSB() == savedTenant.getUuidId().getLeastSignificantBits() &&
+                            proto.getDeviceIdMSB() == savedDevice.getUuidId().getMostSignificantBits() &&
+                            proto.getDeviceIdLSB() == savedDevice.getUuidId().getLeastSignificantBits() &&
+                            proto.getDeleted());
+        });
+
+        Awaitility.await().atMost(5, TimeUnit.SECONDS).until(() -> {
+            Mockito.verify(deviceStateService, Mockito.atLeastOnce()).onQueueMsg(protoCaptor.capture(), any());
+            return protoCaptor.getAllValues().stream().anyMatch(proto ->
+                    proto.getTenantIdMSB() == savedDifferentTenant.getUuidId().getMostSignificantBits() &&
+                            proto.getTenantIdLSB() == savedDifferentTenant.getUuidId().getLeastSignificantBits() &&
+                            proto.getDeviceIdMSB() == savedDevice.getUuidId().getMostSignificantBits() &&
+                            proto.getDeviceIdLSB() == savedDevice.getUuidId().getLeastSignificantBits() &&
+                            proto.getAdded());
+        });
+
         login("tenant9@thingsboard.org", "testPassword1");
 
         Device foundDevice1 = doGet("/api/device/" + assignedDevice.getId().getId(), Device.class);
@@ -1351,8 +1426,7 @@ public class DeviceControllerTest extends AbstractControllerTest {
                 .andExpect(statusReason(containsString(msgErrorNoFound("Device", savedAnotherDevice.getId().getId().toString()))));
 
         loginSysAdmin();
-        doDelete("/api/tenant/" + savedDifferentTenant.getId().getId())
-                .andExpect(status().isOk());
+        deleteTenant(savedDifferentTenant.getId());
     }
 
     @Test
@@ -1478,11 +1552,12 @@ public class DeviceControllerTest extends AbstractControllerTest {
         Assert.assertTrue(deviceBulkImportResult.getErrorsList().isEmpty());
 
         Device updatedDevice = doGet("/api/device/" + savedDevice.getId().getId(), Device.class);
+        savedDevice.setVersion(updatedDevice.getVersion());
         Assert.assertEquals(savedDevice, updatedDevice);
 
         DeviceCredentials updatedCredentials =
                 doGet("/api/device/" + savedDevice.getId().getId() + "/credentials", DeviceCredentials.class);
-
+        savedCredentials.setVersion(updatedCredentials.getVersion());
         Assert.assertEquals(savedCredentials, updatedCredentials);
     }
 
@@ -1516,17 +1591,24 @@ public class DeviceControllerTest extends AbstractControllerTest {
         Device savedDevice = doGet("/api/tenant/devices?deviceName=" + deviceName, Device.class);
 
         //check server attribute value
-        List<Map<String, Object>> values = doGetAsyncTyped("/api/plugins/telemetry/DEVICE/" + savedDevice.getId() +
-                "/values/attributes/SERVER_SCOPE", new TypeReference<>() {
+        await().atMost(TIMEOUT, TimeUnit.SECONDS).untilAsserted(() -> {
+            Map<String, Object> actualAttribute = doGetAsyncTyped("/api/plugins/telemetry/DEVICE/" + savedDevice.getId() +
+                    "/values/attributes/SERVER_SCOPE", new TypeReference<List<Map<String, Object>>>() {}).stream()
+                    .filter(att -> att.get("key").equals("DATA")).findFirst().get();
+            Assert.assertEquals(attributeValue, actualAttribute.get("value"));
         });
-        Map<String, Object> serverAttribute = values.stream().filter(att -> att.get("key").equals("DATA")).findFirst().get();
-        Assert.assertEquals(attributeValue, serverAttribute.get("value"));
 
         //update server attribute value
         String newAttributeValue = "testValue2";
         JsonNode content = JacksonUtil.toJsonNode("{\"DATA\": \"" + newAttributeValue + "\"}");
         doPost("/api/plugins/telemetry/" + EntityType.DEVICE.name() + "/" + savedDevice.getUuidId() + "/SERVER_SCOPE", content)
                 .andExpect(status().isOk());
+        await().atMost(TIMEOUT, TimeUnit.SECONDS).untilAsserted(() -> {
+            Map<String, Object> actualAttribute = doGetAsyncTyped("/api/plugins/telemetry/DEVICE/" + savedDevice.getId() +
+                    "/values/attributes/SERVER_SCOPE", new TypeReference<List<Map<String, Object>>>() {}).stream()
+                    .filter(att -> att.get("key").equals("DATA")).findFirst().get();
+            Assert.assertEquals(newAttributeValue, actualAttribute.get("value"));
+        });
 
         //reimport devices
         String deviceName2 = "secondDevice";
@@ -1538,19 +1620,116 @@ public class DeviceControllerTest extends AbstractControllerTest {
         doPostWithTypedResponse("/api/device/bulk_import", request, new TypeReference<>() {});
         Device savedDevice2 = doGet("/api/tenant/devices?deviceName=" + deviceName2, Device.class);
 
-        //check attribute value was not changed after reimport
-        List<Map<String, Object>> values2 = doGetAsyncTyped("/api/plugins/telemetry/DEVICE/" + savedDevice.getId() +
-                "/values/attributes/SERVER_SCOPE", new TypeReference<>() {
-        });
-        Map<String, Object> retrievedServerAttribute2 = values2.stream().filter(att -> att.get("key").equals("DATA")).findFirst().get();
-        Assert.assertEquals(newAttributeValue, retrievedServerAttribute2.get("value"));
-
         //check attribute for second device
-        List<Map<String, Object>> values3 = doGetAsyncTyped("/api/plugins/telemetry/DEVICE/" + savedDevice2.getId() +
-                "/values/attributes/SERVER_SCOPE", new TypeReference<>() {
+        await().atMost(TIMEOUT, TimeUnit.SECONDS).untilAsserted(() -> {
+            Map<String, Object> actualAttribute = doGetAsyncTyped("/api/plugins/telemetry/DEVICE/" + savedDevice2.getId() +
+                    "/values/attributes/SERVER_SCOPE", new TypeReference<List<Map<String, Object>>>() {}).stream()
+                    .filter(att -> att.get("key").equals("DATA")).findFirst().get();
+            Assert.assertEquals(attributeValue2, actualAttribute.get("value"));
         });
-        Map<String, Object> retrievedServerAttribute3 = values3.stream().filter(att -> att.get("key").equals("DATA")).findFirst().get();
-        Assert.assertEquals(attributeValue2, retrievedServerAttribute3.get("value"));
+
+        //check attribute value was not changed after reimport
+        Map<String, Object> actualAttribute = doGetAsyncTyped("/api/plugins/telemetry/DEVICE/" + savedDevice.getId() +
+                "/values/attributes/SERVER_SCOPE", new TypeReference<List<Map<String, Object>>>() {}).stream()
+                .filter(att -> att.get("key").equals("DATA")).findFirst().get();
+        Assert.assertEquals(newAttributeValue, actualAttribute.get("value"));
+    }
+
+    @Test
+    public void testBulkImportDeviceWithJsonAttr() throws Exception {
+        String deviceName = "some_device";
+        String deviceType = "some_type";
+        String deviceAttr = "{\"threshold\":45}";
+
+        List<List<String>> content = new LinkedList<>();
+        content.add(Arrays.asList("NAME", "TYPE", "ATTR"));
+        content.add(Arrays.asList(deviceName, deviceType, deviceAttr));
+
+        byte[] bytes = CsvUtils.generateCsv(content);
+        BulkImportRequest request = new BulkImportRequest();
+        request.setFile(new String(bytes, StandardCharsets.UTF_8));
+        BulkImportRequest.Mapping mapping = new BulkImportRequest.Mapping();
+        BulkImportRequest.ColumnMapping name = new BulkImportRequest.ColumnMapping();
+        name.setType(BulkImportColumnType.NAME);
+        BulkImportRequest.ColumnMapping type = new BulkImportRequest.ColumnMapping();
+        type.setType(BulkImportColumnType.TYPE);
+        BulkImportRequest.ColumnMapping attr = new BulkImportRequest.ColumnMapping();
+        attr.setType(BulkImportColumnType.SERVER_ATTRIBUTE);
+        attr.setKey("attr");
+        List<BulkImportRequest.ColumnMapping> columns = new ArrayList<>();
+        columns.add(name);
+        columns.add(type);
+        columns.add(attr);
+
+        mapping.setColumns(columns);
+        mapping.setDelimiter(',');
+        mapping.setUpdate(true);
+        mapping.setHeader(true);
+        request.setMapping(mapping);
+
+        BulkImportResult<Device> deviceBulkImportResult = doPostWithTypedResponse("/api/device/bulk_import", request, new TypeReference<>() {});
+
+        Assert.assertEquals(1, deviceBulkImportResult.getCreated().get());
+        Assert.assertEquals(0, deviceBulkImportResult.getErrors().get());
+        Assert.assertEquals(0, deviceBulkImportResult.getUpdated().get());
+        Assert.assertTrue(deviceBulkImportResult.getErrorsList().isEmpty());
+
+        Device savedDevice = doGet("/api/tenant/devices?deviceName=" + deviceName, Device.class);
+
+        Assert.assertNotNull(savedDevice);
+        Assert.assertEquals(deviceName, savedDevice.getName());
+        Assert.assertEquals(deviceType, savedDevice.getType());
+
+        Optional<AttributeKvEntry> retrieved = await().atMost(5, TimeUnit.SECONDS)
+                .until(() -> attributesService.find(tenantId, savedDevice.getId(), AttributeScope.SERVER_SCOPE, "attr").get(), Optional::isPresent);
+        assertThat(retrieved.get().getJsonValue().get()).isEqualTo(deviceAttr);
+        assertThat(retrieved.get().getStrValue()).isNotPresent();
+    }
+
+    @Test
+    public void testSaveDeviceWithOutdatedVersion() throws Exception {
+        Device device = createDevice("Device v1.0");
+        assertThat(device.getVersion()).isOne();
+
+        device.setName("Device v2.0");
+        device = doPost("/api/device", device, Device.class);
+        assertThat(device.getVersion()).isEqualTo(2);
+
+        device.setName("Device v1.1");
+        device.setVersion(1L);
+        String response = doPost("/api/device", device).andExpect(status().isConflict())
+                .andReturn().getResponse().getContentAsString();
+        assertThat(JacksonUtil.toJsonNode(response).get("message").asText())
+                .containsIgnoringCase("already changed by someone else");
+
+        device.setVersion(null); // overriding entity
+        device = doPost("/api/device", device, Device.class);
+        assertThat(device.getName()).isEqualTo("Device v1.1");
+        assertThat(device.getVersion()).isEqualTo(3);
+    }
+
+    @Test
+    public void testSaveDeviceWithUniquifyStrategy() throws Exception {
+        Device device = new Device();
+        device.setName("My unique device");
+        device.setType("default");
+        Device savedDevice = doPost("/api/device", device, Device.class);
+
+        doPost("/api/device", device).andExpect(status().isBadRequest());
+
+        doPost("/api/device?nameConflictPolicy=FAIL", device).andExpect(status().isBadRequest());
+
+        Device secondDevice = doPost("/api/device?nameConflictPolicy=UNIQUIFY", device, Device.class);
+        assertThat(secondDevice.getName()).startsWith("My unique device_");
+
+        Device thirdDevice = doPost("/api/device?nameConflictPolicy=UNIQUIFY&uniquifySeparator=-", device, Device.class);
+        assertThat(thirdDevice.getName()).startsWith("My unique device-");
+
+        Device fourthDevice = doPost("/api/device?nameConflictPolicy=UNIQUIFY&uniquifyStrategy=INCREMENTAL", device, Device.class);
+        assertThat(fourthDevice.getName()).isEqualTo("My unique device_1");
+
+        Device fifthDevice = doPost("/api/device?nameConflictPolicy=UNIQUIFY&uniquifyStrategy=INCREMENTAL", device, Device.class);
+        assertThat(fifthDevice.getName()).isEqualTo("My unique device_2");
     }
 
     private Device createDevice(String name) {
@@ -1559,4 +1738,5 @@ public class DeviceControllerTest extends AbstractControllerTest {
         device.setType("default");
         return doPost("/api/device", device, Device.class);
     }
+
 }

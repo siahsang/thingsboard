@@ -1,6 +1,6 @@
 <!--
 
-    Copyright © 2016-2023 The Thingsboard Authors
+    Copyright © 2016-2025 The Thingsboard Authors
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -15,14 +15,20 @@
     limitations under the License.
 
 -->
-<mat-form-field [formGroup]="entityListFormGroup" class="mat-block" [ngClass]="{'tb-chip-list': !labelText}" [subscriptSizing]="subscriptSizing">
-  <mat-label *ngIf="labelText">{{ labelText }}</mat-label>
+<mat-form-field [formGroup]="entityListFormGroup" class="mat-block"
+                [appearance]="inlineField ? 'outline' : appearance"
+                [class.tb-chip-list]="!labelText && !inlineField"
+                [class.tb-chips]="inlineField"
+                [class.flex]="inlineField"
+                [subscriptSizing]="inlineField ? 'dynamic' : subscriptSizing">
+  <mat-label *ngIf="!inlineField && labelText">{{ labelText }}</mat-label>
   <mat-chip-grid #chipList formControlName="entities">
     <mat-chip-row
       *ngFor="let entity of entities"
+      class="tb-chip-row-ellipsis"
       [removable]="!disabled"
       (removed)="remove(entity)">
-      {{entity.name}}
+      {{ displayEntityFn(entity) }}
       <mat-icon matChipRemove *ngIf="!disabled">close</mat-icon>
     </mat-chip-row>
     <input matInput type="text" placeholder="{{ !disabled ? placeholderText : '' }}"
@@ -34,23 +40,41 @@
            [matAutocompleteConnectedTo]="origin"
            [matAutocomplete]="entityAutocomplete"
            [matChipInputFor]="chipList">
+    <button mat-button color="primary" matSuffix
+            type="button"
+            *ngIf="allowCreateNew && !disabled"
+            (click)="createNewEntity($event)">
+      <span style="white-space: nowrap">{{ 'entity.create-new' | translate }}</span>
+    </button>
   </mat-chip-grid>
   <mat-autocomplete #entityAutocomplete="matAutocomplete"
                     class="tb-autocomplete"
                     [displayWith]="displayEntityFn">
     <mat-option *ngFor="let entity of filteredEntities | async" [value]="entity">
-      <span [innerHTML]="entity.name | highlight:searchText"></span>
+      <span [innerHTML]="displayEntityFn(entity) | highlight:searchText"></span>
     </mat-option>
     <mat-option *ngIf="!(filteredEntities | async)?.length" [value]="null">
-      <span>
-          {{ translate.get('entity.no-entities-matching', {entity: searchText}) | async }}
-      </span>
+      <div (click)="$event.stopPropagation()">
+        <div *ngIf="!textIsNotEmpty(searchText); else searchNotEmpty">
+          <span>{{ 'entity.no-entities-text' | translate }}</span>
+        </div>
+        <ng-template #searchNotEmpty>
+          <span>
+          {{ 'entity.no-entities-matching' | translate: {entity: searchText} }}
+          </span>
+          @if (allowCreateNew) {
+            <span>
+              <a translate (click)="createNewEntity($event, searchText)">entity.create-new-key</a>
+            </span>
+          }
+        </ng-template>
+      </div>
     </mat-option>
   </mat-autocomplete>
-  <mat-hint *ngIf="hint">
+  <mat-hint *ngIf="!inlineField && hint">
     {{ hint }}
   </mat-hint>
-  <mat-error *ngIf="entityListFormGroup.get('entities').hasError('required')">
+  <mat-error *ngIf="!inlineField && entityListFormGroup.get('entities').hasError('required')">
     {{ requiredText }}
   </mat-error>
   <div matSuffix>

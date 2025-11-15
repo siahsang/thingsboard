@@ -1,5 +1,5 @@
 ///
-/// Copyright © 2016-2023 The Thingsboard Authors
+/// Copyright © 2016-2025 The Thingsboard Authors
 ///
 /// Licensed under the Apache License, Version 2.0 (the "License");
 /// you may not use this file except in compliance with the License.
@@ -46,6 +46,7 @@ import {
   signalStrengthLayoutTranslations,
   SignalStrengthWidgetSettings
 } from '@home/components/widget/lib/indicator/signal-strength-widget.models';
+import { getSourceTbUnitSymbol } from '@shared/models/unit.models';
 
 @Component({
   selector: 'tb-signal-strength-basic-config',
@@ -138,6 +139,7 @@ export class SignalStrengthBasicConfigComponent extends BasicWidgetConfigCompone
 
       cardButtons: [this.getCardButtons(configData.config), []],
       borderRadius: [configData.config.borderRadius, []],
+      padding: [settings.padding, []],
 
       actions: [configData.config.actions || {}, []]
     });
@@ -189,6 +191,7 @@ export class SignalStrengthBasicConfigComponent extends BasicWidgetConfigCompone
 
     this.setCardButtons(config.cardButtons, this.widgetConfig.config);
     this.widgetConfig.config.borderRadius = config.borderRadius;
+    this.widgetConfig.config.settings.padding = config.padding;
 
     this.widgetConfig.config.actions = config.actions;
     return this.widgetConfig;
@@ -303,7 +306,7 @@ export class SignalStrengthBasicConfigComponent extends BasicWidgetConfigCompone
   }
 
   private _tooltipValuePreviewFn(): string {
-    const units: string = this.widgetConfig.config.units;
+    const units: string = getSourceTbUnitSymbol(this.widgetConfig.config.units);
     const decimals: number = this.widgetConfig.config.decimals;
     return formatValue(-76, decimals, units, true);
   }

@@ -1,5 +1,5 @@
 /**
- * Copyright © 2016-2023 The Thingsboard Authors
+ * Copyright © 2016-2025 The Thingsboard Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,6 +20,7 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
+import org.thingsboard.server.common.data.EntityInfo;
 import org.thingsboard.server.dao.model.sql.WidgetTypeInfoEntity;
 
 import java.util.List;
@@ -41,7 +42,8 @@ public interface WidgetTypeInfoRepository extends JpaRepository<WidgetTypeInfoEn
                             "OR :searchText ILIKE currentTag || ' %' " +
                             "OR :searchText ILIKE '% ' || currentTag " +
                             "OR :searchText ILIKE '% ' || currentTag || ' %')" +
-                    "))))",
+                    ")))) " +
+                    "ORDER BY CASE WHEN :scadaFirst then wti.scada END DESC",
             countQuery = "SELECT count(*) FROM widget_type_info_view wti WHERE wti.tenant_id = :systemTenantId " +
                     "AND ((:deprecatedFilterEnabled) IS FALSE OR wti.deprecated = :deprecatedFilter) " +
                     "AND ((:widgetTypesEmpty) IS TRUE OR wti.widget_type IN (:widgetTypes)) " +
@@ -64,6 +66,7 @@ public interface WidgetTypeInfoRepository extends JpaRepository<WidgetTypeInfoEn
                                                           @Param("deprecatedFilter") boolean deprecatedFilter,
                                                           @Param("widgetTypesEmpty") boolean widgetTypesEmpty,
                                                           @Param("widgetTypes") List<String> widgetTypes,
+                                                          @Param("scadaFirst") boolean scadaFirst,
                                                           Pageable pageable);
 
     @Query(nativeQuery = true,
@@ -80,7 +83,8 @@ public interface WidgetTypeInfoRepository extends JpaRepository<WidgetTypeInfoEn
                             "OR :searchText ILIKE currentTag || ' %' " +
                             "OR :searchText ILIKE '% ' || currentTag " +
                             "OR :searchText ILIKE '% ' || currentTag || ' %')" +
-                    "))))",
+                    ")))) " +
+                    "ORDER BY CASE WHEN :scadaFirst then wti.scada END DESC",
             countQuery = "SELECT count(*) FROM widget_type_info_view wti WHERE wti.tenant_id IN (:tenantId, :nullTenantId) " +
                     "AND ((:deprecatedFilterEnabled) IS FALSE OR wti.deprecated = :deprecatedFilter) " +
                     "AND ((:widgetTypesEmpty) IS TRUE OR wti.widget_type IN (:widgetTypes)) " +
@@ -104,6 +108,7 @@ public interface WidgetTypeInfoRepository extends JpaRepository<WidgetTypeInfoEn
                                                                   @Param("deprecatedFilter") boolean deprecatedFilter,
                                                                   @Param("widgetTypesEmpty") boolean widgetTypesEmpty,
                                                                   @Param("widgetTypes") List<String> widgetTypes,
+                                                                  @Param("scadaFirst") boolean scadaFirst,
                                                                   Pageable pageable);
 
     @Query(nativeQuery = true,
@@ -120,7 +125,8 @@ public interface WidgetTypeInfoRepository extends JpaRepository<WidgetTypeInfoEn
                             "OR :searchText ILIKE currentTag || ' %' " +
                             "OR :searchText ILIKE '% ' || currentTag " +
                             "OR :searchText ILIKE '% ' || currentTag || ' %')" +
-                    "))))",
+                    ")))) " +
+                    "ORDER BY CASE WHEN :scadaFirst then wti.scada END DESC",
             countQuery = "SELECT count(*) FROM widget_type_info_view wti WHERE wti.tenant_id = :tenantId " +
                     "AND ((:deprecatedFilterEnabled) IS FALSE OR wti.deprecated = :deprecatedFilter) " +
                     "AND ((:widgetTypesEmpty) IS TRUE OR wti.widget_type IN (:widgetTypes)) " +
@@ -143,6 +149,7 @@ public interface WidgetTypeInfoRepository extends JpaRepository<WidgetTypeInfoEn
                                                                @Param("deprecatedFilter") boolean deprecatedFilter,
                                                                @Param("widgetTypesEmpty") boolean widgetTypesEmpty,
                                                                @Param("widgetTypes") List<String> widgetTypes,
+                                                               @Param("scadaFirst") boolean scadaFirst,
                                                                Pageable pageable);
 
     @Query("SELECT wti FROM WidgetTypeInfoEntity wti, WidgetsBundleWidgetEntity wbw " +
@@ -194,4 +201,28 @@ public interface WidgetTypeInfoRepository extends JpaRepository<WidgetTypeInfoEn
                                                                      @Param("widgetTypes") List<String> widgetTypes,
                                                                      Pageable pageable);
 
+
+    @Query(nativeQuery = true,
+            value = "SELECT * FROM widget_type_info_view wti WHERE wti.id IN " +
+                    "(select id from widget_type where tenant_id = :tenantId " +
+                    "and (image = :imageLink or descriptor ILIKE CONCAT('%\"', :imageLink, '\"%')) limit :limit)"
+    )
+    List<WidgetTypeInfoEntity> findByTenantAndImageUrl(@Param("tenantId") UUID tenantId, @Param("imageLink") String imageLink, @Param("limit") int limit);
+
+    @Query(nativeQuery = true,
+            value = "SELECT * FROM widget_type_info_view wti WHERE wti.id IN " +
+                    "(select id from widget_type where image = :imageLink or descriptor ILIKE CONCAT('%', :imageLink, '%') limit :limit)"
+    )
+    List<WidgetTypeInfoEntity> findByImageUrl(@Param("imageLink") String imageLink, @Param("limit") int limit);
+
+    @Query("SELECT new org.thingsboard.server.common.data.EntityInfo(w.id, 'WIDGET_TYPE', w.name) " +
+            "FROM WidgetTypeEntity w WHERE w.tenantId = :tenantId AND ilike(cast(w.descriptor as string), CONCAT('%', :link, '%')) = true")
+    List<EntityInfo> findWidgetTypeInfosByTenantIdAndResourceLink(@Param("tenantId") UUID tenantId,
+                                                                  @Param("link") String link,
+                                                                  Pageable pageable);
+
+    @Query("SELECT new org.thingsboard.server.common.data.EntityInfo(w.id, 'WIDGET_TYPE', w.name) " +
+            "FROM WidgetTypeEntity w WHERE ilike(cast(w.descriptor as string), CONCAT('%', :link, '%')) = true")
+    List<EntityInfo> findWidgetTypeInfosByResourceLink(@Param("link") String link,
+                                                       Pageable pageable);
 }

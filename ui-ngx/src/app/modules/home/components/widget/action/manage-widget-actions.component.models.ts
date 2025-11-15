@@ -1,5 +1,5 @@
 ///
-/// Copyright © 2016-2023 The Thingsboard Authors
+/// Copyright © 2016-2025 The Thingsboard Authors
 ///
 /// Licensed under the Apache License, Version 2.0 (the "License");
 /// you may not use this file except in compliance with the License.
@@ -15,26 +15,23 @@
 ///
 
 import {
-  CustomActionDescriptor,
+  CellClickColumnInfo,
   WidgetActionDescriptor,
   WidgetActionSource,
   widgetActionTypeTranslationMap
 } from '@app/shared/models/widget.models';
 import { CollectionViewer, DataSource } from '@angular/cdk/collections';
-import { BehaviorSubject, Observable, of, ReplaySubject } from 'rxjs';
+import { BehaviorSubject, Observable, of, ReplaySubject, shareReplay } from 'rxjs';
 import { emptyPageData, PageData } from '@shared/models/page/page-data';
 import { TranslateService } from '@ngx-translate/core';
 import { PageLink } from '@shared/models/page/page-link';
-import { catchError, map, publishReplay, refCount } from 'rxjs/operators';
+import { catchError, map } from 'rxjs/operators';
 import { UtilsService } from '@core/services/utils.service';
-import { deepClone, isDefined, isUndefined } from '@core/utils';
-
-import customSampleJs from '!raw-loader!./custom-sample-js.raw';
-import customSampleCss from '!raw-loader!./custom-sample-css.raw';
-import customSampleHtml from '!raw-loader!./custom-sample-html.raw';
+import { deepClone } from '@core/utils';
 
 export interface WidgetActionCallbacks {
   fetchDashboardStates: (query: string) => Array<string>;
+  fetchCellClickColumns: () => Array<CellClickColumnInfo>;
 }
 
 export interface WidgetActionsData {
@@ -48,32 +45,13 @@ export interface WidgetActionDescriptorInfo extends WidgetActionDescriptor {
   typeName?: string;
 }
 
-export function toWidgetActionDescriptor(action: WidgetActionDescriptorInfo): WidgetActionDescriptor {
+export const toWidgetActionDescriptor = (action: WidgetActionDescriptorInfo): WidgetActionDescriptor => {
   const copy = deepClone(action);
   delete copy.actionSourceId;
   delete copy.actionSourceName;
   delete copy.typeName;
   return copy;
-}
-
-export function toCustomAction(action: WidgetActionDescriptorInfo): CustomActionDescriptor {
-  let result: CustomActionDescriptor;
-  if (!action || (isUndefined(action.customFunction) && isUndefined(action.customHtml) && isUndefined(action.customCss))) {
-    result = {
-      customHtml: customSampleHtml,
-      customCss: customSampleCss,
-      customFunction: customSampleJs
-    };
-  } else {
-    result = {
-      customHtml: action.customHtml,
-      customCss: action.customCss,
-      customFunction: action.customFunction
-    };
-  }
-  result.customResources = action && isDefined(action.customResources) ? deepClone(action.customResources) : [];
-  return result;
-}
+};
 
 export class WidgetActionsDatasource implements DataSource<WidgetActionDescriptorInfo> {
 
@@ -90,11 +68,11 @@ export class WidgetActionsDatasource implements DataSource<WidgetActionDescripto
   constructor(private translate: TranslateService,
               private utils: UtilsService) {}
 
-  connect(collectionViewer: CollectionViewer): Observable<WidgetActionDescriptorInfo[] | ReadonlyArray<WidgetActionDescriptorInfo>> {
+  connect(_collectionViewer: CollectionViewer): Observable<WidgetActionDescriptorInfo[] | ReadonlyArray<WidgetActionDescriptorInfo>> {
     return this.actionsSubject.asObservable();
   }
 
-  disconnect(collectionViewer: CollectionViewer): void {
+  disconnect(_collectionViewer: CollectionViewer): void {
     this.actionsSubject.complete();
     this.pageDataSubject.complete();
   }
@@ -137,8 +115,7 @@ export class WidgetActionsDatasource implements DataSource<WidgetActionDescripto
         });
       }
       this.allActions = of(actions).pipe(
-        publishReplay(1),
-        refCount()
+        shareReplay(1)
       );
     }
     return this.allActions;

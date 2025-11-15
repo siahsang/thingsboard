@@ -1,5 +1,5 @@
 ///
-/// Copyright © 2016-2023 The Thingsboard Authors
+/// Copyright © 2016-2025 The Thingsboard Authors
 ///
 /// Licensed under the Apache License, Version 2.0 (the "License");
 /// you may not use this file except in compliance with the License.
@@ -17,6 +17,7 @@
 import {
   ChangeDetectorRef,
   Component,
+  DestroyRef,
   forwardRef,
   Input,
   OnChanges,
@@ -37,13 +38,16 @@ import {
 } from '@angular/forms';
 import { MatDialog } from '@angular/material/dialog';
 import { WidgetConfigComponent } from '@home/components/widget/widget-config.component';
-import { DataKey, DatasourceType, JsonSettingsSchema, widgetType } from '@shared/models/widget.models';
+import { DataKey, DatasourceType, widgetType } from '@shared/models/widget.models';
 import { dataKeyRowValidator, dataKeyValid } from '@home/components/widget/config/basic/common/data-key-row.component';
 import { CdkDragDrop } from '@angular/cdk/drag-drop';
 import { DataKeyType } from '@shared/models/telemetry/telemetry.models';
 import { UtilsService } from '@core/services/utils.service';
-import { DataKeysCallbacks } from '@home/components/widget/config/data-keys.component.models';
+import { DataKeysCallbacks, DataKeySettingsFunction } from '@home/components/widget/lib/settings/common/key/data-keys.component.models';
 import { coerceBoolean } from '@shared/decorators/coercion';
+import { TimeSeriesChartYAxisId } from '@home/components/widget/lib/chart/time-series-chart.models';
+import { FormProperty } from '@shared/models/dynamic-form.models';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 
 @Component({
   selector: 'tb-data-keys-panel',
@@ -97,6 +101,10 @@ export class DataKeysPanelComponent implements ControlValueAccessor, OnInit, OnC
 
   @Input()
   @coerceBoolean()
+  hidePanel = false;
+
+  @Input()
+  @coerceBoolean()
   hideDataKeyColor = false;
 
   @Input()
@@ -119,6 +127,17 @@ export class DataKeysPanelComponent implements ControlValueAccessor, OnInit, OnC
   @coerceBoolean()
   hideSourceSelection = false;
 
+  @Input()
+  @coerceBoolean()
+  timeSeriesChart = false;
+
+  @Input()
+  @coerceBoolean()
+  showTimeSeriesType = false;
+
+  @Input()
+  yAxisIds: TimeSeriesChartYAxisId[];
+
   dataKeyType: DataKeyType;
 
   keysListFormGroup: UntypedFormGroup;
@@ -138,8 +157,12 @@ export class DataKeysPanelComponent implements ControlValueAccessor, OnInit, OnC
       this.widgetConfigComponent.modelValue?.typeParameters?.hasAdditionalLatestDataKeys;
   }
 
-  get datakeySettingsSchema(): JsonSettingsSchema {
-    return this.widgetConfigComponent.modelValue?.dataKeySettingsSchema;
+  get dataKeySettingsForm(): FormProperty[] {
+    return this.widgetConfigComponent.modelValue?.dataKeySettingsForm;
+  }
+
+  get dataKeySettingsFunction(): DataKeySettingsFunction {
+    return this.widgetConfigComponent.modelValue?.dataKeySettingsFunction;
   }
 
   get dragEnabled(): boolean {
@@ -149,7 +172,7 @@ export class DataKeysPanelComponent implements ControlValueAccessor, OnInit, OnC
   get noKeys(): boolean {
     let keys: DataKey[] = this.keysListFormGroup.get('keys').value;
     if (this.hasAdditionalLatestDataKeys) {
-      keys = keys.filter(k => !(k as any).latest);
+      keys = keys.filter(k => !(k as any)?.latest);
     }
     return keys.length === 0;
   }
@@ -160,14 +183,17 @@ export class DataKeysPanelComponent implements ControlValueAccessor, OnInit, OnC
               private dialog: MatDialog,
               private cd: ChangeDetectorRef,
               private utils: UtilsService,
-              private widgetConfigComponent: WidgetConfigComponent) {
+              private widgetConfigComponent: WidgetConfigComponent,
+              private destroyRef: DestroyRef) {
   }
 
   ngOnInit() {
     this.keysListFormGroup = this.fb.group({
       keys: [this.fb.array([]), []]
     });
-    this.keysListFormGroup.valueChanges.subscribe(
+    this.keysListFormGroup.valueChanges.pipe(
+      takeUntilDestroyed(this.destroyRef)
+    ).subscribe(
       () => {
         let keys: DataKey[] = this.keysListFormGroup.get('keys').value;
         if (keys) {
@@ -256,7 +282,8 @@ export class DataKeysPanelComponent implements ControlValueAccessor, OnInit, OnC
   }
 
   addKey() {
-    const dataKey = this.callbacks.generateDataKey('', null, this.datakeySettingsSchema);
+    const dataKey = this.callbacks.generateDataKey('', null, this.dataKeySettingsForm,
+      false, this.dataKeySettingsFunction);
     dataKey.label = '';
     dataKey.decimals = 0;
     if (this.hasAdditionalLatestDataKeys) {

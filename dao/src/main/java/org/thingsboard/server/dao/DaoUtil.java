@@ -1,5 +1,5 @@
 /**
- * Copyright © 2016-2023 The Thingsboard Authors
+ * Copyright © 2016-2025 The Thingsboard Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,7 +18,9 @@ package org.thingsboard.server.dao;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Slice;
 import org.springframework.util.CollectionUtils;
+import org.thingsboard.server.common.data.EntityInfo;
 import org.thingsboard.server.common.data.EntitySubtype;
 import org.thingsboard.server.common.data.EntityType;
 import org.thingsboard.server.common.data.id.TenantId;
@@ -29,8 +31,10 @@ import org.thingsboard.server.common.data.page.SortOrder;
 import org.thingsboard.server.dao.model.ToData;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -39,47 +43,71 @@ import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
-public abstract class DaoUtil {
+public final class DaoUtil {
 
-    private DaoUtil() {
-    }
+    private DaoUtil() {}
 
     public static <T> PageData<T> toPageData(Page<? extends ToData<T>> page) {
         List<T> data = convertDataList(page.getContent());
         return new PageData<>(data, page.getTotalPages(), page.getTotalElements(), page.hasNext());
     }
 
-    public static <T> PageData<T> pageToPageData(Page<T> page) {
-        return new PageData<>(page.getContent(), page.getTotalPages(), page.getTotalElements(), page.hasNext());
+    public static <T> PageData<T> pageToPageData(Slice<T> slice) {
+        int totalPages;
+        long totalElements;
+        if (slice instanceof Page<T> page) {
+            totalPages = page.getTotalPages();
+            totalElements = page.getTotalElements();
+        } else {
+            totalPages = 0;
+            totalElements = 0;
+        }
+        return new PageData<>(slice.getContent(), totalPages, totalElements, slice.hasNext());
     }
 
     public static Pageable toPageable(PageLink pageLink) {
-        return toPageable(pageLink, Collections.emptyMap());
+        return toPageable(pageLink, true);
+    }
+
+    public static Pageable toPageable(PageLink pageLink, boolean addDefaultSorting) {
+        return toPageable(pageLink, Collections.emptyMap(), addDefaultSorting);
     }
 
     public static Pageable toPageable(PageLink pageLink, Map<String, String> columnMap) {
-        return PageRequest.of(pageLink.getPage(), pageLink.getPageSize(), pageLink.toSort(pageLink.getSortOrder(), columnMap));
+        return toPageable(pageLink, columnMap, true);
+    }
+
+    public static Pageable toPageable(PageLink pageLink, Map<String, String> columnMap, boolean addDefaultSorting) {
+        return PageRequest.of(pageLink.getPage(), pageLink.getPageSize(), pageLink.toSort(pageLink.getSortOrder(), columnMap, addDefaultSorting));
     }
 
     public static Pageable toPageable(PageLink pageLink, List<SortOrder> sortOrders) {
         return toPageable(pageLink, Collections.emptyMap(), sortOrders);
     }
 
-    public static Pageable toPageable(PageLink pageLink, Map<String, String> columnMap, List<SortOrder> sortOrders) {
-        return PageRequest.of(pageLink.getPage(), pageLink.getPageSize(), pageLink.toSort(sortOrders, columnMap));
+    public static Pageable toPageable(PageLink pageLink, String... sortColumns) {
+        return toPageable(pageLink, Collections.emptyMap(), Arrays.stream(sortColumns).map(column -> new SortOrder(column, SortOrder.Direction.ASC)).toList(), false);
     }
 
-    public static <T> List<T> convertDataList(Collection<? extends ToData<T>> toDataList) {
-        List<T> list = Collections.emptyList();
-        if (toDataList != null && !toDataList.isEmpty()) {
-            list = new ArrayList<>();
-            for (ToData<T> object : toDataList) {
-                if (object != null) {
-                    list.add(object.toData());
-                }
+    public static Pageable toPageable(PageLink pageLink, Map<String, String> columnMap, List<SortOrder> sortOrders) {
+        return toPageable(pageLink, columnMap, sortOrders, true);
+    }
+
+    public static Pageable toPageable(PageLink pageLink, Map<String, String> columnMap, List<SortOrder> sortOrders, boolean addDefaultSorting) {
+        return PageRequest.of(pageLink.getPage(), pageLink.getPageSize(), pageLink.toSort(sortOrders, columnMap, addDefaultSorting));
+    }
+
+    public static <T> List<T> convertDataList(Collection<? extends ToData<T>> toConvert) {
+        if (CollectionUtils.isEmpty(toConvert)) {
+            return Collections.emptyList();
+        }
+        List<T> converted = new ArrayList<>(toConvert.size());
+        for (ToData<T> object : toConvert) {
+            if (object != null) {
+                converted.add(object.toData());
             }
         }
-        return list;
+        return converted;
     }
 
     public static <T> T getData(ToData<T> data) {
@@ -152,15 +180,26 @@ public abstract class DaoUtil {
         }
     }
 
-    public static List<EntitySubtype> convertTenantEntityTypesToDto(UUID tenantId, EntityType entityType, List<String> types) {
+    public static List<EntitySubtype> convertTenantEntityTypesToDto(UUID tenantUUID, EntityType entityType, List<String> types) {
         if (CollectionUtils.isEmpty(types)) {
             return Collections.emptyList();
         }
-
-        List<EntitySubtype> list = new ArrayList<>(types.size());
-        for (String type : types) {
-            list.add(new EntitySubtype(TenantId.fromUUID(tenantId), entityType, type));
-        }
-        return list;
+        TenantId tenantId = TenantId.fromUUID(tenantUUID);
+        return types.stream()
+                .map(type -> new EntitySubtype(tenantId, entityType, type))
+                .collect(Collectors.toList());
     }
+
+    @Deprecated // used only in deprecated DAO api
+    public static List<EntitySubtype> convertTenantEntityInfosToDto(UUID tenantUUID, EntityType entityType, List<EntityInfo> entityInfos) {
+        if (CollectionUtils.isEmpty(entityInfos)) {
+            return Collections.emptyList();
+        }
+        var tenantId = TenantId.fromUUID(tenantUUID);
+        return entityInfos.stream()
+                .map(info -> new EntitySubtype(tenantId, entityType, info.getName()))
+                .sorted(Comparator.comparing(EntitySubtype::getType))
+                .collect(Collectors.toList());
+    }
+
 }

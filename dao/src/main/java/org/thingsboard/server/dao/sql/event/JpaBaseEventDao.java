@@ -1,5 +1,5 @@
 /**
- * Copyright © 2016-2023 The Thingsboard Authors
+ * Copyright © 2016-2025 The Thingsboard Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,11 +17,14 @@ package org.thingsboard.server.dao.sql.event;
 
 import com.datastax.oss.driver.api.core.uuid.Uuids;
 import com.google.common.util.concurrent.ListenableFuture;
+import jakarta.annotation.PostConstruct;
+import jakarta.annotation.PreDestroy;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 import org.thingsboard.server.common.data.StringUtils;
+import org.thingsboard.server.common.data.event.CalculatedFieldDebugEventFilter;
 import org.thingsboard.server.common.data.event.ErrorEventFilter;
 import org.thingsboard.server.common.data.event.Event;
 import org.thingsboard.server.common.data.event.EventFilter;
@@ -36,6 +39,7 @@ import org.thingsboard.server.common.data.page.PageData;
 import org.thingsboard.server.common.data.page.TimePageLink;
 import org.thingsboard.server.common.stats.StatsFactory;
 import org.thingsboard.server.dao.DaoUtil;
+import org.thingsboard.server.dao.config.DefaultDataSource;
 import org.thingsboard.server.dao.event.EventDao;
 import org.thingsboard.server.dao.model.sql.EventEntity;
 import org.thingsboard.server.dao.sql.ScheduledLogExecutorComponent;
@@ -44,8 +48,6 @@ import org.thingsboard.server.dao.sql.TbSqlBlockingQueueWrapper;
 import org.thingsboard.server.dao.sqlts.insert.sql.SqlPartitioningRepository;
 import org.thingsboard.server.dao.util.SqlDao;
 
-import javax.annotation.PostConstruct;
-import javax.annotation.PreDestroy;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
@@ -54,46 +56,24 @@ import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Function;
 
-/**
- * Created by Valerii Sosliuk on 5/3/2017.
- */
-@Slf4j
+@DefaultDataSource
 @Component
 @SqlDao
+@RequiredArgsConstructor
+@Slf4j
 public class JpaBaseEventDao implements EventDao {
 
-    @Autowired
-    private EventPartitionConfiguration partitionConfiguration;
-
-    @Autowired
-    private SqlPartitioningRepository partitioningRepository;
-
-    @Autowired
-    private LifecycleEventRepository lcEventRepository;
-
-    @Autowired
-    private StatisticsEventRepository statsEventRepository;
-
-    @Autowired
-    private ErrorEventRepository errorEventRepository;
-
-    @Autowired
-    private EventInsertRepository eventInsertRepository;
-
-    @Autowired
-    private EventCleanupRepository eventCleanupRepository;
-
-    @Autowired
-    private RuleNodeDebugEventRepository ruleNodeDebugEventRepository;
-
-    @Autowired
-    private RuleChainDebugEventRepository ruleChainDebugEventRepository;
-
-    @Autowired
-    ScheduledLogExecutorComponent logExecutor;
-
-    @Autowired
-    private StatsFactory statsFactory;
+    private final EventPartitionConfiguration partitionConfiguration;
+    private final SqlPartitioningRepository partitioningRepository;
+    private final LifecycleEventRepository lcEventRepository;
+    private final StatisticsEventRepository statsEventRepository;
+    private final ErrorEventRepository errorEventRepository;
+    private final EventInsertRepository eventInsertRepository;
+    private final RuleNodeDebugEventRepository ruleNodeDebugEventRepository;
+    private final RuleChainDebugEventRepository ruleChainDebugEventRepository;
+    private final ScheduledLogExecutorComponent logExecutor;
+    private final StatsFactory statsFactory;
+    private final CalculatedFieldDebugEventRepository calculatedFieldDebugEventRepository;
 
     @Value("${sql.events.batch_size:10000}")
     private int batchSize;
@@ -110,7 +90,7 @@ public class JpaBaseEventDao implements EventDao {
     @Value("${sql.batch_sort:true}")
     private boolean batchSortEnabled;
 
-    private TbSqlBlockingQueueWrapper<Event> queue;
+    private TbSqlBlockingQueueWrapper<Event, Void> queue;
 
     private final Map<EventType, EventRepository<?, ?>> repositories = new ConcurrentHashMap<>();
 
@@ -132,6 +112,7 @@ public class JpaBaseEventDao implements EventDao {
         repositories.put(EventType.ERROR, errorEventRepository);
         repositories.put(EventType.DEBUG_RULE_NODE, ruleNodeDebugEventRepository);
         repositories.put(EventType.DEBUG_RULE_CHAIN, ruleChainDebugEventRepository);
+        repositories.put(EventType.DEBUG_CALCULATED_FIELD, calculatedFieldDebugEventRepository);
     }
 
     @PreDestroy
@@ -180,6 +161,8 @@ public class JpaBaseEventDao implements EventDao {
                     return findEventByFilter(tenantId, entityId, (ErrorEventFilter) eventFilter, pageLink);
                 case STATS:
                     return findEventByFilter(tenantId, entityId, (StatisticsEventFilter) eventFilter, pageLink);
+                case DEBUG_CALCULATED_FIELD:
+                    return findEventByFilter(tenantId, entityId, (CalculatedFieldDebugEventFilter) eventFilter, pageLink);
                 default:
                     throw new RuntimeException("Not supported event type: " + eventFilter.getEventType());
             }
@@ -215,17 +198,15 @@ public class JpaBaseEventDao implements EventDao {
                 case STATS:
                     removeEventsByFilter(tenantId, entityId, (StatisticsEventFilter) eventFilter, startTime, endTime);
                     break;
+                case DEBUG_CALCULATED_FIELD:
+                    removeEventsByFilter(tenantId, entityId, (CalculatedFieldDebugEventFilter) eventFilter, startTime, endTime);
+                    break;
                 default:
                     throw new RuntimeException("Not supported event type: " + eventFilter.getEventType());
             }
         } else {
             getEventRepository(eventFilter.getEventType()).removeEvents(tenantId, entityId, startTime, endTime);
         }
-    }
-
-    @Override
-    public void migrateEvents(long regularEventTs, long debugEventTs) {
-        eventCleanupRepository.migrateEvents(regularEventTs, debugEventTs);
     }
 
     private PageData<? extends Event> findEventByFilter(UUID tenantId, UUID entityId, RuleChainDebugEventFilter eventFilter, TimePageLink pageLink) {
@@ -313,6 +294,28 @@ public class JpaBaseEventDao implements EventDao {
         );
     }
 
+    private PageData<? extends Event> findEventByFilter(UUID tenantId, UUID entityId, CalculatedFieldDebugEventFilter eventFilter, TimePageLink pageLink) {
+        parseUUID(eventFilter.getEntityId(), "Entity Id");
+        parseUUID(eventFilter.getMsgId(), "Message Id");
+        return DaoUtil.toPageData(
+                calculatedFieldDebugEventRepository.findEvents(
+                        tenantId,
+                        entityId,
+                        pageLink.getStartTime(),
+                        pageLink.getEndTime(),
+                        eventFilter.getServer(),
+                        entityId,
+                        eventFilter.getEntityId(),
+                        eventFilter.getEntityType(),
+                        eventFilter.getMsgId(),
+                        eventFilter.getMsgType(),
+                        eventFilter.getArguments(),
+                        eventFilter.getResult(),
+                        eventFilter.isError(),
+                        eventFilter.getErrorStr(),
+                        DaoUtil.toPageable(pageLink, EventEntity.eventColumnMap)));
+    }
+
     private void removeEventsByFilter(UUID tenantId, UUID entityId, RuleChainDebugEventFilter eventFilter, Long startTime, Long endTime) {
         ruleChainDebugEventRepository.removeEvents(
                 tenantId,
@@ -387,9 +390,34 @@ public class JpaBaseEventDao implements EventDao {
         );
     }
 
+    private void removeEventsByFilter(UUID tenantId, UUID entityId, CalculatedFieldDebugEventFilter eventFilter, Long startTime, Long endTime) {
+        parseUUID(eventFilter.getEntityId(), "Entity Id");
+        parseUUID(eventFilter.getMsgId(), "Message Id");
+        calculatedFieldDebugEventRepository.removeEvents(
+                tenantId,
+                entityId,
+                startTime,
+                endTime,
+                eventFilter.getServer(),
+                entityId,
+                eventFilter.getEntityId(),
+                eventFilter.getEntityType(),
+                eventFilter.getMsgId(),
+                eventFilter.getMsgType(),
+                eventFilter.getArguments(),
+                eventFilter.getResult(),
+                eventFilter.isError(),
+                eventFilter.getErrorStr());
+    }
+
     @Override
     public List<? extends Event> findLatestEvents(UUID tenantId, UUID entityId, EventType eventType, int limit) {
         return DaoUtil.convertDataList(getEventRepository(eventType).findLatestEvents(tenantId, entityId, limit));
+    }
+
+    @Override
+    public Event findLatestDebugRuleNodeInEvent(UUID tenantId, UUID entityId) {
+        return DaoUtil.getData(ruleNodeDebugEventRepository.findLatestDebugRuleNodeInEvent(tenantId, entityId));
     }
 
     @Override
@@ -397,7 +425,7 @@ public class JpaBaseEventDao implements EventDao {
         if (regularEventExpTs > 0) {
             log.info("Going to cleanup regular events with exp time: {}", regularEventExpTs);
             if (cleanupDb) {
-                eventCleanupRepository.cleanupEvents(regularEventExpTs, false);
+                cleanupEvents(regularEventExpTs, false);
             } else {
                 cleanupPartitionsCache(regularEventExpTs, false);
             }
@@ -405,11 +433,23 @@ public class JpaBaseEventDao implements EventDao {
         if (debugEventExpTs > 0) {
             log.info("Going to cleanup debug events with exp time: {}", debugEventExpTs);
             if (cleanupDb) {
-                eventCleanupRepository.cleanupEvents(debugEventExpTs, true);
+                cleanupEvents(debugEventExpTs, true);
             } else {
                 cleanupPartitionsCache(debugEventExpTs, true);
             }
         }
+    }
+
+    private void cleanupEvents(long eventExpTime, boolean debug) {
+        for (EventType eventType : EventType.values()) {
+            if (eventType.isDebug() == debug) {
+                cleanupPartitions(eventType, eventExpTime);
+            }
+        }
+    }
+
+    private void cleanupPartitions(EventType eventType, long eventExpTime) {
+        partitioningRepository.dropPartitionsBefore(eventType.getTable(), eventExpTime, partitionConfiguration.getPartitionSizeInMs(eventType));
     }
 
     private void cleanupPartitionsCache(long expTime, boolean isDebug) {

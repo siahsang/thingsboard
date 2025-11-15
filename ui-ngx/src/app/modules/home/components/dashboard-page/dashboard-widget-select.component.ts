@@ -1,5 +1,5 @@
 ///
-/// Copyright © 2016-2023 The Thingsboard Authors
+/// Copyright © 2016-2025 The Thingsboard Authors
 ///
 /// Licensed under the Apache License, Version 2.0 (the "License");
 /// you may not use this file except in compliance with the License.
@@ -28,11 +28,12 @@ import {
 } from '@shared/models/widget.models';
 import { debounceTime, distinctUntilChanged, map, skip } from 'rxjs/operators';
 import { BehaviorSubject, combineLatest } from 'rxjs';
-import { DomSanitizer, SafeUrl } from '@angular/platform-browser';
-import { isDefinedAndNotNull, isObject } from '@core/utils';
+import { isObject } from '@core/utils';
 import { PageLink } from '@shared/models/page/page-link';
 import { Direction } from '@shared/models/page/sort-order';
-import { GridEntitiesFetchFunction, ScrollGridColumns } from '@home/models/datasource/scroll-grid-datasource';
+import { GridEntitiesFetchFunction, ScrollGridColumns } from '@shared/components/grid/scroll-grid-datasource';
+import { ItemSizeStrategy } from '@shared/components/grid/scroll-grid.component';
+import { coerceBoolean } from '@shared/decorators/coercion';
 
 type selectWidgetMode = 'bundles' | 'allWidgets';
 
@@ -68,6 +69,10 @@ export class DashboardWidgetSelectComponent implements OnInit {
 
   @Input()
   aliasController: IAliasController;
+
+  @Input()
+  @coerceBoolean()
+  scadaFirst = false;
 
   @Input()
   set search(search: string) {
@@ -149,6 +154,11 @@ export class DashboardWidgetSelectComponent implements OnInit {
     }
   };
 
+  gridWidgetsItemSizeStrategy: ItemSizeStrategy = {
+    defaultItemSize: 160,
+    itemSizeFunction: itemWidth => (itemWidth - 24) * 0.8 + 76
+  };
+
   widgetBundlesFetchFunction: GridEntitiesFetchFunction<WidgetsBundle, string>;
   allWidgetsFetchFunction: GridEntitiesFetchFunction<WidgetTypeInfo, WidgetsFilter>;
   widgetsFetchFunction: GridEntitiesFetchFunction<WidgetTypeInfo, BundleWidgetsFilter>;
@@ -158,15 +168,14 @@ export class DashboardWidgetSelectComponent implements OnInit {
   widgetsFilter: BundleWidgetsFilter = {search: '', filter: null, deprecatedFilter: DeprecatedFilter.ACTUAL, widgetsBundleId: null};
 
   constructor(private widgetsService: WidgetService,
-              private cd: ChangeDetectorRef,
-              private sanitizer: DomSanitizer) {
+              private cd: ChangeDetectorRef) {
 
     this.widgetBundlesFetchFunction = (pageSize, page, filter) => {
       const pageLink = new PageLink(pageSize, page, filter, {
         property: 'title',
         direction: Direction.ASC
       });
-      return this.widgetsService.getWidgetBundles(pageLink, true);
+      return this.widgetsService.getWidgetBundles(pageLink, true, false, this.scadaFirst);
     };
 
     this.allWidgetsFetchFunction = (pageSize, page, filter) => {
@@ -174,7 +183,8 @@ export class DashboardWidgetSelectComponent implements OnInit {
         property: 'name',
         direction: Direction.ASC
       });
-      return this.widgetsService.getWidgetTypes(pageLink, false, true, filter.deprecatedFilter, filter.filter);
+      return this.widgetsService.getWidgetTypes(pageLink, false, true, this.scadaFirst,
+        filter.deprecatedFilter, filter.filter);
     };
 
     this.widgetsFetchFunction = (pageSize, page, filter) => {
@@ -239,13 +249,6 @@ export class DashboardWidgetSelectComponent implements OnInit {
       bundle.description?.toLowerCase().includes(this.search.toLowerCase())) {
       this.searchSubject.next('');
     }
-  }
-
-  getPreviewImage(imageUrl: string | null): SafeUrl | string {
-    if (isDefinedAndNotNull(imageUrl)) {
-      return this.sanitizer.bypassSecurityTrustUrl(imageUrl);
-    }
-    return '/assets/widget-preview-empty.svg';
   }
 
   isObject(value: any): boolean {

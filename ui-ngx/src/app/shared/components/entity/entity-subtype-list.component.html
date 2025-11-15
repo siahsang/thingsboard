@@ -1,6 +1,6 @@
 <!--
 
-    Copyright © 2016-2023 The Thingsboard Authors
+    Copyright © 2016-2025 The Thingsboard Authors
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -22,6 +22,7 @@
   <mat-chip-grid #chipList formControlName="entitySubtypeList">
     <mat-chip-row
       *ngFor="let entitySubtype of entitySubtypeList"
+      class="tb-chip-row-ellipsis"
       [removable]="!disabled"
       (removed)="remove(entitySubtype)">
       {{customTranslate(entitySubtype)}}
@@ -31,9 +32,9 @@
            style="max-width: 200px;"
            #entitySubtypeInput
            (focusin)="onFocus()"
+           (blur)="addOnBlur($event)"
            formControlName="entitySubtype"
            matAutocompleteOrigin
-           matChipInputAddOnBlur
            #origin="matAutocompleteOrigin"
            [matAutocompleteConnectedTo]="origin"
            [matAutocomplete]="entitySubtypeAutocomplete"
@@ -46,7 +47,7 @@
                     (optionSelected)="selected($event)"
                     [displayWith]="displayEntitySubtypeFn">
     <mat-option *ngFor="let entitySubtype of filteredEntitySubtypeList | async" [value]="entitySubtype">
-      <span [innerHTML]="entitySubtype | highlight:searchText"></span>
+      <span [innerHTML]="entitySubtype | customTranslate | highlight:searchText"></span>
     </mat-option>
   </mat-autocomplete>
   <div matSuffix>

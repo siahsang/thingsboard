@@ -1,5 +1,5 @@
 /**
- * Copyright © 2016-2023 The Thingsboard Authors
+ * Copyright © 2016-2025 The Thingsboard Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,17 +16,19 @@
 package org.thingsboard.server.dao.model;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import jakarta.persistence.Column;
+import jakarta.persistence.Id;
+import jakarta.persistence.MappedSuperclass;
 import lombok.Data;
 import org.apache.commons.lang3.StringUtils;
 import org.thingsboard.common.util.JacksonUtil;
+import org.thingsboard.server.common.data.BaseData;
 import org.thingsboard.server.common.data.id.EntityId;
 import org.thingsboard.server.common.data.id.TenantId;
 import org.thingsboard.server.common.data.id.UUIDBased;
 import org.thingsboard.server.dao.DaoUtil;
+import org.thingsboard.server.dao.sql.IdGenerator.GeneratedId;
 
-import javax.persistence.Column;
-import javax.persistence.Id;
-import javax.persistence.MappedSuperclass;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
@@ -43,10 +45,24 @@ public abstract class BaseSqlEntity<D> implements BaseEntity<D> {
 
     @Id
     @Column(name = ModelConstants.ID_PROPERTY, columnDefinition = "uuid")
+    @GeneratedId
     protected UUID id;
 
     @Column(name = ModelConstants.CREATED_TIME_PROPERTY, updatable = false)
     protected long createdTime;
+
+    public BaseSqlEntity() {
+    }
+
+    public BaseSqlEntity(BaseData<?> domain) {
+        this.id = domain.getUuidId();
+        this.createdTime = domain.getCreatedTime();
+    }
+
+    public BaseSqlEntity(BaseSqlEntity<?> entity) {
+        this.id = entity.id;
+        this.createdTime = entity.createdTime;
+    }
 
     @Override
     public UUID getUuid() {

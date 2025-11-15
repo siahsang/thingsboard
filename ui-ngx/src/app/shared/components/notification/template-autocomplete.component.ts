@@ -1,5 +1,5 @@
 ///
-/// Copyright © 2016-2023 The Thingsboard Authors
+/// Copyright © 2016-2025 The Thingsboard Authors
 ///
 /// Licensed under the Apache License, Version 2.0 (the "License");
 /// you may not use this file except in compliance with the License.
@@ -28,7 +28,7 @@ import { PageLink } from '@shared/models/page/page-link';
 import { Direction } from '@shared/models/page/sort-order';
 import { emptyPageData } from '@shared/models/page/page-data';
 import {
-  NotificationDeliveryMethodTranslateMap,
+  NotificationDeliveryMethodInfoMap,
   NotificationTemplate,
   NotificationType
 } from '@shared/models/notification.models';
@@ -55,7 +55,7 @@ import { coerceBoolean } from '@shared/decorators/coercion';
 })
 export class TemplateAutocompleteComponent implements ControlValueAccessor, OnInit {
 
-  notificationDeliveryMethodTranslateMap = NotificationDeliveryMethodTranslateMap;
+  notificationDeliveryMethodInfoMap = NotificationDeliveryMethodInfoMap;
   selectTemplateFormGroup: FormGroup;
 
   @Input()
@@ -212,13 +212,17 @@ export class TemplateAutocompleteComponent implements ControlValueAccessor, OnIn
   }
 
   createTemplate($event: Event, button: MatButton) {
-    if ($event) {
-      $event.stopPropagation();
-    }
+    $event?.stopPropagation();
     button._elementRef.nativeElement.blur();
+    this.createTemplateByName($event);
+  }
+  
+  createTemplateByName($event: Event, name?: string) {
+    $event?.stopPropagation();
     this.openNotificationTemplateDialog({
       isAdd: true,
-      predefinedType: this.notificationTypes
+      predefinedType: this.notificationTypes,
+      name
     });
   }
 

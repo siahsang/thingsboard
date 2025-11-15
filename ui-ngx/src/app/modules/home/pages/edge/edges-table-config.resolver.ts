@@ -1,5 +1,5 @@
 ///
-/// Copyright © 2016-2023 The Thingsboard Authors
+/// Copyright © 2016-2025 The Thingsboard Authors
 ///
 /// Licensed under the Apache License, Version 2.0 (the "License");
 /// you may not use this file except in compliance with the License.
@@ -16,7 +16,7 @@
 
 import { Injectable } from '@angular/core';
 
-import { ActivatedRouteSnapshot, Resolve, Router } from '@angular/router';
+import { ActivatedRouteSnapshot, Router } from '@angular/router';
 import {
   CellActionDescriptor,
   checkBoxCell,
@@ -65,7 +65,7 @@ import {
 import { AddEntityDialogComponent } from '@home/components/entity/add-entity-dialog.component';
 
 @Injectable()
-export class EdgesTableConfigResolver implements Resolve<EntityTableConfig<EdgeInfo>> {
+export class EdgesTableConfigResolver  {
 
   private readonly config: EntityTableConfig<EdgeInfo> = new EntityTableConfig<EdgeInfo>();
   private customerId: string;
@@ -558,7 +558,7 @@ export class EdgesTableConfigResolver implements Resolve<EntityTableConfig<EdgeI
     );
   }
 
-  openInstructions($event, edge: EdgeInfo, afterAdd = false) {
+  openInstructions($event: Event, edge: EdgeInfo, afterAdd = false, upgradeAvailable = false) {
     if ($event) {
       $event.stopPropagation();
     }
@@ -568,7 +568,8 @@ export class EdgesTableConfigResolver implements Resolve<EntityTableConfig<EdgeI
       panelClass: ['tb-dialog', 'tb-fullscreen-dialog'],
       data: {
         edge,
-        afterAdd
+        afterAdd,
+        upgradeAvailable
       }
     }).afterClosed().subscribe(() => {
         if (afterAdd) {
@@ -610,8 +611,11 @@ export class EdgesTableConfigResolver implements Resolve<EntityTableConfig<EdgeI
       case 'syncEdge':
         this.syncEdge(action.event, action.entity);
         return true;
-      case 'openInstructions':
+      case 'openInstallInstructions':
         this.openInstructions(action.event, action.entity);
+        return true;
+      case 'openUpgradeInstructions':
+        this.openInstructions(action.event, action.entity, false, true);
         return true;
     }
   }

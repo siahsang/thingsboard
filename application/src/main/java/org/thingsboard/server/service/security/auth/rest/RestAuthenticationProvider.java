@@ -1,5 +1,5 @@
 /**
- * Copyright © 2016-2023 The Thingsboard Authors
+ * Copyright © 2016-2025 The Thingsboard Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -36,11 +36,17 @@ import org.thingsboard.server.common.data.id.TenantId;
 import org.thingsboard.server.common.data.id.UserId;
 import org.thingsboard.server.common.data.security.Authority;
 import org.thingsboard.server.common.data.security.UserCredentials;
+import org.thingsboard.server.common.data.security.model.SecuritySettings;
+import org.thingsboard.server.common.data.security.model.UserPasswordPolicy;
 import org.thingsboard.server.dao.customer.CustomerService;
+import org.thingsboard.server.dao.exception.DataValidationException;
+import org.thingsboard.server.dao.settings.SecuritySettingsService;
 import org.thingsboard.server.dao.user.UserService;
 import org.thingsboard.server.queue.util.TbCoreComponent;
 import org.thingsboard.server.service.security.auth.MfaAuthenticationToken;
+import org.thingsboard.server.service.security.auth.MfaConfigurationToken;
 import org.thingsboard.server.service.security.auth.mfa.TwoFactorAuthService;
+import org.thingsboard.server.service.security.exception.UserPasswordNotValidException;
 import org.thingsboard.server.service.security.model.SecurityUser;
 import org.thingsboard.server.service.security.model.UserPrincipal;
 import org.thingsboard.server.service.security.system.SystemSecurityService;
@@ -54,6 +60,7 @@ import java.util.UUID;
 public class RestAuthenticationProvider implements AuthenticationProvider {
 
     private final SystemSecurityService systemSecurityService;
+    private final SecuritySettingsService securitySettingsService;
     private final UserService userService;
     private final CustomerService customerService;
     private final TwoFactorAuthService twoFactorAuthService;
@@ -62,10 +69,12 @@ public class RestAuthenticationProvider implements AuthenticationProvider {
     public RestAuthenticationProvider(final UserService userService,
                                       final CustomerService customerService,
                                       final SystemSecurityService systemSecurityService,
+                                      SecuritySettingsService securitySettingsService,
                                       TwoFactorAuthService twoFactorAuthService) {
         this.userService = userService;
         this.customerService = customerService;
         this.systemSecurityService = systemSecurityService;
+        this.securitySettingsService = securitySettingsService;
         this.twoFactorAuthService = twoFactorAuthService;
     }
 
@@ -74,18 +83,30 @@ public class RestAuthenticationProvider implements AuthenticationProvider {
         Assert.notNull(authentication, "No authentication data provided");
 
         Object principal = authentication.getPrincipal();
-        if (!(principal instanceof UserPrincipal)) {
+        if (!(principal instanceof UserPrincipal userPrincipal)) {
             throw new BadCredentialsException("Authentication Failed. Bad user principal.");
         }
 
-        UserPrincipal userPrincipal =  (UserPrincipal) principal;
         SecurityUser securityUser;
         if (userPrincipal.getType() == UserPrincipal.Type.USER_NAME) {
             String username = userPrincipal.getValue();
             String password = (String) authentication.getCredentials();
+
+            SecuritySettings securitySettings = securitySettingsService.getSecuritySettings();
+            UserPasswordPolicy passwordPolicy = securitySettings.getPasswordPolicy();
+            if (Boolean.TRUE.equals(passwordPolicy.getForceUserToResetPasswordIfNotValid())) {
+                try {
+                    systemSecurityService.validatePasswordByPolicy(password, passwordPolicy);
+                } catch (DataValidationException e) {
+                    throw new UserPasswordNotValidException("The entered password violates our policies. If this is your real password, please reset it.");
+                }
+            }
+
             securityUser = authenticateByUsernameAndPassword(authentication, userPrincipal, username, password);
-            if (twoFactorAuthService.isTwoFaEnabled(securityUser.getTenantId(), securityUser.getId())) {
+            if (twoFactorAuthService.isTwoFaEnabled(securityUser.getTenantId(), securityUser)) {
                 return new MfaAuthenticationToken(securityUser);
+            } else if (twoFactorAuthService.isEnforceTwoFaEnabled(securityUser.getTenantId(), securityUser)) {
+                return new MfaConfigurationToken(securityUser);
             } else {
                 systemSecurityService.logLoginAction(securityUser, authentication.getDetails(), ActionType.LOGIN, null);
             }

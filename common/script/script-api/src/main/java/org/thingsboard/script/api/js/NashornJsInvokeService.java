@@ -1,5 +1,5 @@
 /**
- * Copyright © 2016-2023 The Thingsboard Authors
+ * Copyright © 2016-2025 The Thingsboard Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,6 +20,9 @@ import com.google.common.util.concurrent.ListeningExecutorService;
 import com.google.common.util.concurrent.MoreExecutors;
 import delight.nashornsandbox.NashornSandbox;
 import delight.nashornsandbox.NashornSandboxes;
+import delight.nashornsandbox.exceptions.ScriptCPUAbuseException;
+import jakarta.annotation.PostConstruct;
+import jakarta.annotation.PreDestroy;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -31,8 +34,6 @@ import org.thingsboard.script.api.TbScriptException;
 import org.thingsboard.server.common.stats.TbApiUsageReportClient;
 import org.thingsboard.server.common.stats.TbApiUsageStateClient;
 
-import javax.annotation.PostConstruct;
-import javax.annotation.PreDestroy;
 import javax.script.Invocable;
 import javax.script.ScriptEngine;
 import javax.script.ScriptEngineManager;
@@ -41,7 +42,6 @@ import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.Executor;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 import java.util.concurrent.locks.ReentrantLock;
 
 @Slf4j
@@ -62,8 +62,11 @@ public class NashornJsInvokeService extends AbstractJsInvokeService {
     @Value("${js.local.monitor_thread_pool_size}")
     private int monitorThreadPoolSize;
 
-    @Value("${js.local.max_cpu_time}")
+    @Value("${js.local.max_cpu_time:8000}") // 8 seconds
     private long maxCpuTime;
+
+    @Value("${js.local.max_memory:104857600}") // 100 MiB
+    private long maxMemory;
 
     @Getter
     @Value("${js.local.max_errors}")
@@ -107,12 +110,13 @@ public class NashornJsInvokeService extends AbstractJsInvokeService {
     @Override
     public void init() {
         super.init();
-        jsExecutor = MoreExecutors.listeningDecorator(Executors.newWorkStealingPool(jsExecutorThreadPoolSize));
+        jsExecutor = MoreExecutors.listeningDecorator(ThingsBoardExecutors.newWorkStealingPool(jsExecutorThreadPoolSize, "nashorn-js-executor"));
         if (useJsSandbox) {
             sandbox = NashornSandboxes.create();
             monitorExecutorService = ThingsBoardExecutors.newWorkStealingPool(monitorThreadPoolSize, "nashorn-js-monitor");
             sandbox.setExecutor(monitorExecutorService);
             sandbox.setMaxCPUTime(maxCpuTime);
+            sandbox.setMaxMemory(maxMemory);
             sandbox.allowNoBraces(false);
             sandbox.allowLoadFunctions(true);
             sandbox.setMaxPreparedStatements(30);
@@ -150,8 +154,12 @@ public class NashornJsInvokeService extends AbstractJsInvokeService {
                 }
                 scriptInfoMap.put(scriptId, scriptInfo);
                 return scriptId;
-            } catch (Exception e) {
+            } catch (ScriptException e) {
                 throw new TbScriptException(scriptId, TbScriptException.ErrorCode.COMPILATION, jsScript, e);
+            } catch (ScriptCPUAbuseException e) {
+                throw new TbScriptException(scriptId, TbScriptException.ErrorCode.TIMEOUT, jsScript, e);
+            } catch (Exception e) {
+                throw new TbScriptException(scriptId, TbScriptException.ErrorCode.OTHER, jsScript, e);
             }
         });
     }

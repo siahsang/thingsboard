@@ -1,5 +1,5 @@
 /**
- * Copyright © 2016-2023 The Thingsboard Authors
+ * Copyright © 2016-2025 The Thingsboard Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -38,7 +38,10 @@ public enum TbMsgType {
     ENTITY_UNASSIGNED("Entity Unassigned"),
     ATTRIBUTES_UPDATED("Attributes Updated"),
     ATTRIBUTES_DELETED("Attributes Deleted"),
-    ALARM,
+    ALARM("Alarm"),
+    ALARM_CREATED("Alarm Created"),
+    ALARM_UPDATED("Alarm Updated"),
+    ALARM_SEVERITY_UPDATED("Alarm Severity Updated"),
     ALARM_ACK("Alarm Acknowledged"),
     ALARM_CLEAR("Alarm Cleared"),
     ALARM_DELETE,
@@ -67,6 +70,7 @@ public enum TbMsgType {
     PROVISION_SUCCESS,
     PROVISION_FAILURE,
     SEND_EMAIL,
+    REST_API_REQUEST("REST API request"),
 
     // tellSelfOnly types
     GENERATOR_NODE_SELF_MSG(null, true),

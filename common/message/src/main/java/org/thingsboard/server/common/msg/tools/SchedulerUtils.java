@@ -1,5 +1,5 @@
 /**
- * Copyright © 2016-2023 The Thingsboard Authors
+ * Copyright © 2016-2025 The Thingsboard Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -58,18 +58,6 @@ public class SchedulerUtils {
 
     public static long getStartOfNextMonth(ZoneId zoneId) {
         return LocalDate.now(UTC).with(TemporalAdjusters.firstDayOfNextMonth()).atStartOfDay(zoneId).toInstant().toEpochMilli();
-    }
-
-    public static long getStartOfNextNextMonth() {
-        return getStartOfNextNextMonth(UTC);
-    }
-
-    public static long getStartOfNextNextMonth(ZoneId zoneId) {
-        return LocalDate.now(UTC).with(firstDayOfNextNextMonth()).atStartOfDay(zoneId).toInstant().toEpochMilli();
-    }
-
-    public static TemporalAdjuster firstDayOfNextNextMonth() {
-        return (temporal) -> temporal.with(DAY_OF_MONTH, 1).plus(2, MONTHS);
     }
 
 }

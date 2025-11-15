@@ -1,5 +1,5 @@
 /**
- * Copyright © 2016-2023 The Thingsboard Authors
+ * Copyright © 2016-2025 The Thingsboard Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -31,6 +31,7 @@ import org.springframework.util.CollectionUtils;
 import org.springframework.web.context.request.async.DeferredResult;
 import org.thingsboard.common.util.JacksonUtil;
 import org.thingsboard.common.util.KvUtil;
+import org.thingsboard.server.common.data.AttributeScope;
 import org.thingsboard.server.common.data.EntityType;
 import org.thingsboard.server.common.data.id.EntityId;
 import org.thingsboard.server.common.data.id.TenantId;
@@ -56,12 +57,12 @@ import org.thingsboard.server.dao.alarm.AlarmService;
 import org.thingsboard.server.dao.attributes.AttributesService;
 import org.thingsboard.server.dao.entity.EntityService;
 import org.thingsboard.server.dao.model.ModelConstants;
+import org.thingsboard.server.dao.sql.query.EntityKeyMapping;
 import org.thingsboard.server.dao.timeseries.TimeseriesService;
 import org.thingsboard.server.queue.util.TbCoreComponent;
 import org.thingsboard.server.service.executors.DbCallbackExecutorService;
 import org.thingsboard.server.service.security.AccessValidator;
 import org.thingsboard.server.service.security.model.SecurityUser;
-import org.thingsboard.server.service.subscription.TbAttributeSubscriptionScope;
 
 import java.util.ArrayList;
 import java.util.Collection;
@@ -154,7 +155,7 @@ public class DefaultEntityQueryService implements EntityQueryService {
 
         try {
             Optional<AttributeKvEntry> valueOpt = attributesService.find(user.getTenantId(), entityId,
-                    TbAttributeSubscriptionScope.SERVER_SCOPE.name(), dynamicValue.getSourceAttribute()).get();
+                    AttributeScope.SERVER_SCOPE, dynamicValue.getSourceAttribute()).get();
 
             if (valueOpt.isPresent()) {
                 AttributeKvEntry entry = valueOpt.get();
@@ -208,14 +209,31 @@ public class DefaultEntityQueryService implements EntityQueryService {
 
     @Override
     public long countAlarmsByQuery(SecurityUser securityUser, AlarmCountQuery query) {
+        if (query.getEntityFilter() != null) {
+            EntityDataQuery entityDataQuery = this.buildEntityDataQuery(query);
+            PageData<EntityData> entities = entityService.findEntityDataByQuery(securityUser.getTenantId(),
+                    securityUser.getCustomerId(), entityDataQuery);
+            if (entities.getTotalElements() > 0) {
+                List<EntityId> entityIds = entities.getData().stream().map(EntityData::getEntityId).toList();
+                return alarmService.countAlarmsByQuery(securityUser.getTenantId(), securityUser.getCustomerId(), query, entityIds);
+            } else {
+                return 0;
+            }
+        }
         return alarmService.countAlarmsByQuery(securityUser.getTenantId(), securityUser.getCustomerId(), query);
+    }
+
+    private EntityDataQuery buildEntityDataQuery(AlarmCountQuery query) {
+        EntityDataPageLink edpl = new EntityDataPageLink(maxEntitiesPerAlarmSubscription, 0, null,
+                new EntityDataSortOrder(new EntityKey(EntityKeyType.ENTITY_FIELD, EntityKeyMapping.CREATED_TIME)));
+        return new EntityDataQuery(query.getEntityFilter(), edpl, null, null, query.getKeyFilters());
     }
 
     private EntityDataQuery buildEntityDataQuery(AlarmDataQuery query) {
         EntityDataSortOrder sortOrder = query.getPageLink().getSortOrder();
         EntityDataSortOrder entitiesSortOrder;
         if (sortOrder == null || sortOrder.getKey().getType().equals(EntityKeyType.ALARM_FIELD)) {
-            entitiesSortOrder = new EntityDataSortOrder(new EntityKey(EntityKeyType.ENTITY_FIELD, ModelConstants.CREATED_TIME_PROPERTY));
+            entitiesSortOrder = new EntityDataSortOrder(new EntityKey(EntityKeyType.ENTITY_FIELD, EntityKeyMapping.CREATED_TIME));
         } else {
             entitiesSortOrder = sortOrder;
         }
@@ -225,7 +243,7 @@ public class DefaultEntityQueryService implements EntityQueryService {
 
     @Override
     public DeferredResult<ResponseEntity> getKeysByQuery(SecurityUser securityUser, TenantId tenantId, EntityDataQuery query,
-                                                         boolean isTimeseries, boolean isAttributes) {
+                                                         boolean isTimeseries, boolean isAttributes, String attributesScope) {
         final DeferredResult<ResponseEntity> response = new DeferredResult<>();
         if (!isAttributes && !isTimeseries) {
             replyWithEmptyResponse(response);
@@ -253,7 +271,7 @@ public class DefaultEntityQueryService implements EntityQueryService {
         if (isAttributes) {
             Map<EntityType, List<EntityId>> typesMap = ids.stream().collect(Collectors.groupingBy(EntityId::getEntityType));
             List<ListenableFuture<List<String>>> futures = new ArrayList<>(typesMap.size());
-            typesMap.forEach((type, entityIds) -> futures.add(dbCallbackExecutor.submit(() -> attributesService.findAllKeysByEntityIds(tenantId, type, entityIds))));
+            typesMap.forEach((type, entityIds) -> futures.add(dbCallbackExecutor.submit(() -> attributesService.findAllKeysByEntityIds(tenantId, entityIds, attributesScope))));
             attributesKeysFuture = Futures.transform(Futures.allAsList(futures), lists -> {
                 if (CollectionUtils.isEmpty(lists)) {
                     return Collections.emptyList();

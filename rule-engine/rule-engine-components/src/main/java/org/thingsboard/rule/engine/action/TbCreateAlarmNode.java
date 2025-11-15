@@ -1,5 +1,5 @@
 /**
- * Copyright © 2016-2023 The Thingsboard Authors
+ * Copyright © 2016-2025 The Thingsboard Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,7 +19,6 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.google.common.util.concurrent.Futures;
 import com.google.common.util.concurrent.ListenableFuture;
 import com.google.common.util.concurrent.MoreExecutors;
-import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.EnumUtils;
 import org.thingsboard.common.util.JacksonUtil;
 import org.thingsboard.rule.engine.api.RuleNode;
@@ -39,7 +38,6 @@ import org.thingsboard.server.common.msg.TbMsg;
 import java.io.IOException;
 import java.util.List;
 
-@Slf4j
 @RuleNode(
         type = ComponentType.ACTION,
         name = "create alarm", relationTypes = {"Created", "Updated", "False"},
@@ -51,9 +49,9 @@ import java.util.List;
                         "If alarm was not created, original message is returned. Otherwise new Message returned with type 'ALARM', Alarm object in 'msg' property and 'metadata' will contains one of those properties 'isNewAlarm/isExistingAlarm'. " +
                         "Message payload can be accessed via <code>msg</code> property. For example <code>'temperature = ' + msg.temperature ;</code>. " +
                         "Message metadata can be accessed via <code>metadata</code> property. For example <code>'name = ' + metadata.customerName;</code>.",
-        uiResources = {"static/rulenode/rulenode-core-config.js"},
         configDirective = "tbActionNodeCreateAlarmConfig",
-        icon = "notifications_active"
+        icon = "notifications_active",
+        docUrl = "https://thingsboard.io/docs/user-guide/rule-engine-2-0/nodes/action/create-alarm/"
 )
 public class TbCreateAlarmNode extends TbAbstractAlarmNode<TbCreateAlarmNodeConfiguration> {
 
@@ -63,14 +61,13 @@ public class TbCreateAlarmNode extends TbAbstractAlarmNode<TbCreateAlarmNodeConf
     @Override
     public void init(TbContext ctx, TbNodeConfiguration configuration) throws TbNodeException {
         super.init(ctx, configuration);
-        if (!this.config.isDynamicSeverity()) {
-            this.notDynamicAlarmSeverity = EnumUtils.getEnum(AlarmSeverity.class, this.config.getSeverity());
-            if (this.notDynamicAlarmSeverity == null) {
-                throw new TbNodeException("Incorrect Alarm Severity value: " + this.config.getSeverity(), true);
+        if (!config.isDynamicSeverity()) {
+            notDynamicAlarmSeverity = EnumUtils.getEnum(AlarmSeverity.class, config.getSeverity());
+            if (notDynamicAlarmSeverity == null) {
+                throw new TbNodeException("Incorrect Alarm Severity value: " + config.getSeverity(), true);
             }
         }
     }
-
 
     @Override
     protected TbCreateAlarmNodeConfiguration loadAlarmNodeConfig(TbNodeConfiguration configuration) throws TbNodeException {
@@ -85,7 +82,7 @@ public class TbCreateAlarmNode extends TbAbstractAlarmNode<TbCreateAlarmNodeConf
         final Alarm msgAlarm;
 
         if (!config.isUseMessageAlarmData()) {
-            alarmType = TbNodeUtils.processPattern(this.config.getAlarmType(), msg);
+            alarmType = TbNodeUtils.processPattern(config.getAlarmType(), msg);
             msgAlarm = null;
         } else {
             try {
@@ -97,12 +94,13 @@ public class TbCreateAlarmNode extends TbAbstractAlarmNode<TbCreateAlarmNodeConf
             }
         }
 
-        Alarm existingAlarm = ctx.getAlarmService().findLatestActiveByOriginatorAndType(ctx.getTenantId(), msg.getOriginator(), alarmType);
-        if (existingAlarm == null || existingAlarm.getStatus().isCleared()) {
-            return createNewAlarm(ctx, msg, msgAlarm);
-        } else {
-            return updateAlarm(ctx, msg, existingAlarm, msgAlarm);
-        }
+        return ctx.getAlarmService().findLatestActiveByOriginatorAndTypeAsync(ctx.getTenantId(), msg.getOriginator(), alarmType).transformAsync(existingAlarm -> {
+            if (existingAlarm == null || existingAlarm.getStatus().isCleared()) {
+                return createNewAlarm(ctx, msg, msgAlarm);
+            } else {
+                return updateAlarm(ctx, msg, existingAlarm, msgAlarm);
+            }
+        }, ctx.getDbCallbackExecutor());
     }
 
     private Alarm getAlarmFromMessage(TbContext ctx, TbMsg msg) throws IOException {
@@ -119,15 +117,11 @@ public class TbCreateAlarmNode extends TbAbstractAlarmNode<TbCreateAlarmNodeConf
         ListenableFuture<JsonNode> asyncDetails;
         boolean buildDetails = !config.isUseMessageAlarmData() || config.isOverwriteAlarmDetails();
         if (buildDetails) {
-            ctx.logJsEvalRequest();
             asyncDetails = buildAlarmDetails(msg, null);
         } else {
             asyncDetails = Futures.immediateFuture(null);
         }
         ListenableFuture<Alarm> asyncAlarm = Futures.transform(asyncDetails, details -> {
-            if (buildDetails) {
-                ctx.logJsEvalResponse();
-            }
             Alarm newAlarm;
             if (msgAlarm != null) {
                 newAlarm = msgAlarm;
@@ -148,15 +142,11 @@ public class TbCreateAlarmNode extends TbAbstractAlarmNode<TbCreateAlarmNodeConf
         ListenableFuture<JsonNode> asyncDetails;
         boolean buildDetails = !config.isUseMessageAlarmData() || config.isOverwriteAlarmDetails();
         if (buildDetails) {
-            ctx.logJsEvalRequest();
             asyncDetails = buildAlarmDetails(msg, existingAlarm.getDetails());
         } else {
             asyncDetails = Futures.immediateFuture(null);
         }
         ListenableFuture<AlarmApiCallResult> asyncUpdated = Futures.transform(asyncDetails, details -> {
-            if (buildDetails) {
-                ctx.logJsEvalResponse();
-            }
             if (msgAlarm != null) {
                 existingAlarm.setSeverity(msgAlarm.getSeverity());
                 existingAlarm.setPropagate(msgAlarm.isPropagate());
@@ -176,7 +166,7 @@ public class TbCreateAlarmNode extends TbAbstractAlarmNode<TbCreateAlarmNodeConf
                 existingAlarm.setPropagateRelationTypes(relationTypes);
                 existingAlarm.setDetails(details);
             }
-            existingAlarm.setEndTs(System.currentTimeMillis());
+            existingAlarm.setEndTs(currentTimeMillis());
             return ctx.getAlarmService().updateAlarm(AlarmUpdateRequest.fromAlarm(existingAlarm));
         }, ctx.getDbCallbackExecutor());
         return Futures.transform(asyncUpdated, TbAlarmResult::fromAlarmResult, MoreExecutors.directExecutor());
@@ -189,11 +179,11 @@ public class TbCreateAlarmNode extends TbAbstractAlarmNode<TbCreateAlarmNodeConf
                 .originator(msg.getOriginator())
                 .cleared(false)
                 .acknowledged(false)
-                .severity(this.config.isDynamicSeverity() ? processAlarmSeverity(msg) : notDynamicAlarmSeverity)
+                .severity(config.isDynamicSeverity() ? processAlarmSeverity(msg) : notDynamicAlarmSeverity)
                 .propagate(config.isPropagate())
                 .propagateToOwner(config.isPropagateToOwner())
                 .propagateToTenant(config.isPropagateToTenant())
-                .type(TbNodeUtils.processPattern(this.config.getAlarmType(), msg))
+                .type(TbNodeUtils.processPattern(config.getAlarmType(), msg))
                 .propagateRelationTypes(relationTypes)
                 .startTs(ts)
                 .endTs(ts)
@@ -202,11 +192,15 @@ public class TbCreateAlarmNode extends TbAbstractAlarmNode<TbCreateAlarmNodeConf
     }
 
     private AlarmSeverity processAlarmSeverity(TbMsg msg) {
-        AlarmSeverity severity = EnumUtils.getEnum(AlarmSeverity.class, TbNodeUtils.processPattern(this.config.getSeverity(), msg));
+        AlarmSeverity severity = EnumUtils.getEnum(AlarmSeverity.class, TbNodeUtils.processPattern(config.getSeverity(), msg));
         if (severity == null) {
             throw new RuntimeException("Used incorrect pattern or Alarm Severity not included in message");
         }
         return severity;
+    }
+
+    long currentTimeMillis() {
+        return System.currentTimeMillis();
     }
 
 }

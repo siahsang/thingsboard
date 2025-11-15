@@ -1,5 +1,5 @@
 ///
-/// Copyright © 2016-2023 The Thingsboard Authors
+/// Copyright © 2016-2025 The Thingsboard Authors
 ///
 /// Licensed under the Apache License, Version 2.0 (the "License");
 /// you may not use this file except in compliance with the License.
@@ -25,7 +25,7 @@ import {
   ViewContainerRef
 } from '@angular/core';
 import { ControlValueAccessor, NG_VALUE_ACCESSOR } from '@angular/forms';
-import { ColorRange, ComponentStyle } from '@shared/models/widget-settings.models';
+import { ColorRange, ColorRangeSettings, ComponentStyle } from '@shared/models/widget-settings.models';
 import { MatButton } from '@angular/material/button';
 import { TbPopoverService } from '@shared/components/popover.service';
 import { ColorRangePanelComponent } from '@home/components/widget/lib/settings/common/color-range-panel.component';
@@ -108,8 +108,8 @@ export class ColorRangeSettingsComponent implements OnInit, ControlValueAccessor
     this.updateColorStyle();
   }
 
-  writeValue(value: Array<ColorRange>): void {
-    this.modelValue = value;
+  writeValue(value: Array<ColorRange> | ColorRangeSettings): void {
+    this.modelValue = Array.isArray(value) ? value : value.range;
     this.updateColorStyle();
   }
 
@@ -121,17 +121,20 @@ export class ColorRangeSettingsComponent implements OnInit, ControlValueAccessor
     if (this.popoverService.hasPopover(trigger)) {
       this.popoverService.hidePopover(trigger);
     } else {
-      const ctx: any = {
-        colorRangeSettings: this.modelValue,
-        settingsComponents: this.colorSettingsComponentService.getOtherColorSettingsComponents(this)
-      };
-      const colorRangeSettingsPanelPopover = this.popoverService.displayPopover(trigger, this.renderer,
-        this.viewContainerRef, ColorRangePanelComponent, 'left', true, null,
-        ctx,
-        {},
-        {}, {}, true);
+      const colorRangeSettingsPanelPopover = this.popoverService.displayPopover({
+        trigger,
+        renderer: this.renderer,
+        componentType: ColorRangePanelComponent,
+        hostView: this.viewContainerRef,
+        preferredPlacement: 'left',
+        context: {
+          colorRangeSettings: this.modelValue,
+          settingsComponents: this.colorSettingsComponentService.getOtherColorSettingsComponents(this)
+        },
+        isModal: true
+      });
       colorRangeSettingsPanelPopover.tbComponentRef.instance.popover = colorRangeSettingsPanelPopover;
-      colorRangeSettingsPanelPopover.tbComponentRef.instance.colorRangeApplied.subscribe((colorRangeSettings) => {
+      colorRangeSettingsPanelPopover.tbComponentRef.instance.colorRangeApplied.subscribe((colorRangeSettings: Array<ColorRange>) => {
         colorRangeSettingsPanelPopover.hide();
         this.modelValue = colorRangeSettings;
         this.updateColorStyle();
@@ -147,7 +150,9 @@ export class ColorRangeSettingsComponent implements OnInit, ControlValueAccessor
         const rangeColors = this.modelValue.slice(0, Math.min(3, this.modelValue.length)).map(r => r.color);
         colors = colors.concat(rangeColors);
       }
-      if (colors.length === 1) {
+      if (!colors.length) {
+        this.colorStyle = {};
+      } else if (colors.length === 1) {
         this.colorStyle = {backgroundColor: colors[0]};
       } else {
         const gradientValues: string[] = [];

@@ -1,5 +1,5 @@
 /**
- * Copyright © 2016-2023 The Thingsboard Authors
+ * Copyright © 2016-2025 The Thingsboard Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,6 +21,7 @@ import org.junit.Before;
 import org.junit.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.thingsboard.common.util.JacksonUtil;
+import org.thingsboard.server.common.data.StringUtils;
 import org.thingsboard.server.common.data.id.TenantId;
 import org.thingsboard.server.common.data.id.WidgetsBundleId;
 import org.thingsboard.server.common.data.page.PageData;
@@ -28,8 +29,10 @@ import org.thingsboard.server.common.data.page.PageLink;
 import org.thingsboard.server.common.data.page.SortOrder;
 import org.thingsboard.server.common.data.widget.BaseWidgetType;
 import org.thingsboard.server.common.data.widget.DeprecatedFilter;
+import org.thingsboard.server.common.data.widget.WidgetBundleInfo;
 import org.thingsboard.server.common.data.widget.WidgetType;
 import org.thingsboard.server.common.data.widget.WidgetTypeDetails;
+import org.thingsboard.server.common.data.widget.WidgetTypeFilter;
 import org.thingsboard.server.common.data.widget.WidgetTypeInfo;
 import org.thingsboard.server.common.data.widget.WidgetsBundle;
 import org.thingsboard.server.common.data.widget.WidgetsBundleWidget;
@@ -43,14 +46,14 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertTrue;
 
-/**
- * Created by Valerii Sosliuk on 4/30/2017.
- */
 public class JpaWidgetTypeDaoTest extends AbstractJpaDaoTest {
 
     // given search text should find a widget with tags, when searching by tags
@@ -75,7 +78,7 @@ public class JpaWidgetTypeDaoTest extends AbstractJpaDaoTest {
 
     final String BUNDLE_ALIAS = "BUNDLE_ALIAS";
     final int WIDGET_TYPE_COUNT = 3;
-    List<WidgetTypeDetails> widgetTypeList;
+    List<WidgetTypeInfo> widgetTypeList;
     WidgetsBundle widgetsBundle;
 
     @Autowired
@@ -104,18 +107,22 @@ public class JpaWidgetTypeDaoTest extends AbstractJpaDaoTest {
         widgetTypeList.sort(Comparator.comparing(BaseWidgetType::getName));
     }
 
-    WidgetTypeDetails createAndSaveWidgetType(TenantId tenantId, int number) {
+    WidgetTypeInfo createAndSaveWidgetType(TenantId tenantId, int number) {
         WidgetTypeDetails widgetType = new WidgetTypeDetails();
         widgetType.setTenantId(tenantId);
         widgetType.setName("WIDGET_TYPE_" + number);
         widgetType.setDescription("WIDGET_TYPE_DESCRIPTION" + number);
         widgetType.setFqn("FQN_" + number);
+        widgetType.setImage("/image/system/logo.png");
         var descriptor = JacksonUtil.newObjectNode();
         descriptor.put("type", number % 2 == 0 ? "latest" : "static");
         widgetType.setDescriptor(descriptor);
-        String[] tags = new String[]{"Tag1_"+number, "Tag2_"+number, "TEST_"+number};
+        String[] tags = new String[]{"Tag1_" + number, "Tag2_" + number, "TEST_" + number};
         widgetType.setTags(tags);
-        return widgetTypeDao.save(TenantId.SYS_TENANT_ID, widgetType);
+        WidgetTypeDetails saved = widgetTypeDao.save(TenantId.SYS_TENANT_ID, widgetType);
+        List<WidgetBundleInfo> bundles = new ArrayList<>();
+        bundles.add(new WidgetBundleInfo(widgetsBundle.getUuidId(), widgetsBundle.getName()));
+        return new WidgetTypeInfo(saved, bundles);
     }
 
     WidgetTypeDetails createAndSaveWidgetType(TenantId tenantId, int number, String[] tags) {
@@ -124,6 +131,7 @@ public class JpaWidgetTypeDaoTest extends AbstractJpaDaoTest {
         widgetType.setName("WIDGET_TYPE_" + number);
         widgetType.setDescription("WIDGET_TYPE_DESCRIPTION" + number);
         widgetType.setFqn("FQN_" + number);
+        widgetType.setImage("/image/tenant/logo.png");
         var descriptor = JacksonUtil.newObjectNode();
         descriptor.put("type", number % 2 == 0 ? "latest" : "static");
         widgetType.setDescriptor(descriptor);
@@ -134,7 +142,7 @@ public class JpaWidgetTypeDaoTest extends AbstractJpaDaoTest {
     @After
     public void tearDown() {
         widgetsBundleDao.removeById(TenantId.SYS_TENANT_ID, widgetsBundle.getUuidId());
-        for (WidgetType widgetType : widgetTypeList) {
+        for (WidgetTypeInfo widgetType : widgetTypeList) {
             widgetTypeDao.removeById(TenantId.SYS_TENANT_ID, widgetType.getUuidId());
         }
     }
@@ -147,15 +155,58 @@ public class JpaWidgetTypeDaoTest extends AbstractJpaDaoTest {
 
     @Test
     public void testFindSystemWidgetTypes() {
-        PageData<WidgetTypeInfo> widgetTypes = widgetTypeDao.findSystemWidgetTypes(TenantId.SYS_TENANT_ID, true, DeprecatedFilter.ALL, Collections.singletonList("static"),
+        PageData<WidgetTypeInfo> widgetTypes = widgetTypeDao.findSystemWidgetTypes(
+                WidgetTypeFilter.builder()
+                        .tenantId(TenantId.SYS_TENANT_ID)
+                        .fullSearch(true)
+                        .deprecatedFilter(DeprecatedFilter.ALL)
+                        .widgetTypes(Collections.singletonList("static")).build(),
                 new PageLink(1024, 0, "TYPE_DESCRIPTION", new SortOrder("createdTime")));
         assertEquals(1, widgetTypes.getData().size());
-        assertEquals(new WidgetTypeInfo(widgetTypeList.get(1)), widgetTypes.getData().get(0));
+        assertEquals(widgetTypeList.get(1), widgetTypes.getData().get(0));
 
-        widgetTypes = widgetTypeDao.findSystemWidgetTypes(TenantId.SYS_TENANT_ID, true, DeprecatedFilter.ALL, Collections.emptyList(),
+        widgetTypes = widgetTypeDao.findSystemWidgetTypes(
+                WidgetTypeFilter.builder()
+                        .tenantId(TenantId.SYS_TENANT_ID)
+                        .fullSearch(true)
+                        .deprecatedFilter(DeprecatedFilter.ALL)
+                        .widgetTypes(Collections.emptyList()).build(),
                 new PageLink(1024, 0, "hfgfd tag2_2 ghg", new SortOrder("createdTime")));
         assertEquals(1, widgetTypes.getData().size());
-        assertEquals(new WidgetTypeInfo(widgetTypeList.get(2)), widgetTypes.getData().get(0));
+        assertEquals(widgetTypeList.get(2), widgetTypes.getData().get(0));
+    }
+
+    @Test
+    public void testFindSystemWidgetTypesForSameName() throws InterruptedException {
+        List<WidgetTypeDetails> sameNameList = new ArrayList<>();
+
+        for (int i = 0; i < 20; i++) {
+            Thread.sleep(2);
+            var widgetType = saveWidgetType(TenantId.SYS_TENANT_ID, "widgetName");
+            sameNameList.add(widgetType);
+            widgetTypeList.add(new WidgetTypeInfo(widgetType));
+        }
+        sameNameList.sort(Comparator.comparing(BaseWidgetType::getName).thenComparing((BaseWidgetType baseWidgetType) -> baseWidgetType.getId().getId()));
+        List<WidgetTypeInfo> expected = sameNameList.stream().map(WidgetTypeInfo::new).collect(Collectors.toList());
+
+        PageData<WidgetTypeInfo> widgetTypesFirstPage = widgetTypeDao.findSystemWidgetTypes(
+                WidgetTypeFilter.builder()
+                        .tenantId(TenantId.SYS_TENANT_ID)
+                        .fullSearch(true)
+                        .deprecatedFilter(DeprecatedFilter.ALL)
+                        .widgetTypes(Collections.singletonList("static")).build(),
+                new PageLink(10, 0, null, new SortOrder("name")));
+        assertEquals(10, widgetTypesFirstPage.getData().size());
+        assertThat(widgetTypesFirstPage.getData()).containsExactlyElementsOf(expected.subList(0, 10));
+
+        PageData<WidgetTypeInfo> widgetTypesSecondPage = widgetTypeDao.findSystemWidgetTypes(WidgetTypeFilter.builder()
+                        .tenantId(TenantId.SYS_TENANT_ID)
+                        .fullSearch(true)
+                        .deprecatedFilter(DeprecatedFilter.ALL)
+                        .widgetTypes(Collections.singletonList("static")).build(),
+                new PageLink(10, 1, null, new SortOrder("name")));
+        assertEquals(10, widgetTypesSecondPage.getData().size());
+        assertThat(widgetTypesSecondPage.getData()).containsExactlyElementsOf(expected.subList(10, 20));
     }
 
     @Test
@@ -167,7 +218,12 @@ public class JpaWidgetTypeDaoTest extends AbstractJpaDaoTest {
             WidgetTypeDetails savedWidgetType = createAndSaveWidgetType(TenantId.SYS_TENANT_ID, WIDGET_TYPE_COUNT + 1, tags);
 
             PageData<WidgetTypeInfo> widgetTypes = widgetTypeDao.findSystemWidgetTypes(
-                    TenantId.SYS_TENANT_ID, true, DeprecatedFilter.ALL, null, new PageLink(10, 0, searchText)
+                    WidgetTypeFilter.builder()
+                            .tenantId(TenantId.SYS_TENANT_ID)
+                            .fullSearch(true)
+                            .deprecatedFilter(DeprecatedFilter.ALL)
+                            .widgetTypes(null).build(),
+                    new PageLink(10, 0, searchText)
             );
 
             assertThat(widgetTypes.getData()).hasSize(1);
@@ -183,7 +239,12 @@ public class JpaWidgetTypeDaoTest extends AbstractJpaDaoTest {
             WidgetTypeDetails savedWidgetType = createAndSaveWidgetType(TenantId.SYS_TENANT_ID, WIDGET_TYPE_COUNT + 1, tags);
 
             PageData<WidgetTypeInfo> widgetTypes = widgetTypeDao.findSystemWidgetTypes(
-                    TenantId.SYS_TENANT_ID, true, DeprecatedFilter.ALL, null, new PageLink(10, 0, searchText)
+                    WidgetTypeFilter.builder()
+                            .tenantId(TenantId.SYS_TENANT_ID)
+                            .fullSearch(true)
+                            .deprecatedFilter(DeprecatedFilter.ALL)
+                            .widgetTypes(null).build(),
+                    new PageLink(10, 0, searchText)
             );
 
             assertThat(widgetTypes.getData()).hasSize(0);
@@ -196,10 +257,15 @@ public class JpaWidgetTypeDaoTest extends AbstractJpaDaoTest {
     public void testFindTenantWidgetTypesByTenantId() {
         UUID tenantId = Uuids.timeBased();
         for (int i = 0; i < WIDGET_TYPE_COUNT; i++) {
-            var widgetType = createAndSaveWidgetType(new TenantId(tenantId), i);
+            var widgetType = createAndSaveWidgetType(TenantId.fromUUID(tenantId), i);
             widgetTypeList.add(widgetType);
         }
-        PageData<WidgetTypeInfo> widgetTypes = widgetTypeDao.findTenantWidgetTypesByTenantId(tenantId, true, DeprecatedFilter.ALL, null,
+        PageData<WidgetTypeInfo> widgetTypes = widgetTypeDao.findTenantWidgetTypesByTenantId(
+                WidgetTypeFilter.builder()
+                        .tenantId(TenantId.fromUUID(tenantId))
+                        .fullSearch(true)
+                        .deprecatedFilter(DeprecatedFilter.ALL)
+                        .widgetTypes(null).build(),
                 new PageLink(10, 0, "", new SortOrder("createdTime")));
         assertEquals(WIDGET_TYPE_COUNT, widgetTypes.getData().size());
         assertEquals(new WidgetTypeInfo(widgetTypeList.get(3)), widgetTypes.getData().get(0));
@@ -216,7 +282,12 @@ public class JpaWidgetTypeDaoTest extends AbstractJpaDaoTest {
             WidgetTypeDetails savedWidgetType = createAndSaveWidgetType(TenantId.SYS_TENANT_ID, WIDGET_TYPE_COUNT + 1, tags);
 
             PageData<WidgetTypeInfo> widgetTypes = widgetTypeDao.findTenantWidgetTypesByTenantId(
-                    TenantId.SYS_TENANT_ID.getId(), true, DeprecatedFilter.ALL, null, new PageLink(10, 0, searchText)
+                    WidgetTypeFilter.builder()
+                            .tenantId(TenantId.SYS_TENANT_ID)
+                            .fullSearch(true)
+                            .deprecatedFilter(DeprecatedFilter.ALL)
+                            .widgetTypes(null).build(),
+                    new PageLink(10, 0, searchText)
             );
 
             assertThat(widgetTypes.getData()).hasSize(1);
@@ -232,7 +303,12 @@ public class JpaWidgetTypeDaoTest extends AbstractJpaDaoTest {
             WidgetTypeDetails savedWidgetType = createAndSaveWidgetType(TenantId.SYS_TENANT_ID, WIDGET_TYPE_COUNT + 1, tags);
 
             PageData<WidgetTypeInfo> widgetTypes = widgetTypeDao.findTenantWidgetTypesByTenantId(
-                    TenantId.SYS_TENANT_ID.getId(), true, DeprecatedFilter.ALL, null, new PageLink(10, 0, searchText)
+                    WidgetTypeFilter.builder()
+                            .tenantId(TenantId.SYS_TENANT_ID)
+                            .fullSearch(true)
+                            .deprecatedFilter(DeprecatedFilter.ALL)
+                            .widgetTypes(null).build(),
+                    new PageLink(10, 0, searchText)
             );
 
             assertThat(widgetTypes.getData()).hasSize(0);
@@ -250,7 +326,12 @@ public class JpaWidgetTypeDaoTest extends AbstractJpaDaoTest {
             WidgetTypeDetails savedWidgetType = createAndSaveWidgetType(TenantId.SYS_TENANT_ID, WIDGET_TYPE_COUNT + 1, tags);
 
             PageData<WidgetTypeInfo> widgetTypes = widgetTypeDao.findAllTenantWidgetTypesByTenantId(
-                    TenantId.SYS_TENANT_ID.getId(), true, DeprecatedFilter.ALL, null, new PageLink(10, 0, searchText)
+                    WidgetTypeFilter.builder()
+                            .tenantId(TenantId.SYS_TENANT_ID)
+                            .fullSearch(true)
+                            .deprecatedFilter(DeprecatedFilter.ALL)
+                            .widgetTypes(null).build(),
+                    new PageLink(10, 0, searchText)
             );
 
             assertThat(widgetTypes.getData()).hasSize(1);
@@ -266,7 +347,12 @@ public class JpaWidgetTypeDaoTest extends AbstractJpaDaoTest {
             WidgetTypeDetails savedWidgetType = createAndSaveWidgetType(TenantId.SYS_TENANT_ID, WIDGET_TYPE_COUNT + 1, tags);
 
             PageData<WidgetTypeInfo> widgetTypes = widgetTypeDao.findAllTenantWidgetTypesByTenantId(
-                    TenantId.SYS_TENANT_ID.getId(), true, DeprecatedFilter.ALL, null, new PageLink(10, 0, searchText)
+                    WidgetTypeFilter.builder()
+                            .tenantId(TenantId.SYS_TENANT_ID)
+                            .fullSearch(true)
+                            .deprecatedFilter(DeprecatedFilter.ALL)
+                            .widgetTypes(null).build(),
+                    new PageLink(10, 0, searchText)
             );
 
             assertThat(widgetTypes.getData()).hasSize(0);
@@ -277,16 +363,16 @@ public class JpaWidgetTypeDaoTest extends AbstractJpaDaoTest {
 
     @Test
     public void testFindByWidgetTypeInfosByBundleId() {
-        PageData<WidgetTypeInfo> widgetTypes = widgetTypeDao.findWidgetTypesInfosByWidgetsBundleId(TenantId.SYS_TENANT_ID.getId(), widgetsBundle.getUuidId(),true, DeprecatedFilter.ALL, Collections.singletonList("latest"),
+        PageData<WidgetTypeInfo> widgetTypes = widgetTypeDao.findWidgetTypesInfosByWidgetsBundleId(TenantId.SYS_TENANT_ID.getId(), widgetsBundle.getUuidId(), true, DeprecatedFilter.ALL, Collections.singletonList("latest"),
                 new PageLink(1024, 0, "TYPE_DESCRIPTION", new SortOrder("createdTime")));
         assertEquals(2, widgetTypes.getData().size());
-        assertEquals(new WidgetTypeInfo(widgetTypeList.get(0)), widgetTypes.getData().get(0));
-        assertEquals(new WidgetTypeInfo(widgetTypeList.get(2)), widgetTypes.getData().get(1));
+        assertEquals(widgetTypeList.get(0), widgetTypes.getData().get(0));
+        assertEquals(widgetTypeList.get(2), widgetTypes.getData().get(1));
 
         widgetTypes = widgetTypeDao.findWidgetTypesInfosByWidgetsBundleId(TenantId.SYS_TENANT_ID.getId(), widgetsBundle.getUuidId(), true, DeprecatedFilter.ALL, Collections.emptyList(),
                 new PageLink(1024, 0, "hfgfd TEST_0 ghg", new SortOrder("createdTime")));
         assertEquals(1, widgetTypes.getData().size());
-        assertEquals(new WidgetTypeInfo(widgetTypeList.get(0)), widgetTypes.getData().get(0));
+        assertEquals(widgetTypeList.get(0), widgetTypes.getData().get(0));
     }
 
     @Test
@@ -327,9 +413,109 @@ public class JpaWidgetTypeDaoTest extends AbstractJpaDaoTest {
 
     @Test
     public void testFindByTenantIdAndFqn() {
-        WidgetType result = widgetTypeList.get(0);
+        WidgetTypeInfo result = widgetTypeList.get(0);
         assertNotNull(result);
         WidgetType widgetType = widgetTypeDao.findByTenantIdAndFqn(TenantId.SYS_TENANT_ID.getId(), "FQN_0");
         assertEquals(result.getId(), widgetType.getId());
     }
+
+    @Test
+    public void testFindByTenantAndImageLink() {
+        var result = widgetTypeDao.findByImageLink("/image/system/logo.png", 5);
+        assertEquals(3, result.size());
+        result = widgetTypeDao.findByImageLink("/image/system/logo2.png", 5);
+        assertEquals(0, result.size());
+    }
+
+    @Test
+    public void testFindByImageLink() {
+        TenantId tenantId = TenantId.fromUUID(UUID.randomUUID());
+        WidgetTypeDetails details = createAndSaveWidgetType(tenantId, 0, new String[]{"a"});
+        details.setDescriptor(JacksonUtil.newObjectNode().put("bg", "/image/tenant/widget.png"));
+        widgetTypeDao.save(tenantId, details);
+        var result = widgetTypeDao.findByTenantAndImageLink(tenantId, "/image/tenant/widget.png", 3);
+        assertEquals(1, result.size());
+        result = widgetTypeDao.findByTenantAndImageLink(tenantId, "/image/tenant/widget2.png", 3);
+        assertEquals(0, result.size());
+        widgetTypeDao.removeById(tenantId, details.getUuidId());
+    }
+
+    @Test
+    public void testFindWidgetTypesWithBundles() {
+        PageData<WidgetTypeInfo> widgetTypes = widgetTypeDao.findWidgetTypesInfosByWidgetsBundleId(
+                TenantId.SYS_TENANT_ID.getId(),
+                widgetsBundle.getUuidId(),
+                true,
+                DeprecatedFilter.ALL,
+                Collections.singletonList("latest"),
+                new PageLink(1024, 0, "TYPE_DESCRIPTION", new SortOrder("createdTime"))
+        );
+
+        assertEquals(2, widgetTypes.getData().size());
+        for (var widgetType : widgetTypes.getData()) {
+            assertFalse("Bundles should not be empty", widgetType.getBundles().isEmpty());
+            assertEquals(BUNDLE_ALIAS, widgetType.getBundles().get(0).getName());
+        }
+    }
+
+    @Test
+    public void testAddWidgetTypeToNewBundleAndVerifyBundles() {
+        String newBundleTitle = "New Bundle Title";
+        WidgetsBundle newWidgetsBundle = new WidgetsBundle();
+        newWidgetsBundle.setAlias("NewBundle");
+        newWidgetsBundle.setTitle(newBundleTitle);
+        newWidgetsBundle.setId(new WidgetsBundleId(UUID.randomUUID()));
+        newWidgetsBundle.setTenantId(TenantId.SYS_TENANT_ID);
+        newWidgetsBundle = widgetsBundleDao.save(TenantId.SYS_TENANT_ID, newWidgetsBundle);
+
+        for (int i = 0; i < widgetTypeList.size(); i++) {
+            WidgetTypeInfo widgetType = widgetTypeList.get(i);
+            widgetTypeDao.saveWidgetsBundleWidget(new WidgetsBundleWidget(newWidgetsBundle.getId(), widgetType.getId(), i));
+        }
+
+        PageData<WidgetTypeInfo> widgetTypes = widgetTypeDao.findWidgetTypesInfosByWidgetsBundleId(
+                TenantId.SYS_TENANT_ID.getId(),
+                newWidgetsBundle.getUuidId(),
+                true,
+                DeprecatedFilter.ALL,
+                Collections.singletonList("latest"),
+                new PageLink(1024, 0, "TYPE_DESCRIPTION", new SortOrder("createdTime"))
+        );
+
+        assertEquals(2, widgetTypes.getData().size());
+        WidgetTypeInfo widgetTypeInfo1 = widgetTypes.getData().get(0);
+        WidgetTypeInfo widgetTypeInfo2 = widgetTypes.getData().get(1);
+
+        assertEquals(2, widgetTypeInfo1.getBundles().size());
+        assertTrue("Bundles should contain 'BUNDLE_ALIAS'", widgetTypeInfo1.getBundles().stream().anyMatch(bundle -> BUNDLE_ALIAS.equals(bundle.getName())));
+        assertTrue("Bundles should contain 'New Bundle Title'", widgetTypeInfo1.getBundles().stream().anyMatch(bundle -> newBundleTitle.equals(bundle.getName())));
+
+        assertEquals(2, widgetTypeInfo2.getBundles().size());
+        assertTrue("Bundles should contain 'BUNDLE_ALIAS'", widgetTypeInfo2.getBundles().stream().anyMatch(bundle -> "BUNDLE_ALIAS".equals(bundle.getName())));
+        assertTrue("Bundles should contain 'New Bundle Title'", widgetTypeInfo2.getBundles().stream().anyMatch(bundle -> newBundleTitle.equals(bundle.getName())));
+
+        // cleanup and verify
+        widgetsBundleDao.removeById(newWidgetsBundle.getTenantId(), newWidgetsBundle.getUuidId());
+        widgetTypes = widgetTypeDao.findWidgetTypesInfosByWidgetsBundleId(
+                TenantId.SYS_TENANT_ID.getId(),
+                newWidgetsBundle.getUuidId(),
+                true,
+                DeprecatedFilter.ALL,
+                Collections.singletonList("latest"),
+                new PageLink(1024, 0, "TYPE_DESCRIPTION", new SortOrder("createdTime"))
+        );
+        widgetTypes.getData().forEach(widgetTypeInfo -> assertEquals(1, widgetTypeInfo.getBundles().size()));
+    }
+
+    private WidgetTypeDetails saveWidgetType(TenantId tenantId, String name) {
+        WidgetTypeDetails widgetType = new WidgetTypeDetails();
+        widgetType.setTenantId(tenantId);
+        widgetType.setDescription("WIDGET_TYPE_DESCRIPTION" + StringUtils.randomAlphabetic(7));
+        widgetType.setName(name);
+        var descriptor = JacksonUtil.newObjectNode();
+        descriptor.put("type", "static");
+        widgetType.setDescriptor(descriptor);
+        return widgetTypeDao.save(TenantId.SYS_TENANT_ID, widgetType);
+    }
+
 }

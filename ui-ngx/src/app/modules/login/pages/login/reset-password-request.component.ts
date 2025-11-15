@@ -1,5 +1,5 @@
 ///
-/// Copyright © 2016-2023 The Thingsboard Authors
+/// Copyright © 2016-2025 The Thingsboard Authors
 ///
 /// Licensed under the Apache License, Version 2.0 (the "License");
 /// you may not use this file except in compliance with the License.
@@ -22,6 +22,7 @@ import { PageComponent } from '@shared/components/page.component';
 import { UntypedFormBuilder, Validators } from '@angular/forms';
 import { ActionNotificationShow } from '@core/notification/notification.actions';
 import { TranslateService } from '@ngx-translate/core';
+import { validateEmail } from '@app/core/utils';
 
 @Component({
   selector: 'tb-reset-password-request',
@@ -33,7 +34,7 @@ export class ResetPasswordRequestComponent extends PageComponent implements OnIn
   clicked: boolean = false;
 
   requestPasswordRequest = this.fb.group({
-    email: ['', [Validators.email, Validators.required]]
+    email: ['', [Validators.required, validateEmail]],
   }, {updateOn: 'submit'});
 
   constructor(protected store: Store<AppState>,

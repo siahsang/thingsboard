@@ -1,5 +1,5 @@
 /**
- * Copyright © 2016-2023 The Thingsboard Authors
+ * Copyright © 2016-2025 The Thingsboard Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,26 +17,26 @@
   width: initial;
   display: inline-block;
   vertical-align: middle;
-  &.hint-button {
-    line-height: 1;
-  }
+  line-height: 1;
+}
+
+.tb-help-popup-button-loading {
+  background: #fff;
+  border-radius: 50%;
+  z-index: 1;
+}
+
+.tb-toggle-help-popup-button {
+  border-radius: 50%;
+  line-height: normal;
 }
 
 .tb-help-popup-button {
   position: relative;
   .mat-mdc-progress-spinner {
-    position: absolute;
-    top: 0;
-    left: 0;
-    background: #fff;
-    border-radius: 50%;
-    width: 32px !important;
-    height: 32px !important;
     .mdc-circular-progress__indeterminate-container {
       width: 20px;
       height: 20px;
-      top: 6px;
-      left: 6px;
     }
     svg {
       width: 20px;

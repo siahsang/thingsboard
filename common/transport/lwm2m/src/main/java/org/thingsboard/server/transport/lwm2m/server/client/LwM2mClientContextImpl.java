@@ -1,5 +1,5 @@
 /**
- * Copyright © 2016-2023 The Thingsboard Authors
+ * Copyright © 2016-2025 The Thingsboard Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -141,7 +141,7 @@ public class LwM2mClientContextImpl implements LwM2mClientContext {
             }
             oldSession = client.getSession();
             TbLwM2MSecurityInfo securityInfo = securityStore.getTbLwM2MSecurityInfoByEndpoint(client.getEndpoint());
-            if (securityInfo.getSecurityMode() != null) {
+            if (securityInfo != null && securityInfo.getSecurityMode() != null) {
                 if (SecurityMode.X509.equals(securityInfo.getSecurityMode())) {
                     securityStore.registerX509(registration.getEndpoint(), registration.getId());
                 }
@@ -288,7 +288,7 @@ public class LwM2mClientContextImpl implements LwM2mClientContext {
 
     @Override
     public String getObjectIdByKeyNameFromProfile(LwM2mClient client, String keyName) {
-        Lwm2mDeviceProfileTransportConfiguration profile = getProfile(client.getProfileId());
+        Lwm2mDeviceProfileTransportConfiguration profile = getProfile(client.getRegistration());
         for (Map.Entry<String, String> entry : profile.getObserveAttr().getKeyName().entrySet()) {
             String k = entry.getKey();
             String v = entry.getValue();
@@ -346,7 +346,7 @@ public class LwM2mClientContextImpl implements LwM2mClientContext {
     private PowerMode getPowerMode(LwM2mClient lwM2MClient) {
         PowerMode powerMode = lwM2MClient.getPowerMode();
         if (powerMode == null) {
-            Lwm2mDeviceProfileTransportConfiguration deviceProfile = getProfile(lwM2MClient.getProfileId());
+            Lwm2mDeviceProfileTransportConfiguration deviceProfile = getProfile(lwM2MClient.getRegistration());
             powerMode = deviceProfile.getClientLwM2mSettings().getPowerMode();
         }
         return powerMode;
@@ -355,11 +355,6 @@ public class LwM2mClientContextImpl implements LwM2mClientContext {
     @Override
     public Collection<LwM2mClient> getLwM2mClients() {
         return lwM2mClientsByEndpoint.values();
-    }
-
-    @Override
-    public Lwm2mDeviceProfileTransportConfiguration getProfile(UUID profileId) {
-        return doGetAndCache(profileId);
     }
 
     @Override
@@ -396,7 +391,7 @@ public class LwM2mClientContextImpl implements LwM2mClientContext {
         Arrays.stream(client.getRegistration().getObjectLinks()).forEach(link -> {
             LwM2mPath pathIds = new LwM2mPath(link.getUriReference());
             if (!pathIds.isRoot()) {
-                clientObjects.add(convertObjectIdToVersionedId(link.getUriReference(), client.getRegistration()));
+                clientObjects.add(convertObjectIdToVersionedId(link.getUriReference(), client));
             }
         });
         return (clientObjects.size() > 0) ? clientObjects : null;
@@ -411,15 +406,12 @@ public class LwM2mClientContextImpl implements LwM2mClientContext {
     public boolean isDownlinkAllowed(LwM2mClient client) {
         PowerMode powerMode = client.getPowerMode();
         OtherConfiguration profileSettings = null;
-        if (powerMode == null) {
-            var clientProfile = getProfile(client.getProfileId());
+        if (powerMode == null && client.getProfileId() != null) {
+            var clientProfile = getProfile(client.getRegistration());
             profileSettings = clientProfile.getClientLwM2mSettings();
             powerMode = profileSettings.getPowerMode();
-            if (powerMode == null) {
-                powerMode = PowerMode.DRX;
-            }
         }
-        if (PowerMode.DRX.equals(powerMode) || otaUpdateService.isOtaDownloading(client)) {
+        if (powerMode == null || PowerMode.DRX.equals(powerMode) || otaUpdateService.isOtaDownloading(client)) {
             return true;
         }
         client.lock();
@@ -460,15 +452,12 @@ public class LwM2mClientContextImpl implements LwM2mClientContext {
     public void onUplink(LwM2mClient client) {
         PowerMode powerMode = client.getPowerMode();
         OtherConfiguration profileSettings = null;
-        if (powerMode == null) {
-            var clientProfile = getProfile(client.getProfileId());
+        if (powerMode == null && client.getProfileId() != null) {
+            var clientProfile = getProfile(client.getRegistration());
             profileSettings = clientProfile.getClientLwM2mSettings();
             powerMode = profileSettings.getPowerMode();
-            if (powerMode == null) {
-                powerMode = PowerMode.DRX;
-            }
         }
-        if (PowerMode.DRX.equals(powerMode)) {
+        if (powerMode == null || PowerMode.DRX.equals(powerMode)) {
             client.updateLastUplinkTime();
             return;
         }
@@ -520,7 +509,7 @@ public class LwM2mClientContextImpl implements LwM2mClientContext {
         if (PowerMode.E_DRX.equals(client.getPowerMode()) && client.getEdrxCycle() != null) {
             timeout = client.getEdrxCycle();
         } else {
-            var clientProfile = getProfile(client.getProfileId());
+            var clientProfile = getProfile(client.getRegistration());
             OtherConfiguration clientLwM2mSettings = clientProfile.getClientLwM2mSettings();
             if (PowerMode.E_DRX.equals(clientLwM2mSettings.getPowerMode())) {
                 timeout = clientLwM2mSettings.getEdrxCycle();

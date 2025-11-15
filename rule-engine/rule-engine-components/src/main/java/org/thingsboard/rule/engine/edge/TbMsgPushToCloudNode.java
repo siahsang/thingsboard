@@ -1,5 +1,5 @@
 /**
- * Copyright © 2016-2023 The Thingsboard Authors
+ * Copyright © 2016-2025 The Thingsboard Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,7 +16,6 @@
 package org.thingsboard.rule.engine.edge;
 
 import com.fasterxml.jackson.databind.JsonNode;
-import lombok.extern.slf4j.Slf4j;
 import org.thingsboard.rule.engine.api.RuleNode;
 import org.thingsboard.rule.engine.api.TbContext;
 import org.thingsboard.server.common.data.EntityType;
@@ -28,7 +27,6 @@ import org.thingsboard.server.common.msg.TbMsg;
 
 import java.util.UUID;
 
-@Slf4j
 @RuleNode(
         type = ComponentType.ACTION,
         name = "push to cloud",
@@ -38,15 +36,7 @@ import java.util.UUID;
                 "This node used only on edge to push messages from edge to cloud. " +
                 "Once message arrived into this node it’s going to be converted into cloud event and saved to the local database. " +
                 "Node doesn't push messages directly to cloud, but stores event(s) in the cloud queue. " +
-                "<br>Supports next originator types:" +
-                "<br><code>DEVICE</code>" +
-                "<br><code>ASSET</code>" +
-                "<br><code>ENTITY_VIEW</code>" +
-                "<br><code>DASHBOARD</code>" +
-                "<br><code>TENANT</code>" +
-                "<br><code>CUSTOMER</code>" +
-                "<br><code>EDGE</code><br><br>" +
-                "As well node supports next message types:" +
+                "Supports next message types:" +
                 "<br><code>POST_TELEMETRY_REQUEST</code>" +
                 "<br><code>POST_ATTRIBUTES_REQUEST</code>" +
                 "<br><code>ATTRIBUTES_UPDATED</code>" +
@@ -54,10 +44,10 @@ import java.util.UUID;
                 "<br><code>ALARM</code><br><br>" +
                 "Message will be routed via <b>Failure</b> route if node was not able to save cloud event to database or unsupported originator type/message type arrived. " +
                 "In case successful storage cloud event to database message will be routed via <b>Success</b> route.",
-        uiResources = {"static/rulenode/rulenode-core-config.js"},
         configDirective = "tbActionNodePushToCloudConfig",
         icon = "cloud_upload",
-        ruleChainTypes = RuleChainType.EDGE
+        ruleChainTypes = RuleChainType.EDGE,
+        docUrl = "https://thingsboard.io/docs/user-guide/rule-engine-2-0/nodes/action/push-to-cloud/"
 )
 public class TbMsgPushToCloudNode extends AbstractTbMsgPushNode<TbMsgPushToCloudNodeConfiguration, Object, Object> {
 
@@ -89,7 +79,6 @@ public class TbMsgPushToCloudNode extends AbstractTbMsgPushNode<TbMsgPushToCloud
     }
 
     @Override
-    void processMsg(TbContext ctx, TbMsg msg) {
-    }
+    void processMsg(TbContext ctx, TbMsg msg) {}
 
 }

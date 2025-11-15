@@ -1,5 +1,5 @@
 /**
- * Copyright © 2016-2023 The Thingsboard Authors
+ * Copyright © 2016-2025 The Thingsboard Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -30,7 +30,7 @@ import java.util.UUID;
 /**
  * The Interface DashboardDao.
  */
-public interface DashboardDao extends Dao<Dashboard>, TenantEntityDao, ExportableEntityDao<DashboardId, Dashboard> {
+public interface DashboardDao extends Dao<Dashboard>, TenantEntityDao<Dashboard>, ExportableEntityDao<DashboardId, Dashboard> {
 
     /**
      * Save or update dashboard object
@@ -43,5 +43,7 @@ public interface DashboardDao extends Dao<Dashboard>, TenantEntityDao, Exportabl
     List<Dashboard> findByTenantIdAndTitle(UUID tenantId, String title);
 
     PageData<DashboardId> findIdsByTenantId(TenantId tenantId, PageLink pageLink);
+
+    PageData<DashboardId> findAllIds(PageLink pageLink);
 
 }

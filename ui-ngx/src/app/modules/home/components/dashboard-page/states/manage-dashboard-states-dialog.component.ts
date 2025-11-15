@@ -1,5 +1,5 @@
 ///
-/// Copyright © 2016-2023 The Thingsboard Authors
+/// Copyright © 2016-2025 The Thingsboard Authors
 ///
 /// Licensed under the Apache License, Version 2.0 (the "License");
 /// you may not use this file except in compliance with the License.
@@ -14,12 +14,10 @@
 /// limitations under the License.
 ///
 
-import { AfterViewInit, Component, ElementRef, Inject, OnInit, SkipSelf, ViewChild } from '@angular/core';
-import { ErrorStateMatcher } from '@angular/material/core';
+import { AfterViewInit, Component, ElementRef, Inject, OnInit, SecurityContext, ViewChild } from '@angular/core';
 import { MAT_DIALOG_DATA, MatDialog, MatDialogRef } from '@angular/material/dialog';
 import { Store } from '@ngrx/store';
 import { AppState } from '@core/core.state';
-import { UntypedFormBuilder, UntypedFormControl, UntypedFormGroup, FormGroupDirective, NgForm } from '@angular/forms';
 import { Router } from '@angular/router';
 import { DialogComponent } from '@app/shared/components/dialog.component';
 import { DashboardState } from '@app/shared/models/dashboard.models';
@@ -35,55 +33,66 @@ import { fromEvent, merge } from 'rxjs';
 import { debounceTime, distinctUntilChanged, tap } from 'rxjs/operators';
 import { TranslateService } from '@ngx-translate/core';
 import { DialogService } from '@core/services/dialog.service';
-import { deepClone, isUndefined } from '@core/utils';
+import { deepClone, isDefined, isEqual } from '@core/utils';
 import {
   DashboardStateDialogComponent,
   DashboardStateDialogData
 } from '@home/components/dashboard-page/states/dashboard-state-dialog.component';
+import { UtilsService } from '@core/services/utils.service';
+import { Widget } from '@shared/models/widget.models';
+import { DomSanitizer } from '@angular/platform-browser';
 
 export interface ManageDashboardStatesDialogData {
   states: {[id: string]: DashboardState };
+  widgets: {[id: string]: Widget };
+}
+
+export interface ManageDashboardStatesDialogResult {
+  states: {[id: string]: DashboardState };
+  addWidgets?: {[id: string]: Widget };
 }
 
 @Component({
   selector: 'tb-manage-dashboard-states-dialog',
   templateUrl: './manage-dashboard-states-dialog.component.html',
-  providers: [{provide: ErrorStateMatcher, useExisting: ManageDashboardStatesDialogComponent}],
   styleUrls: ['./manage-dashboard-states-dialog.component.scss']
 })
-export class ManageDashboardStatesDialogComponent extends
-                  DialogComponent<ManageDashboardStatesDialogComponent, {[id: string]: DashboardState }>
-  implements OnInit, ErrorStateMatcher, AfterViewInit {
+export class ManageDashboardStatesDialogComponent
+  extends DialogComponent<ManageDashboardStatesDialogComponent, ManageDashboardStatesDialogResult>
+  implements OnInit, AfterViewInit {
 
-  statesFormGroup: UntypedFormGroup;
+  @ViewChild('searchInput', {static: false}) searchInputField: ElementRef;
 
-  states: {[id: string]: DashboardState };
+  @ViewChild(MatPaginator, {static: false}) paginator: MatPaginator;
+  @ViewChild(MatSort, {static: false}) sort: MatSort;
+
+  isDirty = false;
 
   displayedColumns: string[];
   pageLink: PageLink;
   textSearchMode = false;
   dataSource: DashboardStatesDatasource;
 
-  submitted = false;
+  private states: {[id: string]: DashboardState };
+  private widgets: {[id: string]: Widget};
 
-  @ViewChild('searchInput') searchInputField: ElementRef;
-
-  @ViewChild(MatPaginator) paginator: MatPaginator;
-  @ViewChild(MatSort) sort: MatSort;
+  private stateNames: Set<string> = new Set<string>();
+  private addWidgets: {[id: string]: Widget} = {};
 
   constructor(protected store: Store<AppState>,
               protected router: Router,
               @Inject(MAT_DIALOG_DATA) public data: ManageDashboardStatesDialogData,
-              @SkipSelf() private errorStateMatcher: ErrorStateMatcher,
-              public dialogRef: MatDialogRef<ManageDashboardStatesDialogComponent, {[id: string]: DashboardState }>,
-              private fb: UntypedFormBuilder,
+              public dialogRef: MatDialogRef<ManageDashboardStatesDialogComponent, ManageDashboardStatesDialogResult>,
               private translate: TranslateService,
               private dialogs: DialogService,
-              private dialog: MatDialog) {
+              private utils: UtilsService,
+              private dialog: MatDialog,
+              private sanitizer: DomSanitizer) {
     super(store, router, dialogRef);
 
     this.states = this.data.states;
-    this.statesFormGroup = this.fb.group({});
+    this.widgets = this.data.widgets;
+    Object.values(this.states).forEach(value => this.stateNames.add(value.name));
 
     const sortOrder: SortOrder = { property: 'name', direction: Direction.ASC };
     this.pageLink = new PageLink(5, 0, null, sortOrder);
@@ -138,10 +147,12 @@ export class ManageDashboardStatesDialogComponent extends
     }
     const title = this.translate.instant('dashboard.delete-state-title');
     const content = this.translate.instant('dashboard.delete-state-text', {stateName: state.name});
-    this.dialogs.confirm(title, content, this.translate.instant('action.no'),
+    const safeContent = this.sanitizer.sanitize(SecurityContext.HTML, content);
+    this.dialogs.confirm(title, safeContent, this.translate.instant('action.no'),
       this.translate.instant('action.yes')).subscribe(
         (res) => {
           if (res) {
+            this.stateNames.delete(state.name);
             delete this.states[state.id];
             this.onStatesUpdated();
           }
@@ -171,8 +182,10 @@ export class ManageDashboardStatesDialogComponent extends
     }
     const isAdd = state === null;
     let prevStateId = null;
+    let prevStateName = '';
     if (!isAdd) {
       prevStateId = state.id;
+      prevStateName = state.name;
     }
     this.dialog.open<DashboardStateDialogComponent, DashboardStateDialogData,
       DashboardStateInfo>(DashboardStateDialogComponent, {
@@ -186,13 +199,13 @@ export class ManageDashboardStatesDialogComponent extends
     }).afterClosed().subscribe(
       (res) => {
         if (res) {
-          this.saveState(res, prevStateId);
+          this.saveState(res, prevStateId, prevStateName);
         }
       }
     );
   }
 
-  saveState(state: DashboardStateInfo, prevStateId: string) {
+  saveState(state: DashboardStateInfo, prevStateId: string, prevStateName: string) {
     const newState: DashboardState = {
       name: state.name,
       root: state.root,
@@ -203,6 +216,10 @@ export class ManageDashboardStatesDialogComponent extends
       this.states[state.id] = newState;
     } else {
       this.states[state.id] = newState;
+    }
+    if (prevStateName && prevStateName !== state.name) {
+      this.stateNames.delete(prevStateName);
+      this.stateNames.add(state.name);
     }
     if (state.root) {
       for (const id of Object.keys(this.states)) {
@@ -228,15 +245,55 @@ export class ManageDashboardStatesDialogComponent extends
     this.onStatesUpdated();
   }
 
-  private onStatesUpdated() {
-    this.statesFormGroup.markAsDirty();
-    this.updateData(true);
+  duplicateState($event: Event, state: DashboardStateInfo) {
+    const suffix = ` - ${this.translate.instant('action.copy')} `;
+    let counter = 0;
+    const maxAttempts = 1000;
+
+    while (counter++ < maxAttempts) {
+      const candidateName = `${state.name}${suffix}${counter}`;
+      if (this.stateNames.has(candidateName)) continue;
+
+      const candidateId = candidateName.toLowerCase().replace(/\W/g, '_');
+      if (this.states[candidateId]) {
+        continue;
+      }
+
+      const duplicatedState = deepClone(state);
+      const mainWidgets = {};
+      const rightWidgets = {};
+      duplicatedState.id = candidateId;
+      duplicatedState.name = candidateName;
+      duplicatedState.root = false;
+      this.stateNames.add(duplicatedState.name);
+
+      for (const [key, value] of Object.entries(duplicatedState.layouts.main.widgets)) {
+        const guid = this.utils.guid();
+        mainWidgets[guid] = value;
+        this.addWidgets[guid] = deepClone(this.widgets[key] ?? this.addWidgets[key]);
+        this.addWidgets[guid].id = guid;
+      }
+      duplicatedState.layouts.main.widgets = mainWidgets;
+
+      if (isDefined(duplicatedState.layouts?.right)) {
+        for (const [key, value] of Object.entries(duplicatedState.layouts.right.widgets)) {
+          const guid = this.utils.guid();
+          rightWidgets[guid] = value;
+          this.addWidgets[guid] = deepClone(this.widgets[key] ?? this.addWidgets[key]);
+          this.addWidgets[guid].id = guid;
+        }
+        duplicatedState.layouts.right.widgets = rightWidgets;
+      }
+
+      this.states[duplicatedState.id] = duplicatedState;
+      this.onStatesUpdated();
+      return;
+    }
   }
 
-  isErrorState(control: UntypedFormControl | null, form: FormGroupDirective | NgForm | null): boolean {
-    const originalErrorState = this.errorStateMatcher.isErrorState(control, form);
-    const customErrorState = !!(control && control.invalid && this.submitted);
-    return originalErrorState || customErrorState;
+  private onStatesUpdated() {
+    this.isDirty = true;
+    this.updateData(true);
   }
 
   cancel(): void {
@@ -244,7 +301,10 @@ export class ManageDashboardStatesDialogComponent extends
   }
 
   save(): void {
-    this.submitted = true;
-    this.dialogRef.close(this.states);
+    const result: ManageDashboardStatesDialogResult = {states: this.states};
+    if (!isEqual(this.addWidgets, {})) {
+      result.addWidgets = this.addWidgets;
+    }
+    this.dialogRef.close(result);
   }
 }

@@ -1,5 +1,5 @@
 /**
- * Copyright © 2016-2023 The Thingsboard Authors
+ * Copyright © 2016-2025 The Thingsboard Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -58,15 +58,9 @@ public abstract class TbAbstractGetEntityDataNode<T extends EntityId> extends Tb
     protected void processDataAndTell(TbContext ctx, TbMsg msg, T entityId, ObjectNode msgDataAsJsonNode) {
         DataToFetch dataToFetch = config.getDataToFetch();
         switch (dataToFetch) {
-            case ATTRIBUTES:
-                processAttributesKvEntryData(ctx, msg, entityId, msgDataAsJsonNode);
-                break;
-            case LATEST_TELEMETRY:
-                processTsKvEntryData(ctx, msg, entityId, msgDataAsJsonNode);
-                break;
-            case FIELDS:
-                processFieldsData(ctx, msg, entityId, msgDataAsJsonNode, true);
-                break;
+            case ATTRIBUTES -> processAttributesKvEntryData(ctx, msg, entityId, msgDataAsJsonNode);
+            case LATEST_TELEMETRY -> processTsKvEntryData(ctx, msg, entityId, msgDataAsJsonNode);
+            case FIELDS -> processFieldsData(ctx, msg, entityId, msgDataAsJsonNode, true);
         }
     }
 

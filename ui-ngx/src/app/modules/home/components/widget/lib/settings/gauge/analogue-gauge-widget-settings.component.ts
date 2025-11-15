@@ -1,5 +1,5 @@
 ///
-/// Copyright © 2016-2023 The Thingsboard Authors
+/// Copyright © 2016-2025 The Thingsboard Authors
 ///
 /// Licensed under the Apache License, Version 2.0 (the "License");
 /// you may not use this file except in compliance with the License.
@@ -45,7 +45,7 @@ export class AnalogueGaugeWidgetSettingsComponent extends WidgetSettingsComponen
       maxValue: 100,
       showUnitTitle: true,
       unitTitle: null,
-      majorTicksCount: null,
+      majorTicksCount: 10,
       minorTicks: 2,
       valueBox: true,
       valueInt: 3,
@@ -114,7 +114,7 @@ export class AnalogueGaugeWidgetSettingsComponent extends WidgetSettingsComponen
       maxValue: [settings.maxValue, []],
       majorTicksCount: [settings.majorTicksCount, [Validators.min(0)]],
       colorMajorTicks: [settings.colorMajorTicks, []],
-      minorTicks: [settings.majorTicksCount, [Validators.min(0)]],
+      minorTicks: [settings.minorTicks, [Validators.min(0)]],
       colorMinorTicks: [settings.colorMinorTicks, []],
       numbersFont: [settings.numbersFont, []],
       numbersColor: [settings.numbersFont.color, []],

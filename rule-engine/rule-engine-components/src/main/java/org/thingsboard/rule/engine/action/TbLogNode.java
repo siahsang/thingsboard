@@ -1,5 +1,5 @@
 /**
- * Copyright © 2016-2023 The Thingsboard Authors
+ * Copyright © 2016-2025 The Thingsboard Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,6 +19,7 @@ import com.google.common.util.concurrent.FutureCallback;
 import com.google.common.util.concurrent.Futures;
 import com.google.common.util.concurrent.MoreExecutors;
 import lombok.extern.slf4j.Slf4j;
+import org.checkerframework.checker.nullness.qual.NonNull;
 import org.checkerframework.checker.nullness.qual.Nullable;
 import org.thingsboard.common.util.JacksonUtil;
 import org.thingsboard.rule.engine.api.RuleNode;
@@ -43,21 +44,20 @@ import java.util.Objects;
         nodeDetails = "Transform incoming Message with configured JS function to String and log final value into Thingsboard log file. " +
                 "Message payload can be accessed via <code>msg</code> property. For example <code>'temperature = ' + msg.temperature ;</code>. " +
                 "Message metadata can be accessed via <code>metadata</code> property. For example <code>'name = ' + metadata.customerName;</code>.",
-        uiResources = {"static/rulenode/rulenode-core-config.js"},
         configDirective = "tbActionNodeLogConfig",
-        icon = "menu"
+        icon = "menu",
+        docUrl = "https://thingsboard.io/docs/user-guide/rule-engine-2-0/nodes/action/log/"
 )
 public class TbLogNode implements TbNode {
 
-    private TbLogNodeConfiguration config;
     private ScriptEngine scriptEngine;
     private boolean standard;
 
     @Override
     public void init(TbContext ctx, TbNodeConfiguration configuration) throws TbNodeException {
-        this.config = TbNodeUtils.convert(configuration, TbLogNodeConfiguration.class);
-        this.standard = isStandard(config);
-        this.scriptEngine = this.standard ? null : createScriptEngine(ctx, config);
+        var config = TbNodeUtils.convert(configuration, TbLogNodeConfiguration.class);
+        standard = isStandard(config);
+        scriptEngine = standard ? null : createScriptEngine(ctx, config);
     }
 
     ScriptEngine createScriptEngine(TbContext ctx, TbLogNodeConfiguration config) {
@@ -67,23 +67,24 @@ public class TbLogNode implements TbNode {
 
     @Override
     public void onMsg(TbContext ctx, TbMsg msg) {
+        if (!log.isInfoEnabled()) {
+            ctx.tellSuccess(msg);
+            return;
+        }
         if (standard) {
             logStandard(ctx, msg);
             return;
         }
 
-        ctx.logJsEvalRequest();
-        Futures.addCallback(scriptEngine.executeToStringAsync(msg), new FutureCallback<String>() {
+        Futures.addCallback(scriptEngine.executeToStringAsync(msg), new FutureCallback<>() {
             @Override
             public void onSuccess(@Nullable String result) {
-                ctx.logJsEvalResponse();
                 log.info(result);
                 ctx.tellSuccess(msg);
             }
 
             @Override
-            public void onFailure(Throwable t) {
-                ctx.logJsEvalResponse();
+            public void onFailure(@NonNull Throwable t) {
                 ctx.tellFailure(msg, t);
             }
         }, MoreExecutors.directExecutor()); //usually js responses runs on js callback executor
@@ -120,4 +121,5 @@ public class TbLogNode implements TbNode {
             scriptEngine.destroy();
         }
     }
+
 }

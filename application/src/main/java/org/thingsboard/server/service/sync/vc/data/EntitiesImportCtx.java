@@ -1,5 +1,5 @@
 /**
- * Copyright © 2016-2023 The Thingsboard Authors
+ * Copyright © 2016-2025 The Thingsboard Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -58,6 +58,7 @@ public class EntitiesImportCtx {
     private boolean finalImportAttempt = false;
     private EntityImportSettings settings;
     private EntityImportResult<?> currentImportResult;
+    private boolean rollbackOnError;
 
     public EntitiesImportCtx(UUID requestId, User user, String versionId) {
         this(requestId, user, versionId, null);
@@ -88,6 +89,10 @@ public class EntitiesImportCtx {
 
     public boolean isSaveCredentials() {
         return getSettings().isSaveCredentials();
+    }
+
+    public boolean isSaveCalculatedFields() {
+        return getSettings().isSaveCalculatedFields();
     }
 
     public EntityId getInternalId(EntityId externalId) {
@@ -138,6 +143,5 @@ public class EntitiesImportCtx {
     public boolean isNotFound(EntityId externalId) {
         return notFoundIds.contains(externalId);
     }
-
 
 }

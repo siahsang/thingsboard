@@ -1,5 +1,5 @@
 /**
- * Copyright © 2016-2023 The Thingsboard Authors
+ * Copyright © 2016-2025 The Thingsboard Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -29,17 +29,20 @@ import org.thingsboard.server.common.data.id.TbResourceId;
 import org.thingsboard.server.common.data.id.TenantId;
 import org.thingsboard.server.dao.exception.DataValidationException;
 import org.thingsboard.server.gen.edge.v1.DownlinkMsg;
+import org.thingsboard.server.gen.edge.v1.EdgeVersion;
 import org.thingsboard.server.gen.edge.v1.ResourceUpdateMsg;
 import org.thingsboard.server.gen.edge.v1.UpdateMsgType;
 import org.thingsboard.server.queue.util.TbCoreComponent;
+import org.thingsboard.server.service.edge.EdgeMsgConstructorUtils;
 
 import java.util.UUID;
 
-@Component
 @Slf4j
+@Component
 @TbCoreComponent
-public class ResourceEdgeProcessor extends BaseResourceProcessor {
+public class ResourceEdgeProcessor extends BaseResourceProcessor implements ResourceProcessor {
 
+    @Override
     public ListenableFuture<Void> processResourceMsgFromEdge(TenantId tenantId, Edge edge, ResourceUpdateMsg resourceUpdateMsg) {
         TbResourceId tbResourceId = new TbResourceId(new UUID(resourceUpdateMsg.getIdMSB(), resourceUpdateMsg.getIdLSB()));
         try {
@@ -58,7 +61,7 @@ public class ResourceEdgeProcessor extends BaseResourceProcessor {
                     return handleUnsupportedMsgType(resourceUpdateMsg.getMsgType());
             }
         } catch (DataValidationException e) {
-            if (e.getMessage().contains("files size limit is exhausted")) {
+            if (e.getMessage().contains("exceeds the maximum")) {
                 log.warn("[{}] Resource data size has been exhausted {}", tenantId, resourceUpdateMsg, e);
                 return Futures.immediateFuture(null);
             } else {
@@ -70,32 +73,35 @@ public class ResourceEdgeProcessor extends BaseResourceProcessor {
         return Futures.immediateFuture(null);
     }
 
-    public DownlinkMsg convertResourceEventToDownlink(EdgeEvent edgeEvent) {
+    @Override
+    public DownlinkMsg convertEdgeEventToDownlink(EdgeEvent edgeEvent, EdgeVersion edgeVersion) {
         TbResourceId tbResourceId = new TbResourceId(edgeEvent.getEntityId());
-        DownlinkMsg downlinkMsg = null;
         switch (edgeEvent.getAction()) {
-            case ADDED:
-            case UPDATED:
-                TbResource tbResource = resourceService.findResourceById(edgeEvent.getTenantId(), tbResourceId);
+            case ADDED, UPDATED -> {
+                TbResource tbResource = edgeCtx.getResourceService().findResourceById(edgeEvent.getTenantId(), tbResourceId);
                 if (tbResource != null) {
                     UpdateMsgType msgType = getUpdateMsgType(edgeEvent.getAction());
-                    ResourceUpdateMsg resourceUpdateMsg =
-                            resourceMsgConstructor.constructResourceUpdatedMsg(msgType, tbResource);
-                    downlinkMsg = DownlinkMsg.newBuilder()
+                    ResourceUpdateMsg resourceUpdateMsg = EdgeMsgConstructorUtils.constructResourceUpdatedMsg(msgType, tbResource);
+                    return DownlinkMsg.newBuilder()
                             .setDownlinkMsgId(EdgeUtils.nextPositiveInt())
                             .addResourceUpdateMsg(resourceUpdateMsg)
                             .build();
                 }
-                break;
-            case DELETED:
-                ResourceUpdateMsg resourceUpdateMsg =
-                        resourceMsgConstructor.constructResourceDeleteMsg(tbResourceId);
-                downlinkMsg = DownlinkMsg.newBuilder()
+            }
+            case DELETED -> {
+                ResourceUpdateMsg resourceUpdateMsg = EdgeMsgConstructorUtils.constructResourceDeleteMsg(tbResourceId);
+                return DownlinkMsg.newBuilder()
                         .setDownlinkMsgId(EdgeUtils.nextPositiveInt())
                         .addResourceUpdateMsg(resourceUpdateMsg)
                         .build();
-                break;
+            }
         }
-        return downlinkMsg;
+        return null;
     }
+
+    @Override
+    public EdgeEventType getEdgeEventType() {
+        return EdgeEventType.TB_RESOURCE;
+    }
+
 }

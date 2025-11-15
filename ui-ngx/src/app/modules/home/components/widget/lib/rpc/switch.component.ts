@@ -1,5 +1,5 @@
 ///
-/// Copyright © 2016-2023 The Thingsboard Authors
+/// Copyright © 2016-2025 The Thingsboard Authors
 ///
 /// Licensed under the Apache License, Version 2.0 (the "License");
 /// you may not use this file except in compliance with the License.
@@ -14,7 +14,7 @@
 /// limitations under the License.
 ///
 
-import { AfterViewInit, Component, ElementRef, Input, OnDestroy, OnInit, ViewChild } from '@angular/core';
+import { AfterViewInit, Component, ElementRef, Input, OnDestroy, ViewChild } from '@angular/core';
 import { PageComponent } from '@shared/components/page.component';
 import { WidgetContext } from '@home/models/widget-component.models';
 import { UtilsService } from '@core/services/utils.service';
@@ -25,7 +25,6 @@ import { IWidgetSubscription, SubscriptionInfo, WidgetSubscriptionOptions } from
 import { DatasourceType, widgetType } from '@shared/models/widget.models';
 import { EntityType } from '@shared/models/entity-type.models';
 import { MatSlideToggle } from '@angular/material/slide-toggle';
-import { ResizeObserver } from '@juggle/resize-observer';
 import { ThemePalette } from '@angular/material/core';
 
 const switchAspectRation = 2.7893;
@@ -56,11 +55,11 @@ interface SwitchSettings {
   templateUrl: './switch.component.html',
   styleUrls: ['./switch.component.scss']
 })
-export class SwitchComponent extends PageComponent implements OnInit, AfterViewInit, OnDestroy {
+export class SwitchComponent extends PageComponent implements AfterViewInit, OnDestroy {
 
   @ViewChild('switch', {static: false}) switchElementRef: ElementRef<HTMLElement>;
   @ViewChild('switchContainer', {static: false}) switchContainerRef: ElementRef<HTMLElement>;
-  @ViewChild('matSlideToggle', {static: false}) matSlideToggleRef: MatSlideToggle;
+  @ViewChild('matSlideToggle', {static: false, read: ElementRef}) matSlideToggleRef: ElementRef<HTMLElement>;
   @ViewChild('onoffContainer', {static: false}) onoffContainerRef: ElementRef<HTMLElement>;
   @ViewChild('onLabel', {static: false}) onLabelRef: ElementRef<HTMLElement>;
   @ViewChild('offLabel', {static: false}) offLabelRef: ElementRef<HTMLElement>;
@@ -120,14 +119,11 @@ export class SwitchComponent extends PageComponent implements OnInit, AfterViewI
     super(store);
   }
 
-  ngOnInit(): void {
-  }
-
   ngAfterViewInit() {
     if (this.switchType === 'switch') {
       this.switchElement = $(this.switchElementRef.nativeElement);
       this.switchContainer = $(this.switchContainerRef.nativeElement);
-      this.matSlideToggle = $(this.matSlideToggleRef._elementRef.nativeElement);
+      this.matSlideToggle = $(this.matSlideToggleRef.nativeElement);
       this.onoffContainer = $(this.onoffContainerRef.nativeElement);
       this.onLabel = $(this.onLabelRef.nativeElement);
       this.offLabel = $(this.offLabelRef.nativeElement);
@@ -377,11 +373,16 @@ export class SwitchComponent extends PageComponent implements OnInit, AfterViewI
       if (keyData && keyData.data && keyData.data[0]) {
         const attrValue = keyData.data[0][1];
         if (isDefined(attrValue)) {
-          let parsed = null;
+          let valueToParse = attrValue;
           try {
-            parsed = this.parseValueFunction(JSON.parse(attrValue));
-          } catch (e){/**/}
-          value = !!parsed;
+            valueToParse = JSON.parse(attrValue);
+          } catch (e) {/**/}
+
+          try {
+            value = !!this.parseValueFunction(valueToParse);
+          } catch (e) {
+            value = false;
+          }
         }
       }
     }

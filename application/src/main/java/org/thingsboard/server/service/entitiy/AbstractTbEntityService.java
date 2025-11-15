@@ -1,5 +1,5 @@
 /**
- * Copyright © 2016-2023 The Thingsboard Authors
+ * Copyright © 2016-2025 The Thingsboard Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,46 +17,38 @@ package org.thingsboard.server.service.entitiy;
 
 import com.google.common.util.concurrent.Futures;
 import com.google.common.util.concurrent.ListenableFuture;
-import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Lazy;
+import org.springframework.core.env.Environment;
 import org.thingsboard.server.cluster.TbClusterService;
 import org.thingsboard.server.common.data.EntityType;
 import org.thingsboard.server.common.data.User;
-import org.thingsboard.server.common.data.alarm.AlarmInfo;
-import org.thingsboard.server.common.data.alarm.AlarmQuery;
 import org.thingsboard.server.common.data.exception.ThingsboardErrorCode;
 import org.thingsboard.server.common.data.exception.ThingsboardException;
 import org.thingsboard.server.common.data.id.EntityId;
 import org.thingsboard.server.common.data.id.EntityIdFactory;
-import org.thingsboard.server.common.data.id.TenantId;
-import org.thingsboard.server.common.data.page.PageData;
-import org.thingsboard.server.common.data.page.TimePageLink;
 import org.thingsboard.server.dao.alarm.AlarmService;
 import org.thingsboard.server.dao.customer.CustomerService;
 import org.thingsboard.server.dao.edge.EdgeService;
+import org.thingsboard.server.dao.entity.EntityService;
 import org.thingsboard.server.dao.model.ModelConstants;
-import org.thingsboard.server.service.executors.DbCallbackExecutorService;
 import org.thingsboard.server.service.sync.vc.EntitiesVersionControlService;
 import org.thingsboard.server.service.telemetry.AlarmSubscriptionService;
 
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 
 @Slf4j
 public abstract class AbstractTbEntityService {
 
-    @Value("${server.log_controller_error_stack_trace}")
-    @Getter
-    private boolean logControllerErrorStackTrace;
-
     @Autowired
-    protected DbCallbackExecutorService dbExecutor;
+    private Environment env;
+
     @Autowired(required = false)
-    protected TbNotificationEntityService notificationEntityService;
+    protected TbLogEntityActionService logEntityActionService;
     @Autowired(required = false)
     protected EdgeService edgeService;
     @Autowired
@@ -71,12 +63,11 @@ public abstract class AbstractTbEntityService {
     @Autowired(required = false)
     @Lazy
     private EntitiesVersionControlService vcService;
+    @Autowired
+    protected EntityService entityService;
 
-    protected void removeAlarmsByEntityId(TenantId tenantId, EntityId entityId) {
-        PageData<AlarmInfo> alarms =
-                alarmService.findAlarms(tenantId, new AlarmQuery(entityId, new TimePageLink(Integer.MAX_VALUE), null, null, null, false));
-
-        alarms.getData().stream().map(AlarmInfo::getId).forEach(alarmId -> alarmService.delAlarm(tenantId, alarmId));
+    protected boolean isTestProfile() {
+        return Set.of(this.env.getActiveProfiles()).contains("test");
     }
 
     protected <T> T checkNotNull(T reference) throws ThingsboardException {
@@ -106,7 +97,7 @@ public abstract class AbstractTbEntityService {
         return (I) EntityIdFactory.getByTypeAndUuid(entityType, ModelConstants.NULL_UUID);
     }
 
-    protected ListenableFuture<UUID> autoCommit(User user, EntityId entityId) throws Exception {
+    protected ListenableFuture<UUID> autoCommit(User user, EntityId entityId) {
         if (vcService != null) {
             return vcService.autoCommit(user, entityId);
         } else {
@@ -115,7 +106,7 @@ public abstract class AbstractTbEntityService {
         }
     }
 
-    protected ListenableFuture<UUID> autoCommit(User user, EntityType entityType, List<UUID> entityIds) throws Exception {
+    protected ListenableFuture<UUID> autoCommit(User user, EntityType entityType, List<UUID> entityIds) {
         if (vcService != null) {
             return vcService.autoCommit(user, entityType, entityIds);
         } else {
@@ -123,4 +114,5 @@ public abstract class AbstractTbEntityService {
             return Futures.immediateFailedFuture(new RuntimeException("Operation not supported!"));
         }
     }
+
 }

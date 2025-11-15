@@ -1,5 +1,5 @@
 ///
-/// Copyright © 2016-2023 The Thingsboard Authors
+/// Copyright © 2016-2025 The Thingsboard Authors
 ///
 /// Licensed under the Apache License, Version 2.0 (the "License");
 /// you may not use this file except in compliance with the License.
@@ -57,6 +57,17 @@ import {
 import { ResourcesService } from '@core/services/resources.service';
 import { NULL_UUID } from '@shared/models/id/has-uuid';
 import { TranslateService } from '@ngx-translate/core';
+import { ImagePipe } from '@shared/pipe/image.pipe';
+import { DomSanitizer } from '@angular/platform-browser';
+import { DataEntry } from '@shared/models/widget.models';
+import {
+  getSourceTbUnitSymbol,
+  isNotEmptyTbUnits,
+  isTbUnitMapping,
+  TbUnit,
+  TbUnitConverter
+} from '@shared/models/unit.models';
+import { UnitService } from '@core/services/unit.service';
 import ITooltipsterInstance = JQueryTooltipster.ITooltipsterInstance;
 
 @Component({
@@ -76,8 +87,9 @@ export class LiquidLevelWidgetComponent implements OnInit {
   @Input()
   widgetTitlePanel: TemplateRef<any>;
 
-  backgroundStyle: ComponentStyle = {};
+  backgroundStyle$: Observable<ComponentStyle>;
   overlayStyle: ComponentStyle = {};
+  padding: string;
 
   hasCardClickAction = false;
 
@@ -102,13 +114,21 @@ export class LiquidLevelWidgetComponent implements OnInit {
 
   private volume: number;
   private tooltipContent: string;
-  private widgetUnits: string;
+  private widgetUnits: TbUnit;
+  private widgetUnitsSymbol: string;
+  private widgetUnitsConvertor: TbUnitConverter;
+  private volumeUnits: string;
+  private tooltipUnitSymbol: string;
+  private tooltipUnitConvertor: TbUnitConverter;
 
   private capacityUnits = Object.values(CapacityUnits);
 
-  constructor(private cd: ChangeDetectorRef,
+  constructor(private imagePipe: ImagePipe,
+              private sanitizer: DomSanitizer,
+              private cd: ChangeDetectorRef,
               private resourcesService: ResourcesService,
-              private translate: TranslateService) {
+              private translate: TranslateService,
+              private unitService: UnitService) {
   }
 
   ngOnInit(): void {
@@ -116,14 +136,15 @@ export class LiquidLevelWidgetComponent implements OnInit {
     this.settings = {...levelCardDefaultSettings, ...this.ctx.settings};
     this.declareStyles();
 
-    this.backgroundStyle = backgroundStyle(this.settings.background);
+    this.backgroundStyle$ = backgroundStyle(this.settings.background, this.imagePipe, this.sanitizer);
     this.overlayStyle = overlayStyle(this.settings.background.overlay);
+    this.padding = this.settings.background.overlay.enabled ? undefined : this.settings.padding;
 
     this.hasCardClickAction = this.ctx.actionsApi.getActionDescriptors('cardClick').length > 0;
 
     this.getData().subscribe(data => {
       if (data) {
-        const { svg, volume, units } = data;
+        const { svg, volume, units, volumeUnits } = data;
         if (svg && isNotEmptyStr(svg) && this.liquidLevelContent.nativeElement) {
           const jQueryContainerElement = $(this.liquidLevelContent.nativeElement);
           jQueryContainerElement.html(svg);
@@ -140,9 +161,19 @@ export class LiquidLevelWidgetComponent implements OnInit {
           this.volume = Number(volume);
         }
 
+        if (volumeUnits) {
+          this.volumeUnits = volumeUnits;
+        }
+
         if (units) {
           this.widgetUnits = units;
         }
+
+        this.widgetUnitsSymbol = this.unitService.getTargetUnitSymbol(this.widgetUnits);
+        this.widgetUnitsConvertor = this.unitService.geUnitConverter(this.widgetUnits);
+
+        this.tooltipUnitSymbol = this.unitService.getTargetUnitSymbol(this.settings.tooltipUnits);
+        this.tooltipUnitConvertor = this.unitService.geUnitConverter(this.settings.tooltipUnits);
 
         this.update(true);
       }
@@ -159,7 +190,7 @@ export class LiquidLevelWidgetComponent implements OnInit {
     this.tooltipDateFormat = DateFormatProcessor.fromSettings(this.ctx.$injector, this.settings.tooltipDateFormat);
   }
 
-  private getData(): Observable<{ svg: string; volume: number; units: string }> {
+  private getData(): Observable<{ svg: string; volume: number; units: TbUnit; volumeUnits: string}> {
     if (this.ctx.datasources?.length) {
       const entityId: EntityId = {
         entityType: this.ctx.datasources[0].entityType,
@@ -303,7 +334,7 @@ export class LiquidLevelWidgetComponent implements OnInit {
         .pipe(map(attributes => {
             const shape = extractValue<Shapes>(attributes, this.settings.shapeAttributeName);
             if (!shape || !svgMapping.has(shape)) {
-              this.createdErrorMgs(this.settings.shapeAttributeName, isUndefinedOrNull(shape) || isEmptyStr(shape));
+              this.createdErrorMsg(this.settings.shapeAttributeName, isUndefinedOrNull(shape) || isEmptyStr(shape));
               return this.settings.selectedShape;
             }
             return shape;
@@ -313,12 +344,15 @@ export class LiquidLevelWidgetComponent implements OnInit {
     return of(this.settings.selectedShape);
   }
 
-  private getTankersParams(entityId: EntityId): Observable<{ volume: number; units: string }> {
+  private getTankersParams(entityId: EntityId): Observable<{ volume: number; units: TbUnit; volumeUnits: string }> {
     const isVolumeStatic = this.settings.layout !== LevelCardLayout.absolute
       && this.settings.datasourceUnits === CapacityUnits.percent
       || this.settings.volumeSource === LiquidWidgetDataSourceType.static;
     const isUnitStatic =  this.settings.layout !== LevelCardLayout.absolute ||
       this.settings.widgetUnitsSource === LiquidWidgetDataSourceType.static;
+    const isVolumeUnitStatic = this.settings.layout !== LevelCardLayout.absolute
+      && this.settings.datasourceUnits === CapacityUnits.percent
+      || this.settings.volumeUnitsSource === LiquidWidgetDataSourceType.static;
 
     const attributeKeys: string[] = [];
 
@@ -330,43 +364,65 @@ export class LiquidLevelWidgetComponent implements OnInit {
       attributeKeys.push(this.settings.widgetUnitsAttributeName);
     }
 
+    if (!isVolumeUnitStatic) {
+      attributeKeys.push(this.settings.volumeUnitsAttributeName);
+    }
+
     if (!attributeKeys.length || entityId.id === NULL_UUID) {
       return of({
         volume: this.settings.volumeConstant,
+        volumeUnits: this.settings.volumeUnits,
         units: this.settings.units
       });
     }
 
     return this.ctx.attributeService.getEntityAttributes(entityId, null, attributeKeys).pipe(
       map(attributes => {
-        let volume = isVolumeStatic ? this.settings.volumeConstant : extractValue<number>(attributes, this.settings.volumeAttributeName);
-        let units = isUnitStatic ? this.settings.units : extractValue<string>(attributes, this.settings.widgetUnitsAttributeName);
+        let volume = isVolumeStatic ? this.settings.volumeConstant :
+          extractValue<number>(attributes, this.settings.volumeAttributeName);
+        let volumeUnits = isVolumeUnitStatic ? this.settings.volumeUnits :
+          extractValue<string>(attributes, this.settings.volumeUnitsAttributeName);
+        let units = isUnitStatic ? this.settings.units :
+          extractValue<string>(attributes, this.settings.widgetUnitsAttributeName);
 
         if (!isVolumeStatic && (!volume || !isNumeric(volume) || volume < 0.1)) {
-          this.createdErrorMgs(this.settings.volumeAttributeName, isUndefinedOrNull(volume) || isEmptyStr(volume));
+          this.createdErrorMsg(this.settings.volumeAttributeName, isUndefinedOrNull(volume) || isEmptyStr(volume));
           volume = this.settings.volumeConstant;
         }
 
         if (!isUnitStatic) {
-          if (isNotEmptyStr(units)) {
-            const normalizeUnits = units.normalize().trim();
+          if (isNotEmptyTbUnits(units) && !isTbUnitMapping(units)) {
+            const normalizeUnits = (units as string).normalize().trim();
             units = this.capacityUnits.find(unit => unit.normalize() === normalizeUnits);
           }
           if (isUndefinedOrNull(units) || !isNotEmptyStr(units)) {
-            this.createdErrorMgs(this.settings.widgetUnitsAttributeName, isUndefinedOrNull(units) || isEmptyStr(units));
+            this.createdErrorMsg(this.settings.widgetUnitsAttributeName, isUndefinedOrNull(units) || isEmptyStr(units));
             units = this.settings.units;
+          }
+        }
+
+        if (!isVolumeUnitStatic) {
+          if (isNotEmptyStr(volumeUnits)) {
+            const normalizeUnits = volumeUnits.normalize().trim();
+            volumeUnits = this.capacityUnits.find(unit => unit.normalize() === normalizeUnits);
+          }
+          if (isUndefinedOrNull(volumeUnits) || !isNotEmptyStr(volumeUnits)) {
+            this.createdErrorMsg(this.settings.widgetUnitsAttributeName,
+              isUndefinedOrNull(volumeUnits) || isEmptyStr(volumeUnits));
+            volumeUnits = this.settings.volumeUnits;
           }
         }
 
         return {
           volume,
+          volumeUnits,
           units
         };
       })
     );
   }
 
-  private createdErrorMgs(attributeName: string, isEmpty = false) {
+  private createdErrorMsg(attributeName: string, isEmpty = false) {
     if (isEmpty) {
       this.errorsMsg.push(this.translate.instant('widgets.liquid-level-card.attribute-key-not-set', {attributeName}));
     } else {
@@ -395,7 +451,7 @@ export class LiquidLevelWidgetComponent implements OnInit {
     return limits.min + (percentage / 100) * (limits.max - limits.min);
   }
 
-  private updateTooltip(value: [number, any]): void {
+  private updateTooltip(value: DataEntry): void {
     this.tooltipContent = this.getTooltipContent(value);
 
     if (this.tooltip) {
@@ -454,11 +510,9 @@ export class LiquidLevelWidgetComponent implements OnInit {
     let content: string;
     let container: JQuery<HTMLElement>;
     const jQueryContainerElement = $(this.liquidLevelContent.nativeElement);
-    let value = 'N/A';
-
+    let value: number | string = 'N/A';
     if (isNumeric(data)) {
-      value = convertLiters(this.convertOutputData(percentage), this.widgetUnits as CapacityUnits, ConversionType.from)
-          .toFixed(this.settings.decimals || 0);
+      value = +this.widgetUnitsConvertor(convertLiters(this.convertOutputData(percentage), this.widgetUnits as CapacityUnits, ConversionType.from)).toFixed(this.ctx.widgetConfig.decimals || 0);
     }
     this.valueColor.update(value);
     const valueTextStyle = cssTextFromInlineStyle({...inlineTextStyle(this.settings.valueFont),
@@ -469,16 +523,20 @@ export class LiquidLevelWidgetComponent implements OnInit {
     }
 
     if (this.settings.layout === LevelCardLayout.absolute) {
-      const volumeInLiters: number = convertLiters(this.volume, this.settings.volumeUnits as CapacityUnits, ConversionType.to);
-      const volume = convertLiters(volumeInLiters, this.widgetUnits as CapacityUnits, ConversionType.from)
-        .toFixed(this.settings.decimals || 0);
+      let volume: number | string;
+      if (this.widgetUnits !== CapacityUnits.percent) {
+        const volumeInLiters: number = convertLiters(this.volume, this.volumeUnits as CapacityUnits, ConversionType.to);
+        volume = +this.widgetUnitsConvertor(convertLiters(volumeInLiters, this.widgetUnits as CapacityUnits, ConversionType.from)).toFixed(this.ctx.widgetConfig.decimals || 0);
+      } else {
+        volume = +this.widgetUnitsConvertor(this.volume).toFixed(this.ctx.widgetConfig.decimals || 0);
+      }
 
       const volumeTextStyle = cssTextFromInlineStyle({...inlineTextStyle(this.settings.volumeFont),
                                                              color: this.settings.volumeColor});
 
       container = jQueryContainerElement.find('.absolute-value-container');
       content = createAbsoluteLayout({inputValue: value, volume},
-        {valueStyle: valueTextStyle, volumeStyle: volumeTextStyle}, this.widgetUnits);
+        {valueStyle: valueTextStyle, volumeStyle: volumeTextStyle}, this.widgetUnitsSymbol);
 
     } else if (this.settings.layout === LevelCardLayout.percentage) {
       container = jQueryContainerElement.find('.percentage-value-container');
@@ -490,7 +548,7 @@ export class LiquidLevelWidgetComponent implements OnInit {
     }
   }
 
-  private getTooltipContent(value?: [number, any]): string {
+  private getTooltipContent(value?: DataEntry): string {
     const contentValue = value || [0, ''];
     let tooltipValue: string | number = 'N/A';
 
@@ -512,7 +570,7 @@ export class LiquidLevelWidgetComponent implements OnInit {
 
     if (this.settings.showTooltipLevel) {
       const levelValue = typeof tooltipValue == 'number'
-          ? `${tooltipValue.toFixed(this.settings.tooltipLevelDecimals)}&nbsp;${this.settings.tooltipUnits}`
+          ? `${this.tooltipUnitConvertor(tooltipValue).toFixed(this.settings.tooltipLevelDecimals)}&nbsp;${this.tooltipUnitSymbol}`
           : 'N/A';
       content += this.createTooltipContent(
         this.ctx.translate.instant('widgets.liquid-level-card.level'),
@@ -548,7 +606,7 @@ export class LiquidLevelWidgetComponent implements OnInit {
   private convertInputData(value: any): number {
     if (this.settings.datasourceUnits !== CapacityUnits.percent) {
       return (convertLiters(Number(value), this.settings.datasourceUnits, ConversionType.to) /
-        convertLiters(this.volume, this.settings.volumeUnits, ConversionType.to)) * 100;
+        convertLiters(this.volume, this.volumeUnits as CapacityUnits, ConversionType.to)) * 100;
     }
 
     return Number(value);
@@ -556,7 +614,7 @@ export class LiquidLevelWidgetComponent implements OnInit {
 
   private convertOutputData(value: number): number {
     if (this.widgetUnits !== CapacityUnits.percent) {
-      return convertLiters(this.volume * (value / 100), this.settings.volumeUnits, ConversionType.to);
+      return convertLiters(this.volume * (value / 100), this.volumeUnits as CapacityUnits, ConversionType.to);
     }
 
     return value;
@@ -566,8 +624,7 @@ export class LiquidLevelWidgetComponent implements OnInit {
     const percentage = this.convertInputData(value);
     if (this.settings.tooltipUnits !== CapacityUnits.percent) {
       const liters = this.convertOutputData(percentage);
-
-      return convertLiters(liters, this.settings.tooltipUnits, ConversionType.from);
+      return convertLiters(liters, getSourceTbUnitSymbol(this.settings.tooltipUnits) as any, ConversionType.from)
     } else {
       return percentage;
     }

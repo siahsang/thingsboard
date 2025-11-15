@@ -1,5 +1,5 @@
 /**
- * Copyright © 2016-2023 The Thingsboard Authors
+ * Copyright © 2016-2025 The Thingsboard Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,6 +15,7 @@
  */
 package org.thingsboard.server.dao.queue;
 
+import com.google.common.util.concurrent.FluentFuture;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.hibernate.exception.ConstraintViolationException;
@@ -42,6 +43,9 @@ import org.thingsboard.server.dao.tenant.TbTenantProfileCache;
 import java.util.List;
 import java.util.Optional;
 
+import static com.google.common.util.concurrent.MoreExecutors.directExecutor;
+import static org.thingsboard.server.dao.service.Validator.validateId;
+
 @Service("QueueDaoService")
 @Slf4j
 @RequiredArgsConstructor
@@ -57,16 +61,13 @@ public class BaseQueueService extends AbstractEntityService implements QueueServ
     @Autowired
     private DataValidator<Queue> queueValidator;
 
-//    @Autowired
-//    private QueueStatsService queueStatsService;
-
     @Override
     public Queue saveQueue(Queue queue) {
         log.trace("Executing createOrUpdateQueue [{}]", queue);
         queueValidator.validate(queue, Queue::getTenantId);
         Queue savedQueue = queueDao.save(queue.getTenantId(), queue);
         eventPublisher.publishEvent(SaveEntityEvent.builder().tenantId(savedQueue.getTenantId())
-                .entityId(savedQueue.getId()).added(queue.getId() == null).build());
+                .entityId(savedQueue.getId()).entity(savedQueue).created(queue.getId() == null).build());
         return savedQueue;
     }
 
@@ -84,6 +85,11 @@ public class BaseQueueService extends AbstractEntityService implements QueueServ
                 throw t;
             }
         }
+    }
+
+    @Override
+    public void deleteEntity(TenantId tenantId, EntityId id, boolean force) {
+        deleteQueue(tenantId, (QueueId) id);
     }
 
     @Override
@@ -125,8 +131,13 @@ public class BaseQueueService extends AbstractEntityService implements QueueServ
 
     @Override
     public void deleteQueuesByTenantId(TenantId tenantId) {
-        Validator.validateId(tenantId, "Incorrect tenant id for delete queues request.");
+        validateId(tenantId, __ -> "Incorrect tenant id for delete queues request.");
         tenantQueuesRemover.removeEntities(tenantId, tenantId);
+    }
+
+    @Override
+    public void deleteByTenantId(TenantId tenantId) {
+        deleteQueuesByTenantId(tenantId);
     }
 
     @Override
@@ -135,23 +146,29 @@ public class BaseQueueService extends AbstractEntityService implements QueueServ
     }
 
     @Override
+    public FluentFuture<Optional<HasId<?>>> findEntityAsync(TenantId tenantId, EntityId entityId) {
+        return FluentFuture.from(queueDao.findByIdAsync(tenantId, entityId.getId()))
+                .transform(Optional::ofNullable, directExecutor());
+    }
+
+    @Override
     public EntityType getEntityType() {
         return EntityType.QUEUE;
     }
 
-    private PaginatedRemover<TenantId, Queue> tenantQueuesRemover =
-            new PaginatedRemover<>() {
+    private final PaginatedRemover<TenantId, Queue> tenantQueuesRemover = new PaginatedRemover<>() {
 
-                @Override
-                protected PageData<Queue> findEntities(TenantId tenantId, TenantId id, PageLink pageLink) {
-                    return queueDao.findQueuesByTenantId(id, pageLink);
-                }
+        @Override
+        protected PageData<Queue> findEntities(TenantId tenantId, TenantId id, PageLink pageLink) {
+            return queueDao.findQueuesByTenantId(id, pageLink);
+        }
 
-                @Override
-                protected void removeEntity(TenantId tenantId, Queue entity) {
-                    deleteQueue(tenantId, entity.getId());
-                }
-            };
+        @Override
+        protected void removeEntity(TenantId tenantId, Queue entity) {
+            deleteQueue(tenantId, entity.getId());
+        }
+
+    };
 
     private TenantId getSystemOrIsolatedTenantId(TenantId tenantId) {
         if (!tenantId.equals(TenantId.SYS_TENANT_ID)) {
@@ -160,7 +177,7 @@ public class BaseQueueService extends AbstractEntityService implements QueueServ
                 return tenantId;
             }
         }
-
         return TenantId.SYS_TENANT_ID;
     }
+
 }

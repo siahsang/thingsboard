@@ -1,5 +1,5 @@
 ///
-/// Copyright © 2016-2023 The Thingsboard Authors
+/// Copyright © 2016-2025 The Thingsboard Authors
 ///
 /// Licensed under the Apache License, Version 2.0 (the "License");
 /// you may not use this file except in compliance with the License.
@@ -16,28 +16,30 @@
 
 import 'hammerjs';
 
-import { Component, OnInit } from '@angular/core';
+import { Component } from '@angular/core';
 
 import { environment as env } from '@env/environment';
 
 import { TranslateService } from '@ngx-translate/core';
-import { select, Store } from '@ngrx/store';
+import { Store } from '@ngrx/store';
 import { AppState } from '@core/core.state';
 import { LocalStorageService } from '@core/local-storage/local-storage.service';
 import { DomSanitizer } from '@angular/platform-browser';
 import { MatIconRegistry } from '@angular/material/icon';
-import { combineLatest } from 'rxjs';
-import { selectIsAuthenticated, selectIsUserLoaded } from '@core/auth/auth.selectors';
-import { distinctUntilChanged, filter, map, skip } from 'rxjs/operators';
+import { getCurrentAuthState, selectUserReady } from '@core/auth/auth.selectors';
+import { filter, skip, tap } from 'rxjs/operators';
 import { AuthService } from '@core/auth/auth.service';
 import { svgIcons, svgIconsUrl } from '@shared/models/icon.models';
+import { ActionSettingsChangeLanguage } from '@core/settings/settings.actions';
+import { SETTINGS_KEY } from '@core/settings/settings.effects';
+import { initCustomJQueryEvents } from '@shared/models/jquery-event.models';
 
 @Component({
   selector: 'tb-root',
   templateUrl: './app.component.html',
   styleUrls: ['./app.component.scss']
 })
-export class AppComponent implements OnInit {
+export class AppComponent {
 
   constructor(private store: Store<AppState>,
               private storageService: LocalStorageService,
@@ -73,6 +75,8 @@ export class AppComponent implements OnInit {
 
     this.setupTranslate();
     this.setupAuth();
+
+    initCustomJQueryEvents();
   }
 
   setupTranslate() {
@@ -87,13 +91,16 @@ export class AppComponent implements OnInit {
   }
 
   setupAuth() {
-    combineLatest([
-      this.store.pipe(select(selectIsAuthenticated)),
-      this.store.pipe(select(selectIsUserLoaded))]
-    ).pipe(
-      map(results => ({isAuthenticated: results[0], isUserLoaded: results[1]})),
-      distinctUntilChanged(),
-      filter((data) => data.isUserLoaded ),
+    this.store.select(selectUserReady).pipe(
+      filter((data) => data.isUserLoaded),
+      tap((data) => {
+        let userLang = getCurrentAuthState(this.store).userDetails?.additionalInfo?.lang ?? null;
+        if (!userLang && !data.isAuthenticated) {
+          const settings = this.storageService.getItem(SETTINGS_KEY);
+          userLang = settings?.userLang ?? null;
+        }
+        this.notifyUserLang(userLang);
+      }),
       skip(1),
     ).subscribe((data) => {
       this.authService.gotoDefaultPlace(data.isAuthenticated);
@@ -101,14 +108,15 @@ export class AppComponent implements OnInit {
     this.authService.reloadUser();
   }
 
-  ngOnInit() {
-  }
-
-  onActivateComponent($event: any) {
+  onActivateComponent(_$event: any) {
     const loadingElement = $('div#tb-loading-spinner');
     if (loadingElement.length) {
       loadingElement.remove();
     }
+  }
+
+  private notifyUserLang(userLang: string) {
+    this.store.dispatch(new ActionSettingsChangeLanguage({userLang}));
   }
 
 }

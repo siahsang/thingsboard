@@ -1,5 +1,5 @@
 ///
-/// Copyright © 2016-2023 The Thingsboard Authors
+/// Copyright © 2016-2025 The Thingsboard Authors
 ///
 /// Licensed under the Apache License, Version 2.0 (the "License");
 /// you may not use this file except in compliance with the License.
@@ -56,16 +56,17 @@ import {
   ShapesTranslations,
   updatedFormSettingsValidators
 } from '@home/components/widget/lib/indicator/liquid-level-widget.models';
-import { UnitsType } from '@shared/models/unit.models';
+import { getSourceTbUnitSymbol } from '@shared/models/unit.models';
 import { DomSanitizer, SafeUrl } from '@angular/platform-browser';
 import { ImageCardsSelectComponent } from '@home/components/widget/lib/settings/common/image-cards-select.component';
 import { map, share, tap } from 'rxjs/operators';
 import { Observable, of, ReplaySubject } from 'rxjs';
 import { ResourcesService } from '@core/services/resources.service';
 import { UtilsService } from '@core/services/utils.service';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 
 @Component({
-  selector: 'liquid-level-card-basic-config',
+  selector: 'tb-liquid-level-card-basic-config',
   templateUrl: './liquid-level-card-basic-config.component.html',
   styleUrls: ['../basic-config.scss']
 })
@@ -114,8 +115,6 @@ export class LiquidLevelCardBasicConfigComponent extends BasicWidgetConfigCompon
   shapes = Object.values(Shapes) as Shapes[];
   shapesImageMap: Map<Shapes, string> = new Map();
   ShapesTranslationMap = ShapesTranslations;
-
-  unitsType = UnitsType;
 
   levelCardWidgetConfigForm: FormGroup;
 
@@ -194,7 +193,9 @@ export class LiquidLevelCardBasicConfigComponent extends BasicWidgetConfigCompon
       volumeSource: [settings.volumeSource, []],
       volumeConstant: [settings.volumeConstant, [Validators.required, Validators.min(0.1)]],
       volumeAttributeName: [settings.volumeAttributeName, [Validators.required]],
+      volumeUnitsSource: [settings.volumeUnitsSource, []],
       volumeUnits: [settings.volumeUnits, [Validators.required]],
+      volumeUnitsAttributeName: [settings.volumeUnitsAttributeName, [Validators.required]],
       volumeFont: [settings.volumeFont, []],
       volumeColor: [settings.volumeColor, []],
       units: [settings.units, [Validators.required]],
@@ -221,11 +222,14 @@ export class LiquidLevelCardBasicConfigComponent extends BasicWidgetConfigCompon
       background: [settings.background],
       cardButtons: [this.getCardButtons(configData.config), []],
       borderRadius: [configData.config.borderRadius, []],
+      padding: [settings.padding, []],
 
       actions: [configData.config.actions || {}, []]
     });
 
-    this.levelCardWidgetConfigForm.get('selectedShape').valueChanges.subscribe(() => {
+    this.levelCardWidgetConfigForm.get('selectedShape').valueChanges.pipe(
+      takeUntilDestroyed(this.destroyRef)
+    ).subscribe(() => {
       this.cd.detectChanges();
       this.layoutsImageCardsSelect?.imageCardsSelectOptions.notifyOnChanges();
     });
@@ -260,6 +264,8 @@ export class LiquidLevelCardBasicConfigComponent extends BasicWidgetConfigCompon
     this.widgetConfig.config.settings.volumeSource = config.volumeSource;
     this.widgetConfig.config.settings.volumeConstant = config.volumeConstant;
     this.widgetConfig.config.settings.volumeAttributeName = config.volumeAttributeName;
+    this.widgetConfig.config.settings.volumeUnitsSource = config.volumeUnitsSource;
+    this.widgetConfig.config.settings.volumeUnitsAttributeName = config.volumeUnitsAttributeName;
     this.widgetConfig.config.settings.volumeUnits = config.volumeUnits;
     this.widgetConfig.config.settings.volumeFont = config.volumeFont;
     this.widgetConfig.config.settings.volumeColor = config.volumeColor;
@@ -286,6 +292,7 @@ export class LiquidLevelCardBasicConfigComponent extends BasicWidgetConfigCompon
     this.widgetConfig.config.settings.background = config.background;
     this.setCardButtons(config.cardButtons, this.widgetConfig.config);
     this.widgetConfig.config.borderRadius = config.borderRadius;
+    this.widgetConfig.config.settings.padding = config.padding;
 
     this.widgetConfig.config.actions = config.actions;
     return this.widgetConfig;
@@ -294,7 +301,7 @@ export class LiquidLevelCardBasicConfigComponent extends BasicWidgetConfigCompon
   protected validatorTriggers(): string[] {
     return [
       'showTooltip', 'showTooltipLevel', 'tankSelectionType', 'datasourceUnits', 'showTitleIcon', 'volumeSource',
-      'showTooltipDate', 'layout', 'showTitle', 'widgetUnitsSource'
+      'showTooltipDate', 'layout', 'showTitle', 'widgetUnitsSource', 'volumeUnitsSource'
     ];
   }
 
@@ -348,13 +355,13 @@ export class LiquidLevelCardBasicConfigComponent extends BasicWidgetConfigCompon
   }
 
   private _valuePreviewFn(): string {
-    const units: string = this.levelCardWidgetConfigForm.get('units').value;
+    const units: string = getSourceTbUnitSymbol(this.levelCardWidgetConfigForm.get('units').value);
     const decimals: number = this.levelCardWidgetConfigForm.get('decimals').value;
     return formatValue(22, decimals, units, true);
   }
 
   private _tooltipValuePreviewFn() {
-    const units: string = this.levelCardWidgetConfigForm.get('tooltipUnits').value;
+    const units: string = getSourceTbUnitSymbol(this.levelCardWidgetConfigForm.get('tooltipUnits').value);
     const decimals: number = this.levelCardWidgetConfigForm.get('tooltipLevelDecimals').value;
     return formatValue(32, decimals, units, true);
   }
@@ -363,7 +370,7 @@ export class LiquidLevelCardBasicConfigComponent extends BasicWidgetConfigCompon
     const value = this.levelCardWidgetConfigForm.get('volumeConstant').value;
     const datasourceUnits = this.levelCardWidgetConfigForm.get('datasourceUnits').value;
     const decimals: number = this.widgetConfig.config.decimals;
-    let units: string = this.widgetConfig.config.units;
+    let units = getSourceTbUnitSymbol(this.widgetConfig.config.units);
 
     if (datasourceUnits !== CapacityUnits.percent) {
       units = datasourceUnits;

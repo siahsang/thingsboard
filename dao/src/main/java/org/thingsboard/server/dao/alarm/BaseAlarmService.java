@@ -1,5 +1,5 @@
 /**
- * Copyright © 2016-2023 The Thingsboard Authors
+ * Copyright © 2016-2025 The Thingsboard Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,9 +15,8 @@
  */
 package org.thingsboard.server.dao.alarm;
 
-
 import com.fasterxml.jackson.databind.JsonNode;
-import com.google.common.base.Function;
+import com.google.common.util.concurrent.FluentFuture;
 import com.google.common.util.concurrent.ListenableFuture;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -54,10 +53,12 @@ import org.thingsboard.server.common.data.page.SortOrder;
 import org.thingsboard.server.common.data.query.AlarmCountQuery;
 import org.thingsboard.server.common.data.query.AlarmData;
 import org.thingsboard.server.common.data.query.AlarmDataQuery;
+import org.thingsboard.server.common.data.query.OriginatorAlarmFilter;
 import org.thingsboard.server.common.data.relation.EntityRelation;
 import org.thingsboard.server.common.data.relation.EntityRelationsQuery;
 import org.thingsboard.server.common.data.relation.EntitySearchDirection;
 import org.thingsboard.server.common.data.relation.RelationsSearchParameters;
+import org.thingsboard.server.common.data.util.TbPair;
 import org.thingsboard.server.dao.entity.AbstractCachedEntityService;
 import org.thingsboard.server.dao.entity.EntityService;
 import org.thingsboard.server.dao.eventsourcing.ActionEntityEvent;
@@ -65,7 +66,6 @@ import org.thingsboard.server.dao.eventsourcing.DeleteEntityEvent;
 import org.thingsboard.server.dao.eventsourcing.SaveEntityEvent;
 import org.thingsboard.server.dao.exception.DataValidationException;
 import org.thingsboard.server.dao.service.ConstraintValidator;
-import org.thingsboard.server.dao.service.DataValidator;
 import org.thingsboard.server.dao.tenant.TenantService;
 
 import java.util.ArrayList;
@@ -75,10 +75,12 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
+import java.util.UUID;
 import java.util.concurrent.ExecutionException;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
+import static com.google.common.util.concurrent.MoreExecutors.directExecutor;
 import static org.thingsboard.server.dao.service.Validator.validateEntityDataPageLink;
 import static org.thingsboard.server.dao.service.Validator.validateId;
 
@@ -94,10 +96,9 @@ public class BaseAlarmService extends AbstractCachedEntityService<TenantId, Page
     private final TenantService tenantService;
     private final AlarmDao alarmDao;
     private final EntityService entityService;
-    private final DataValidator<Alarm> alarmDataValidator;
 
-    @TransactionalEventListener(classes = AlarmTypesCacheEvictEvent.class)
     @Override
+    @TransactionalEventListener
     public void handleEvictEvent(AlarmTypesCacheEvictEvent event) {
         TenantId tenantId = event.getTenantId();
         cache.evict(tenantId);
@@ -135,7 +136,7 @@ public class BaseAlarmService extends AbstractCachedEntityService<TenantId, Page
         }
         if (result.getAlarm() != null) {
             eventPublisher.publishEvent(SaveEntityEvent.builder().tenantId(result.getAlarm().getTenantId())
-                    .entityId(result.getAlarm().getId()).added(true).build());
+                    .entityId(result.getAlarm().getId()).entity(result).created(true).build());
             publishEvictEvent(new AlarmTypesCacheEvictEvent(request.getTenantId()));
         }
         return withPropagated(result);
@@ -145,18 +146,26 @@ public class BaseAlarmService extends AbstractCachedEntityService<TenantId, Page
     public AlarmApiCallResult acknowledgeAlarm(TenantId tenantId, AlarmId alarmId, long ackTs) {
         var result = withPropagated(alarmDao.acknowledgeAlarm(tenantId, alarmId, ackTs));
         if (result.getAlarm() != null) {
-            eventPublisher.publishEvent(ActionEntityEvent.builder().tenantId(tenantId).entityId(result.getAlarm().getId())
-                    .actionType(ActionType.ALARM_ACK).build());
+            eventPublisher.publishEvent(ActionEntityEvent.builder()
+                    .tenantId(tenantId)
+                    .entityId(result.getAlarm().getId())
+                    .entity(result.getAlarm())
+                    .actionType(ActionType.ALARM_ACK)
+                    .build());
         }
         return result;
     }
 
     @Override
-    public AlarmApiCallResult clearAlarm(TenantId tenantId, AlarmId alarmId, long clearTs, JsonNode details) {
+    public AlarmApiCallResult clearAlarm(TenantId tenantId, AlarmId alarmId, long clearTs, JsonNode details, boolean pushEvent) {
         var result = withPropagated(alarmDao.clearAlarm(tenantId, alarmId, clearTs, details));
-        if (result.getAlarm() != null) {
-            eventPublisher.publishEvent(ActionEntityEvent.builder().tenantId(tenantId).entityId(result.getAlarm().getId())
-                    .actionType(ActionType.ALARM_CLEAR).build());
+        if (pushEvent && result.getAlarm() != null) {
+            eventPublisher.publishEvent(ActionEntityEvent.builder()
+                    .tenantId(tenantId)
+                    .entityId(result.getAlarm().getId())
+                    .entity(result.getAlarm())
+                    .actionType(ActionType.ALARM_CLEAR)
+                    .build());
         }
         return result;
     }
@@ -167,9 +176,14 @@ public class BaseAlarmService extends AbstractCachedEntityService<TenantId, Page
     }
 
     @Override
+    public FluentFuture<Alarm> findLatestActiveByOriginatorAndTypeAsync(TenantId tenantId, EntityId originator, String type) {
+        return alarmDao.findLatestActiveByOriginatorAndTypeAsync(tenantId, originator, type);
+    }
+
+    @Override
     public PageData<AlarmData> findAlarmDataByQueryForEntities(TenantId tenantId,
                                                                AlarmDataQuery query, Collection<EntityId> orderedEntityIds) {
-        validateId(tenantId, INCORRECT_TENANT_ID + tenantId);
+        validateId(tenantId, id -> INCORRECT_TENANT_ID + id);
         validateEntityDataPageLink(query.getPageLink());
         return alarmDao.findAlarmDataByQueryForEntities(tenantId, query, orderedEntityIds);
     }
@@ -183,17 +197,29 @@ public class BaseAlarmService extends AbstractCachedEntityService<TenantId, Page
     @Override
     @Transactional
     public AlarmApiCallResult delAlarm(TenantId tenantId, AlarmId alarmId, boolean checkAndDeleteAlarmType) {
-        log.debug("Deleting Alarm Id: {}", alarmId);
         AlarmInfo alarm = alarmDao.findAlarmInfoById(tenantId, alarmId.getId());
+        return deleteAlarm(tenantId, alarm, checkAndDeleteAlarmType);
+    }
+
+    private AlarmApiCallResult deleteAlarm(TenantId tenantId, AlarmInfo alarm, boolean deleteAlarmTypes) {
         if (alarm == null) {
             return AlarmApiCallResult.builder().successful(false).build();
         } else {
+            log.debug("[{}][{}] Executing deleteAlarm [{}]", tenantId, alarm.getOriginator(), alarm.getId());
             var propagationIds = getPropagationEntityIdsList(alarm);
-            deleteEntityRelations(tenantId, alarm.getId());
             alarmDao.removeById(tenantId, alarm.getUuidId());
-            eventPublisher.publishEvent(DeleteEntityEvent.builder().tenantId(tenantId)
-                    .entityId(alarmId).entity(alarm).build());
-            if (checkAndDeleteAlarmType) {
+            eventPublisher.publishEvent(DeleteEntityEvent.builder()
+                    .tenantId(tenantId)
+                    .entityId(alarm.getId())
+                    .entity(alarm)
+                    .build());
+            eventPublisher.publishEvent(ActionEntityEvent.builder()
+                    .tenantId(tenantId)
+                    .entityId(alarm.getId())
+                    .entity(alarm)
+                    .actionType(ActionType.ALARM_DELETE)
+                    .build());
+            if (deleteAlarmTypes) {
                 delAlarmTypes(tenantId, Collections.singleton(alarm.getType()));
             }
             return AlarmApiCallResult.builder().alarm(alarm).deleted(true).successful(true).propagatedEntitiesList(propagationIds).build();
@@ -261,21 +287,21 @@ public class BaseAlarmService extends AbstractCachedEntityService<TenantId, Page
     @Override
     public Alarm findAlarmById(TenantId tenantId, AlarmId alarmId) {
         log.trace("Executing findAlarmById [{}]", alarmId);
-        validateId(alarmId, "Incorrect alarmId " + alarmId);
+        validateId(alarmId, id -> "Incorrect alarmId " + id);
         return alarmDao.findAlarmById(tenantId, alarmId.getId());
     }
 
     @Override
     public ListenableFuture<Alarm> findAlarmByIdAsync(TenantId tenantId, AlarmId alarmId) {
         log.trace("Executing findAlarmByIdAsync [{}]", alarmId);
-        validateId(alarmId, "Incorrect alarmId " + alarmId);
+        validateId(alarmId, id -> "Incorrect alarmId " + id);
         return alarmDao.findAlarmByIdAsync(tenantId, alarmId.getId());
     }
 
     @Override
     public AlarmInfo findAlarmInfoById(TenantId tenantId, AlarmId alarmId) {
         log.trace("Executing findAlarmInfoByIdAsync [{}]", alarmId);
-        validateId(alarmId, "Incorrect alarmId " + alarmId);
+        validateId(alarmId, id -> "Incorrect alarmId " + id);
         return alarmDao.findAlarmInfoById(tenantId, alarmId.getId());
     }
 
@@ -300,10 +326,16 @@ public class BaseAlarmService extends AbstractCachedEntityService<TenantId, Page
     }
 
     @Override
-    public PageData<AlarmId> findAlarmIdsByAssigneeId(TenantId tenantId, UserId userId, PageLink pageLink) {
-        log.trace("[{}] Executing findAlarmIdsByAssigneeId [{}]", tenantId, userId);
-        validateId(userId, "Incorrect userId " + userId);
-        return alarmDao.findAlarmIdsByAssigneeId(tenantId, userId.getId(), pageLink);
+    public List<TbPair<UUID, Long>> findAlarmIdsByAssigneeId(TenantId tenantId, UserId userId, long createdTimeOffset, AlarmId idOffset, int limit) {
+        log.trace("[{}] Executing findAlarmIdsByAssigneeId [{}][{}]", tenantId, userId, idOffset);
+        validateId(userId, id -> "Incorrect userId " + id);
+        return alarmDao.findAlarmIdsByAssigneeId(tenantId, userId, createdTimeOffset, idOffset, limit).getData();
+    }
+
+    @Override
+    public List<TbPair<UUID, Long>> findAlarmIdsByOriginatorId(TenantId tenantId, EntityId originatorId, long createdTimeOffset, AlarmId idOffset, int limit) {
+        log.trace("[{}] Executing findAlarmIdsByOriginatorIdAndIdOffset [{}][{}]", tenantId, originatorId, idOffset);
+        return alarmDao.findAlarmIdsByOriginatorId(tenantId, originatorId, createdTimeOffset, idOffset, limit).getData();
     }
 
     @Override
@@ -323,9 +355,9 @@ public class BaseAlarmService extends AbstractCachedEntityService<TenantId, Page
     }
 
     @Override
-    public void deleteEntityAlarmRelations(TenantId tenantId, EntityId entityId) {
+    public int deleteEntityAlarmRecords(TenantId tenantId, EntityId entityId) {
         log.trace("Executing deleteEntityAlarms [{}]", entityId);
-        alarmDao.deleteEntityAlarmRecords(tenantId, entityId);
+        return alarmDao.deleteEntityAlarmRecords(tenantId, entityId);
     }
 
     @Override
@@ -336,19 +368,30 @@ public class BaseAlarmService extends AbstractCachedEntityService<TenantId, Page
 
     @Override
     public long countAlarmsByQuery(TenantId tenantId, CustomerId customerId, AlarmCountQuery query) {
-        validateId(tenantId, INCORRECT_TENANT_ID + tenantId);
-        return alarmDao.countAlarmsByQuery(tenantId, customerId, query);
+        return countAlarmsByQuery(tenantId, customerId, query, null);
+    }
+
+    @Override
+    public long countAlarmsByQuery(TenantId tenantId, CustomerId customerId, AlarmCountQuery query, Collection<EntityId> orderedEntityIds) {
+        validateId(tenantId, id -> INCORRECT_TENANT_ID + id);
+        return alarmDao.countAlarmsByQuery(tenantId, customerId, query, orderedEntityIds);
     }
 
     @Override
     public PageData<EntitySubtype> findAlarmTypesByTenantId(TenantId tenantId, PageLink pageLink) {
         log.trace("Executing findAlarmTypesByTenantId, tenantId [{}]", tenantId);
-        validateId(tenantId, INCORRECT_TENANT_ID + tenantId);
+        validateId(tenantId, id -> INCORRECT_TENANT_ID + id);
         if (DEFAULT_ALARM_TYPES_PAGE_LINK.equals(pageLink)) {
             return cache.getAndPutInTransaction(tenantId, () ->
                     alarmDao.findTenantAlarmTypes(tenantId.getId(), pageLink), false);
         }
         return alarmDao.findTenantAlarmTypes(tenantId.getId(), pageLink);
+    }
+
+    @Override
+    public List<UUID> findActiveOriginatorAlarms(TenantId tenantId, OriginatorAlarmFilter originatorAlarmFilter, int limit) {
+        log.trace("Executing findActiveOriginatorAlarms, tenantId [{}], originatorAlarmFilter [{}]", tenantId, originatorAlarmFilter);
+        return alarmDao.findActiveOriginatorAlarms(tenantId, originatorAlarmFilter, limit);
     }
 
     private Alarm merge(Alarm existing, Alarm alarm) {
@@ -412,15 +455,15 @@ public class BaseAlarmService extends AbstractCachedEntityService<TenantId, Page
         }
     }
 
-    private <T> T getAndUpdate(TenantId tenantId, AlarmId alarmId, Function<Alarm, T> function) {
-        validateId(alarmId, "Alarm id should be specified!");
-        Alarm entity = alarmDao.findAlarmById(tenantId, alarmId.getId());
-        return function.apply(entity);
-    }
-
     @Override
     public Optional<HasId<?>> findEntity(TenantId tenantId, EntityId entityId) {
         return Optional.ofNullable(findAlarmById(tenantId, new AlarmId(entityId.getId())));
+    }
+
+    @Override
+    public FluentFuture<Optional<HasId<?>>> findEntityAsync(TenantId tenantId, EntityId entityId) {
+        return FluentFuture.from(findAlarmByIdAsync(tenantId, new AlarmId(entityId.getId())))
+                .transform(Optional::ofNullable, directExecutor());
     }
 
     @Override
@@ -462,4 +505,5 @@ public class BaseAlarmService extends AbstractCachedEntityService<TenantId, Page
             request.setEndTs(request.getStartTs());
         }
     }
+
 }

@@ -1,5 +1,5 @@
 /**
- * Copyright © 2016-2023 The Thingsboard Authors
+ * Copyright © 2016-2025 The Thingsboard Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,13 +16,15 @@
 package org.thingsboard.rule.engine.api;
 
 import io.netty.channel.EventLoopGroup;
+import org.thingsboard.common.util.ExecutorProvider;
 import org.thingsboard.common.util.ListeningExecutor;
-import org.thingsboard.rule.engine.api.slack.SlackService;
+import org.thingsboard.rule.engine.api.notification.SlackService;
 import org.thingsboard.rule.engine.api.sms.SmsSenderFactory;
 import org.thingsboard.server.cluster.TbClusterService;
 import org.thingsboard.server.common.data.Customer;
 import org.thingsboard.server.common.data.Device;
 import org.thingsboard.server.common.data.DeviceProfile;
+import org.thingsboard.server.common.data.HasTenantId;
 import org.thingsboard.server.common.data.TenantProfile;
 import org.thingsboard.server.common.data.alarm.Alarm;
 import org.thingsboard.server.common.data.asset.Asset;
@@ -30,8 +32,8 @@ import org.thingsboard.server.common.data.asset.AssetProfile;
 import org.thingsboard.server.common.data.id.AssetId;
 import org.thingsboard.server.common.data.id.CustomerId;
 import org.thingsboard.server.common.data.id.DeviceId;
-import org.thingsboard.server.common.data.id.EdgeId;
 import org.thingsboard.server.common.data.id.EntityId;
+import org.thingsboard.server.common.data.id.HasId;
 import org.thingsboard.server.common.data.id.RuleChainId;
 import org.thingsboard.server.common.data.id.RuleNodeId;
 import org.thingsboard.server.common.data.id.TenantId;
@@ -44,29 +46,41 @@ import org.thingsboard.server.common.data.rule.RuleNodeState;
 import org.thingsboard.server.common.data.script.ScriptLanguage;
 import org.thingsboard.server.common.msg.TbMsg;
 import org.thingsboard.server.common.msg.TbMsgMetaData;
+import org.thingsboard.server.dao.ai.AiModelService;
 import org.thingsboard.server.dao.alarm.AlarmCommentService;
 import org.thingsboard.server.dao.asset.AssetProfileService;
 import org.thingsboard.server.dao.asset.AssetService;
 import org.thingsboard.server.dao.attributes.AttributesService;
+import org.thingsboard.server.dao.audit.AuditLogService;
 import org.thingsboard.server.dao.cassandra.CassandraCluster;
+import org.thingsboard.server.dao.cf.CalculatedFieldService;
 import org.thingsboard.server.dao.customer.CustomerService;
 import org.thingsboard.server.dao.dashboard.DashboardService;
 import org.thingsboard.server.dao.device.DeviceCredentialsService;
 import org.thingsboard.server.dao.device.DeviceProfileService;
 import org.thingsboard.server.dao.device.DeviceService;
+import org.thingsboard.server.dao.domain.DomainService;
 import org.thingsboard.server.dao.edge.EdgeEventService;
 import org.thingsboard.server.dao.edge.EdgeService;
+import org.thingsboard.server.dao.entity.EntityService;
 import org.thingsboard.server.dao.entityview.EntityViewService;
+import org.thingsboard.server.dao.event.EventService;
+import org.thingsboard.server.dao.job.JobService;
+import org.thingsboard.server.dao.mobile.MobileAppBundleService;
+import org.thingsboard.server.dao.mobile.MobileAppService;
 import org.thingsboard.server.dao.nosql.CassandraStatementTask;
 import org.thingsboard.server.dao.nosql.TbResultSetFuture;
 import org.thingsboard.server.dao.notification.NotificationRequestService;
 import org.thingsboard.server.dao.notification.NotificationRuleService;
 import org.thingsboard.server.dao.notification.NotificationTargetService;
 import org.thingsboard.server.dao.notification.NotificationTemplateService;
+import org.thingsboard.server.dao.oauth2.OAuth2ClientService;
 import org.thingsboard.server.dao.ota.OtaPackageService;
 import org.thingsboard.server.dao.queue.QueueService;
+import org.thingsboard.server.dao.queue.QueueStatsService;
 import org.thingsboard.server.dao.relation.RelationService;
 import org.thingsboard.server.dao.resource.ResourceService;
+import org.thingsboard.server.dao.resource.TbResourceDataCache;
 import org.thingsboard.server.dao.rule.RuleChainService;
 import org.thingsboard.server.dao.tenant.TenantService;
 import org.thingsboard.server.dao.timeseries.TimeseriesService;
@@ -135,11 +149,18 @@ public interface TbContext {
     void tellFailure(TbMsg msg, Throwable th);
 
     /**
-     * Puts new message to queue for processing by the Root Rule Chain
+     * Puts new message to queue from TbMsg for processing by the Root Rule Chain
      *
      * @param msg - message
      */
     void enqueue(TbMsg msg, Runnable onSuccess, Consumer<Throwable> onFailure);
+
+    /**
+     * Puts new message to custom queue for processing
+     *
+     * @param msg - message
+     */
+    void enqueue(TbMsg msg, String queueName, Runnable onSuccess, Consumer<Throwable> onFailure);
 
     /**
      * Sends message to the nested rule chain.
@@ -159,13 +180,6 @@ public interface TbContext {
      */
     void output(TbMsg msg, String relationType);
 
-    /**
-     * Puts new message to custom queue for processing
-     *
-     * @param msg - message
-     */
-    void enqueue(TbMsg msg, String queueName, Runnable onSuccess, Consumer<Throwable> onFailure);
-
     void enqueueForTellFailure(TbMsg msg, String failureMessage);
 
     void enqueueForTellFailure(TbMsg tbMsg, Throwable t);
@@ -183,9 +197,6 @@ public interface TbContext {
     void enqueueForTellNext(TbMsg msg, String queueName, Set<String> relationTypes, Runnable onSuccess, Consumer<Throwable> onFailure);
 
     void ack(TbMsg tbMsg);
-
-    @Deprecated(since = "3.6.0", forRemoval = true)
-    TbMsg newMsg(String queueName, String type, EntityId originator, TbMsgMetaData metaData, String data);
 
     /**
      * Creates a new TbMsg instance with the specified parameters.
@@ -234,8 +245,6 @@ public interface TbContext {
 
     TbMsg attributesDeletedActionMsg(EntityId originator, RuleNodeId ruleNodeId, String scope, List<String> keys);
 
-    void onEdgeEventUpdate(TenantId tenantId, EdgeId edgeId);
-
     /*
      *
      *  METHODS TO PROCESS THE MESSAGES
@@ -246,6 +255,8 @@ public interface TbContext {
 
     void checkTenantEntity(EntityId entityId) throws TbNodeException;
 
+    <E extends HasId<I> & HasTenantId, I extends EntityId> void checkTenantOrSystemEntity(E entity) throws TbNodeException;
+
     boolean isLocalEntity(EntityId entityId);
 
     RuleNodeId getSelfId();
@@ -253,6 +264,8 @@ public interface TbContext {
     RuleNode getSelf();
 
     String getRuleChainName();
+
+    String getQueueName();
 
     TenantId getTenantId();
 
@@ -273,6 +286,10 @@ public interface TbContext {
     AssetProfileService getAssetProfileService();
 
     DeviceCredentialsService getDeviceCredentialsService();
+
+    DeviceStateManager getDeviceStateManager();
+
+    String getDeviceStateNodeRateLimitConfig();
 
     TbClusterService getClusterService();
 
@@ -296,6 +313,8 @@ public interface TbContext {
 
     ResourceService getResourceService();
 
+    TbResourceDataCache getTbResourceDataCache();
+
     OtaPackageService getOtaPackageService();
 
     RuleEngineDeviceProfileCache getDeviceProfileCache();
@@ -308,6 +327,8 @@ public interface TbContext {
 
     QueueService getQueueService();
 
+    QueueStatsService getQueueStatsService();
+
     ListeningExecutor getMailExecutor();
 
     ListeningExecutor getSmsExecutor();
@@ -317,6 +338,8 @@ public interface TbContext {
     ListeningExecutor getExternalCallExecutor();
 
     ListeningExecutor getNotificationExecutor();
+
+    ExecutorProvider getPubSubRuleNodeExecutorProvider();
 
     MailService getMailService(boolean isSystem);
 
@@ -334,7 +357,23 @@ public interface TbContext {
 
     NotificationRuleService getNotificationRuleService();
 
+    OAuth2ClientService getOAuth2ClientService();
+
+    DomainService getDomainService();
+
+    MobileAppService getMobileAppService();
+
+    MobileAppBundleService getMobileAppBundleService();
+
     SlackService getSlackService();
+
+    CalculatedFieldService getCalculatedFieldService();
+
+    RuleEngineCalculatedFieldQueueService getCalculatedFieldQueueService();
+
+    JobService getJobService();
+
+    JobManager getJobManager();
 
     boolean isExternalNodeForceAck();
 
@@ -348,12 +387,6 @@ public interface TbContext {
     ScriptEngine createJsScriptEngine(String script, String... argNames);
 
     ScriptEngine createScriptEngine(ScriptLanguage scriptLang, String script, String... argNames);
-
-    void logJsEvalRequest();
-
-    void logJsEvalResponse();
-
-    void logJsEvalFailure();
 
     String getServiceId();
 
@@ -390,4 +423,19 @@ public interface TbContext {
     WidgetTypeService getWidgetTypeService();
 
     RuleEngineApiUsageStateService getRuleEngineApiUsageStateService();
+
+    EntityService getEntityService();
+
+    EventService getEventService();
+
+    AuditLogService getAuditLogService();
+
+    RuleEngineAiChatModelService getAiChatModelService();
+
+    AiModelService getAiModelService();
+
+    // Configuration parameters for the MQTT client that is used in the MQTT node and Azure IoT hub node
+
+    MqttClientSettings getMqttClientSettings();
+
 }

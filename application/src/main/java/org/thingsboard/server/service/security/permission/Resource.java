@@ -1,5 +1,5 @@
 /**
- * Copyright © 2016-2023 The Thingsboard Authors
+ * Copyright © 2016-2025 The Thingsboard Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,7 +21,8 @@ import java.util.Collections;
 import java.util.Set;
 
 public enum Resource {
-    ADMIN_SETTINGS(),
+
+    ADMIN_SETTINGS(EntityType.ADMIN_SETTINGS),
     ALARM(EntityType.ALARM),
     DEVICE(EntityType.DEVICE),
     ASSET(EntityType.ASSET),
@@ -33,7 +34,10 @@ public enum Resource {
     USER(EntityType.USER),
     WIDGETS_BUNDLE(EntityType.WIDGETS_BUNDLE),
     WIDGET_TYPE(EntityType.WIDGET_TYPE),
-    OAUTH2_CONFIGURATION_INFO(),
+    OAUTH2_CLIENT(EntityType.OAUTH2_CLIENT),
+    DOMAIN(EntityType.DOMAIN),
+    MOBILE_APP(EntityType.MOBILE_APP),
+    MOBILE_APP_BUNDLE(EntityType.MOBILE_APP_BUNDLE),
     OAUTH2_CONFIGURATION_TEMPLATE(),
     TENANT_PROFILE(EntityType.TENANT_PROFILE),
     DEVICE_PROFILE(EntityType.DEVICE_PROFILE),
@@ -46,7 +50,10 @@ public enum Resource {
     QUEUE(EntityType.QUEUE),
     VERSION_CONTROL,
     NOTIFICATION(EntityType.NOTIFICATION_TARGET, EntityType.NOTIFICATION_TEMPLATE,
-            EntityType.NOTIFICATION_REQUEST, EntityType.NOTIFICATION_RULE);
+            EntityType.NOTIFICATION_REQUEST, EntityType.NOTIFICATION_RULE),
+    MOBILE_APP_SETTINGS,
+    JOB(EntityType.JOB),
+    AI_MODEL(EntityType.AI_MODEL);
 
     private final Set<EntityType> entityTypes;
 
@@ -70,4 +77,5 @@ public enum Resource {
         }
         throw new IllegalArgumentException("Unknown EntityType: " + entityType.name());
     }
+
 }

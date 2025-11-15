@@ -1,5 +1,5 @@
 /**
- * Copyright © 2016-2023 The Thingsboard Authors
+ * Copyright © 2016-2025 The Thingsboard Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,7 +20,6 @@ import com.google.common.util.concurrent.Futures;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.tuple.Triple;
 import org.assertj.core.api.SoftAssertions;
-import org.junit.Assert;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -35,10 +34,13 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.verification.Timeout;
 import org.thingsboard.common.util.AbstractListeningExecutor;
 import org.thingsboard.common.util.JacksonUtil;
+import org.thingsboard.rule.engine.api.AttributesSaveRequest;
 import org.thingsboard.rule.engine.api.RuleEngineTelemetryService;
 import org.thingsboard.rule.engine.api.TbContext;
 import org.thingsboard.rule.engine.api.TbNodeConfiguration;
 import org.thingsboard.rule.engine.api.TbNodeException;
+import org.thingsboard.rule.engine.api.TimeseriesSaveRequest;
+import org.thingsboard.server.common.data.AttributeScope;
 import org.thingsboard.server.common.data.DataConstants;
 import org.thingsboard.server.common.data.id.DeviceId;
 import org.thingsboard.server.common.data.id.EntityId;
@@ -46,14 +48,16 @@ import org.thingsboard.server.common.data.id.TenantId;
 import org.thingsboard.server.common.data.kv.BaseAttributeKvEntry;
 import org.thingsboard.server.common.data.kv.BasicTsKvEntry;
 import org.thingsboard.server.common.data.kv.DoubleDataEntry;
+import org.thingsboard.server.common.data.kv.KvEntry;
 import org.thingsboard.server.common.data.kv.LongDataEntry;
-import org.thingsboard.server.common.data.kv.TsKvEntry;
 import org.thingsboard.server.common.data.msg.TbMsgType;
 import org.thingsboard.server.common.msg.TbMsg;
 import org.thingsboard.server.common.msg.TbMsgMetaData;
 import org.thingsboard.server.dao.attributes.AttributesService;
 import org.thingsboard.server.dao.timeseries.TimeseriesService;
 
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Optional;
@@ -68,18 +72,15 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyDouble;
-import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.argThat;
+import static org.mockito.ArgumentMatchers.assertArg;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.willAnswer;
 import static org.mockito.BDDMockito.willReturn;
-import static org.mockito.BDDMockito.willReturn;
 import static org.mockito.BDDMockito.willThrow;
-import static org.mockito.Mockito.lenient;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.spy;
@@ -92,13 +93,13 @@ import static org.mockito.Mockito.when;
 @ExtendWith(MockitoExtension.class)
 public class TbMathNodeTest {
 
-    static final int RULE_DISPATCHER_POOL_SIZE = 2;
-    static final int DB_CALLBACK_POOL_SIZE = 3;
+    static final int RULE_DISPATCHER_POOL_SIZE = 3;
+    static final int DB_CALLBACK_POOL_SIZE = 4;
     static final long TIMEOUT = TimeUnit.SECONDS.toMillis(5);
     private final EntityId originator = DeviceId.fromString("ccd71696-0586-422d-940e-755a41ec3b0d");
     private final TenantId tenantId = TenantId.fromUUID(UUID.fromString("e7f46b23-0c7d-42f5-9b06-fc35ab17af8a"));
 
-    @Mock(lenient = true)
+    @Mock(strictness = Mock.Strictness.LENIENT)
     private TbContext ctx;
     @Mock
     private AttributesService attributesService;
@@ -125,8 +126,9 @@ public class TbMathNodeTest {
 
     @AfterEach
     public void after() {
-        ruleEngineDispatcherExecutor.executor().shutdownNow();
-        dbCallbackExecutor.executor().shutdownNow();
+        // shutdownNow makes some tests flaky
+        ruleEngineDispatcherExecutor.destroy();
+        dbCallbackExecutor.destroy();
     }
 
     private TbMathNode initNode(TbRuleNodeMathFunctionType operation, TbMathResult result, TbMathArgument... arguments) {
@@ -175,7 +177,12 @@ public class TbMathNodeTest {
         metaData.putValue("key2", "argumentA");
         ObjectNode msgNode = JacksonUtil.newObjectNode()
                 .put("key3", "argumentB").put("argumentA", 2).put("argumentB", 2);
-        TbMsg msg = TbMsg.newMsg(TbMsgType.POST_TELEMETRY_REQUEST, originator, metaData, msgNode.toString());
+        TbMsg msg = TbMsg.newMsg()
+                .type(TbMsgType.POST_TELEMETRY_REQUEST)
+                .originator(originator)
+                .copyMetaData(metaData)
+                .data(msgNode.toString())
+                .build();
 
         node.onMsg(ctx, msg);
 
@@ -183,7 +190,12 @@ public class TbMathNodeTest {
         metaData.putValue("key2", "argumentC");
         msgNode = JacksonUtil.newObjectNode()
                 .put("key3", "argumentD").put("argumentC", 4).put("argumentD", 3);
-        msg = TbMsg.newMsg(TbMsgType.POST_TELEMETRY_REQUEST, originator, metaData, msgNode.toString());
+        msg = TbMsg.newMsg()
+                .type(TbMsgType.POST_TELEMETRY_REQUEST)
+                .originator(originator)
+                .copyMetaData(metaData)
+                .data(msgNode.toString())
+                .build();
 
         node.onMsg(ctx, msg);
 
@@ -230,7 +242,12 @@ public class TbMathNodeTest {
                 new TbMathArgument(TbMathArgumentType.MESSAGE_BODY, "b")
         );
 
-        TbMsg msg = TbMsg.newMsg(TbMsgType.POST_TELEMETRY_REQUEST, originator, TbMsgMetaData.EMPTY, JacksonUtil.newObjectNode().put("a", arg1).put("b", arg2).toString());
+        TbMsg msg = TbMsg.newMsg()
+                .type(TbMsgType.POST_TELEMETRY_REQUEST)
+                .originator(originator)
+                .copyMetaData(TbMsgMetaData.EMPTY)
+                .data(JacksonUtil.newObjectNode().put("a", arg1).put("b", arg2).toString())
+                .build();
 
         node.onMsg(ctx, msg);
 
@@ -293,7 +310,12 @@ public class TbMathNodeTest {
                 new TbMathArgument(TbMathArgumentType.MESSAGE_BODY, "a")
         );
 
-        TbMsg msg = TbMsg.newMsg(TbMsgType.POST_TELEMETRY_REQUEST, originator, TbMsgMetaData.EMPTY, JacksonUtil.newObjectNode().put("a", arg1).toString());
+        TbMsg msg = TbMsg.newMsg()
+                .type(TbMsgType.POST_TELEMETRY_REQUEST)
+                .originator(originator)
+                .copyMetaData(TbMsgMetaData.EMPTY)
+                .data(JacksonUtil.newObjectNode().put("a", arg1).toString())
+                .build();
 
         node.onMsg(ctx, msg);
 
@@ -316,7 +338,12 @@ public class TbMathNodeTest {
                 new TbMathArgument(TbMathArgumentType.MESSAGE_BODY, "b")
         );
 
-        TbMsg msg = TbMsg.newMsg(TbMsgType.POST_TELEMETRY_REQUEST, originator, TbMsgMetaData.EMPTY, JacksonUtil.newObjectNode().put("a", 2).put("b", 2).toString());
+        TbMsg msg = TbMsg.newMsg()
+                .type(TbMsgType.POST_TELEMETRY_REQUEST)
+                .originator(originator)
+                .copyMetaData(TbMsgMetaData.EMPTY)
+                .data(JacksonUtil.newObjectNode().put("a", 2).put("b", 2).toString())
+                .build();
 
         node.onMsg(ctx, msg);
 
@@ -339,7 +366,12 @@ public class TbMathNodeTest {
                 new TbMathArgument(TbMathArgumentType.MESSAGE_BODY, "b")
         );
 
-        TbMsg msg = TbMsg.newMsg(TbMsgType.POST_TELEMETRY_REQUEST, originator, TbMsgMetaData.EMPTY, JacksonUtil.newObjectNode().put("a", 2).put("b", 2).toString());
+        TbMsg msg = TbMsg.newMsg()
+                .type(TbMsgType.POST_TELEMETRY_REQUEST)
+                .originator(originator)
+                .copyMetaData(TbMsgMetaData.EMPTY)
+                .data(JacksonUtil.newObjectNode().put("a", 2).put("b", 2).toString())
+                .build();
 
         node.onMsg(ctx, msg);
 
@@ -363,9 +395,14 @@ public class TbMathNodeTest {
                 new TbMathArgument(TbMathArgumentType.TIME_SERIES, "b")
         );
 
-        TbMsg msg = TbMsg.newMsg(TbMsgType.POST_TELEMETRY_REQUEST, originator, TbMsgMetaData.EMPTY, JacksonUtil.newObjectNode().toString());
+        TbMsg msg = TbMsg.newMsg()
+                .type(TbMsgType.POST_TELEMETRY_REQUEST)
+                .originator(originator)
+                .copyMetaData(TbMsgMetaData.EMPTY)
+                .data(JacksonUtil.newObjectNode().toString())
+                .build();
 
-        when(attributesService.find(tenantId, originator, DataConstants.SERVER_SCOPE, "a"))
+        when(attributesService.find(tenantId, originator, AttributeScope.SERVER_SCOPE, "a"))
                 .thenReturn(Futures.immediateFuture(Optional.of(new BaseAttributeKvEntry(System.currentTimeMillis(), new DoubleDataEntry("a", 2.0)))));
 
         when(tsService.findLatest(tenantId, originator, "b"))
@@ -391,7 +428,12 @@ public class TbMathNodeTest {
                 new TbMathArgument(TbMathArgumentType.MESSAGE_BODY, "a")
         );
 
-        TbMsg msg = TbMsg.newMsg(TbMsgType.POST_TELEMETRY_REQUEST, originator, TbMsgMetaData.EMPTY, JacksonUtil.newObjectNode().put("a", 5).toString());
+        TbMsg msg = TbMsg.newMsg()
+                .type(TbMsgType.POST_TELEMETRY_REQUEST)
+                .originator(originator)
+                .copyMetaData(TbMsgMetaData.EMPTY)
+                .data(JacksonUtil.newObjectNode().put("a", 5).toString())
+                .build();
 
         node.onMsg(ctx, msg);
 
@@ -413,7 +455,12 @@ public class TbMathNodeTest {
                 new TbMathArgument(TbMathArgumentType.MESSAGE_BODY, "a")
         );
 
-        TbMsg msg = TbMsg.newMsg(TbMsgType.POST_TELEMETRY_REQUEST, originator, TbMsgMetaData.EMPTY, JacksonUtil.newObjectNode().put("a", 5).toString());
+        TbMsg msg = TbMsg.newMsg()
+                .type(TbMsgType.POST_TELEMETRY_REQUEST)
+                .originator(originator)
+                .copyMetaData(TbMsgMetaData.EMPTY)
+                .data(JacksonUtil.newObjectNode().put("a", 5).toString())
+                .build();
 
         node.onMsg(ctx, msg);
 
@@ -435,16 +482,25 @@ public class TbMathNodeTest {
                 new TbMathArgument(TbMathArgumentType.MESSAGE_BODY, "a")
         );
 
-        TbMsg msg = TbMsg.newMsg(TbMsgType.POST_TELEMETRY_REQUEST, originator, TbMsgMetaData.EMPTY, JacksonUtil.newObjectNode().put("a", 5).toString());
-
-        when(telemetryService.saveAttrAndNotify(any(), any(), anyString(), anyString(), anyDouble()))
-                .thenReturn(Futures.immediateFuture(null));
+        TbMsg msg = TbMsg.newMsg()
+                .type(TbMsgType.POST_TELEMETRY_REQUEST)
+                .originator(originator)
+                .copyMetaData(TbMsgMetaData.EMPTY)
+                .data(JacksonUtil.newObjectNode().put("a", 5).toString())
+                .build();
+        doAnswer(invocation -> {
+            AttributesSaveRequest request = invocation.getArgument(0);
+            request.getCallback().onSuccess(null);
+            return null;
+        }).when(telemetryService).saveAttributes(any(AttributesSaveRequest.class));
 
         node.onMsg(ctx, msg);
 
         ArgumentCaptor<TbMsg> msgCaptor = ArgumentCaptor.forClass(TbMsg.class);
         verify(ctx, timeout(TIMEOUT)).tellSuccess(msgCaptor.capture());
-        verify(telemetryService, times(1)).saveAttrAndNotify(any(), any(), anyString(), anyString(), anyDouble());
+        verify(telemetryService, times(1)).saveAttributes(assertArg(request -> {
+            assertThat(request.getEntries()).singleElement().extracting(KvEntry::getValue).isInstanceOf(Double.class);
+        }));
 
         TbMsg resultMsg = msgCaptor.getValue();
         assertNotNull(resultMsg);
@@ -461,15 +517,26 @@ public class TbMathNodeTest {
                 new TbMathArgument(TbMathArgumentType.MESSAGE_BODY, "a")
         );
 
-        TbMsg msg = TbMsg.newMsg(TbMsgType.POST_TELEMETRY_REQUEST, originator, TbMsgMetaData.EMPTY, JacksonUtil.newObjectNode().put("a", 5).toString());
-        when(telemetryService.saveAndNotify(any(), any(), any(TsKvEntry.class)))
-                .thenReturn(Futures.immediateFuture(null));
+        TbMsg msg = TbMsg.newMsg()
+                .type(TbMsgType.POST_TELEMETRY_REQUEST)
+                .originator(originator)
+                .copyMetaData(TbMsgMetaData.EMPTY)
+                .data(JacksonUtil.newObjectNode().put("a", 5).toString())
+                .build();
+        doAnswer(invocation -> {
+            TimeseriesSaveRequest request = invocation.getArgument(0);
+            request.getCallback().onSuccess(null);
+            return null;
+        }).when(telemetryService).saveTimeseries(any(TimeseriesSaveRequest.class));
 
         node.onMsg(ctx, msg);
 
         ArgumentCaptor<TbMsg> msgCaptor = ArgumentCaptor.forClass(TbMsg.class);
         verify(ctx, timeout(TIMEOUT)).tellSuccess(msgCaptor.capture());
-        verify(telemetryService, times(1)).saveAndNotify(any(), any(), any(TsKvEntry.class));
+        verify(telemetryService, times(1)).saveTimeseries(assertArg(request -> {
+            assertThat(request.getEntries()).size().isOne();
+            assertThat(request.getStrategy()).isEqualTo(TimeseriesSaveRequest.Strategy.PROCESS_ALL);
+        }));
 
         TbMsg resultMsg = msgCaptor.getValue();
         assertNotNull(resultMsg);
@@ -486,15 +553,26 @@ public class TbMathNodeTest {
                 new TbMathArgument(TbMathArgumentType.MESSAGE_BODY, "a")
         );
 
-        TbMsg msg = TbMsg.newMsg(TbMsgType.POST_TELEMETRY_REQUEST, originator, TbMsgMetaData.EMPTY, JacksonUtil.newObjectNode().put("a", 5).toString());
-        when(telemetryService.saveAndNotify(any(), any(), any(TsKvEntry.class)))
-                .thenReturn(Futures.immediateFuture(null));
+        TbMsg msg = TbMsg.newMsg()
+                .type(TbMsgType.POST_TELEMETRY_REQUEST)
+                .originator(originator)
+                .copyMetaData(TbMsgMetaData.EMPTY)
+                .data(JacksonUtil.newObjectNode().put("a", 5).toString())
+                .build();
+        doAnswer(invocation -> {
+            TimeseriesSaveRequest request = invocation.getArgument(0);
+            request.getCallback().onSuccess(null);
+            return null;
+        }).when(telemetryService).saveTimeseries(any(TimeseriesSaveRequest.class));
 
         node.onMsg(ctx, msg);
 
         ArgumentCaptor<TbMsg> msgCaptor = ArgumentCaptor.forClass(TbMsg.class);
         verify(ctx, timeout(TIMEOUT)).tellSuccess(msgCaptor.capture());
-        verify(telemetryService, times(1)).saveAndNotify(any(), any(), any(TsKvEntry.class));
+        verify(telemetryService, times(1)).saveTimeseries(assertArg(request -> {
+            assertThat(request.getEntries()).size().isOne();
+            assertThat(request.getStrategy()).isEqualTo(TimeseriesSaveRequest.Strategy.PROCESS_ALL);
+        }));
 
         TbMsg resultMsg = msgCaptor.getValue();
         assertNotNull(resultMsg);
@@ -517,7 +595,12 @@ public class TbMathNodeTest {
                 new TbMathResult(TbMathArgumentType.MESSAGE_METADATA, "result", 3, false, false, null),
                 tbMathArgument
         );
-        TbMsg msg = TbMsg.newMsg(TbMsgType.POST_TELEMETRY_REQUEST, originator, TbMsgMetaData.EMPTY, JacksonUtil.newObjectNode().put("a", 10).toString());
+        TbMsg msg = TbMsg.newMsg()
+                .type(TbMsgType.POST_TELEMETRY_REQUEST)
+                .originator(originator)
+                .copyMetaData(TbMsgMetaData.EMPTY)
+                .data(JacksonUtil.newObjectNode().put("a", 10).toString())
+                .build();
 
         node.onMsg(ctx, msg);
         ArgumentCaptor<TbMsg> msgCaptor = ArgumentCaptor.forClass(TbMsg.class);
@@ -537,12 +620,17 @@ public class TbMathNodeTest {
                 new TbMathResult(TbMathArgumentType.TIME_SERIES, "result", 3, true, false, DataConstants.SERVER_SCOPE),
                 new TbMathArgument(TbMathArgumentType.MESSAGE_BODY, "TestKey")
         );
-        TbMsg msg = TbMsg.newMsg(TbMsgType.POST_TELEMETRY_REQUEST, originator, TbMsgMetaData.EMPTY, JacksonUtil.newObjectNode().put("a", 10).toString());
+        TbMsg msg = TbMsg.newMsg()
+                .type(TbMsgType.POST_TELEMETRY_REQUEST)
+                .originator(originator)
+                .copyMetaData(TbMsgMetaData.EMPTY)
+                .data(JacksonUtil.newObjectNode().put("a", 10).toString())
+                .build();
         node.onMsg(ctx, msg);
 
         ArgumentCaptor<Throwable> tCaptor = ArgumentCaptor.forClass(Throwable.class);
-        Mockito.verify(ctx, Mockito.timeout(5000)).tellFailure(eq(msg), tCaptor.capture());
-        Assert.assertNotNull(tCaptor.getValue().getMessage());
+        Mockito.verify(ctx, timeout(TIMEOUT)).tellFailure(eq(msg), tCaptor.capture());
+        assertNotNull(tCaptor.getValue().getMessage());
     }
 
     @Test
@@ -552,12 +640,17 @@ public class TbMathNodeTest {
                 new TbMathArgument(TbMathArgumentType.MESSAGE_BODY, "a")
         );
 
-        TbMsg msg = TbMsg.newMsg(TbMsgType.POST_TELEMETRY_REQUEST, originator, TbMsgMetaData.EMPTY,  TbMsg.EMPTY_JSON_ARRAY);
+        TbMsg msg = TbMsg.newMsg()
+                .type(TbMsgType.POST_TELEMETRY_REQUEST)
+                .originator(originator)
+                .copyMetaData(TbMsgMetaData.EMPTY)
+                .data(TbMsg.EMPTY_JSON_ARRAY)
+                .build();
         node.onMsg(ctx, msg);
 
         ArgumentCaptor<Throwable> tCaptor = ArgumentCaptor.forClass(Throwable.class);
-        Mockito.verify(ctx, Mockito.timeout(5000)).tellFailure(eq(msg), tCaptor.capture());
-        Assert.assertNotNull(tCaptor.getValue().getMessage());
+        Mockito.verify(ctx, timeout(TIMEOUT)).tellFailure(eq(msg), tCaptor.capture());
+        assertNotNull(tCaptor.getValue().getMessage());
     }
 
     @Test
@@ -572,11 +665,21 @@ public class TbMathNodeTest {
         CountDownLatch slowProcessingLatch = new CountDownLatch(1);
 
         List<TbMsg> slowMsgList = IntStream.range(0, 5)
-                .mapToObj(x -> TbMsg.newMsg(TbMsgType.POST_TELEMETRY_REQUEST, originatorSlow, TbMsgMetaData.EMPTY, JacksonUtil.newObjectNode().put("a", 2).put("b", 2).toString()))
-                .collect(Collectors.toList());
+                .mapToObj(x -> TbMsg.newMsg()
+                        .type(TbMsgType.POST_TELEMETRY_REQUEST)
+                        .originator(originatorSlow)
+                        .copyMetaData(TbMsgMetaData.EMPTY)
+                        .data(JacksonUtil.newObjectNode().put("a", 2).put("b", 2).toString())
+                        .build())
+                .toList();
         List<TbMsg> fastMsgList = IntStream.range(0, 2)
-                .mapToObj(x -> TbMsg.newMsg(TbMsgType.POST_TELEMETRY_REQUEST, originatorFast, TbMsgMetaData.EMPTY, JacksonUtil.newObjectNode().put("a", 2).put("b", 2).toString()))
-                .collect(Collectors.toList());
+                .mapToObj(x -> TbMsg.newMsg()
+                        .type(TbMsgType.POST_TELEMETRY_REQUEST)
+                        .originator(originatorFast)
+                        .copyMetaData(TbMsgMetaData.EMPTY)
+                        .data(JacksonUtil.newObjectNode().put("a", 2).put("b", 2).toString())
+                        .build())
+                .toList();
 
         assertThat(slowMsgList.size()).as("slow msgs >= rule-dispatcher pool size").isGreaterThanOrEqualTo(RULE_DISPATCHER_POOL_SIZE);
 
@@ -642,7 +745,12 @@ public class TbMathNodeTest {
         CountDownLatch slowProcessingLatch = new CountDownLatch(1);
 
         List<TbMsg> slowMsgList = IntStream.range(0, 5)
-                .mapToObj(x -> TbMsg.newMsg(TbMsgType.POST_TELEMETRY_REQUEST, originatorSlow, TbMsgMetaData.EMPTY, JacksonUtil.newObjectNode().put("a", 2).put("b", 2).toString()))
+                .mapToObj(x -> TbMsg.newMsg()
+                        .type(TbMsgType.POST_TELEMETRY_REQUEST)
+                        .originator(originatorSlow)
+                        .copyMetaData(TbMsgMetaData.EMPTY)
+                        .data(JacksonUtil.newObjectNode().put("a", 2).put("b", 2).toString())
+                        .build())
                 .collect(Collectors.toList());
 
         assertThat(slowMsgList.size()).as("slow msgs >= rule-dispatcher pool size").isGreaterThanOrEqualTo(RULE_DISPATCHER_POOL_SIZE);
@@ -672,11 +780,11 @@ public class TbMathNodeTest {
         // submit slow msg may block all rule engine dispatcher threads
         slowMsgList.forEach(msg -> ruleEngineDispatcherExecutor.executeAsync(() -> node.onMsg(ctx, msg)));
         // wait until dispatcher threads started with all slowMsg
-        verify(node, new Timeout(TimeUnit.SECONDS.toMillis(5), times(slowMsgList.size()))).onMsg(eq(ctx), argThat(slowMsgList::contains));
+        verify(node, new Timeout(TIMEOUT, times(slowMsgList.size()))).onMsg(eq(ctx), argThat(slowMsgList::contains));
 
         slowProcessingLatch.countDown();
 
-        verify(ctx, new Timeout(TimeUnit.SECONDS.toMillis(5), times(slowMsgList.size()))).tellFailure(any(), any());
+        verify(ctx, new Timeout(TIMEOUT, times(slowMsgList.size()))).tellFailure(any(), any());
         verify(ctx, never()).tellSuccess(any());
 
     }
@@ -713,10 +821,15 @@ public class TbMathNodeTest {
                     }).given(node).onMsg(any(), any());
                     return Triple.of(ctx, resultKey, node);
                 })
-                .collect(Collectors.toList());
+                .toList();
         ctxNodes.forEach(ctxNode -> ruleEngineDispatcherExecutor.executeAsync(() -> ctxNode.getRight()
-                .onMsg(ctxNode.getLeft(), TbMsg.newMsg(TbMsgType.POST_TELEMETRY_REQUEST, originator, TbMsgMetaData.EMPTY, "{\"a\":2,\"b\":2}"))));
-        ctxNodes.forEach(ctxNode -> verify(ctxNode.getRight(), timeout(5000)).onMsg(eq(ctxNode.getLeft()), any()));
+                .onMsg(ctxNode.getLeft(), TbMsg.newMsg()
+                        .type(TbMsgType.POST_TELEMETRY_REQUEST)
+                        .originator(originator)
+                        .copyMetaData(TbMsgMetaData.EMPTY)
+                        .data("{\"a\":2,\"b\":2}")
+                        .build())));
+        ctxNodes.forEach(ctxNode -> verify(ctxNode.getRight(), timeout(TIMEOUT)).onMsg(eq(ctxNode.getLeft()), any()));
         processingLatch.countDown();
 
         SoftAssertions softly = new SoftAssertions();
@@ -724,7 +837,7 @@ public class TbMathNodeTest {
             final TbContext ctx = ctxNode.getLeft();
             final String resultKey = ctxNode.getMiddle();
             ArgumentCaptor<TbMsg> msgCaptor = ArgumentCaptor.forClass(TbMsg.class);
-            verify(ctx, timeout(5000)).tellSuccess(msgCaptor.capture());
+            verify(ctx, timeout(TIMEOUT)).tellSuccess(msgCaptor.capture());
 
             TbMsg resultMsg = msgCaptor.getValue();
             assertThat(resultMsg).as("result msg non null for result key " + resultKey).isNotNull();
@@ -735,6 +848,42 @@ public class TbMathNodeTest {
 
         softly.assertAll();
         verify(ctx, never()).tellFailure(any(), any());
+    }
+
+    @ParameterizedTest
+    @MethodSource
+    public void testCustomFunctions(String customFunction, double result) {
+        var node = initNodeWithCustomFunction(customFunction,
+                new TbMathResult(TbMathArgumentType.MESSAGE_BODY, "result", 2, false, false, null),
+                new TbMathArgument("a", TbMathArgumentType.MESSAGE_BODY, "argumentA"),
+                new TbMathArgument("b", TbMathArgumentType.MESSAGE_BODY, "argumentB")
+        );
+
+        TbMsg msg = TbMsg.newMsg()
+                .type(TbMsgType.POST_TELEMETRY_REQUEST)
+                .originator(originator)
+                .metaData(TbMsgMetaData.EMPTY)
+                .data("{\"argumentA\":2,\"argumentB\":5}")
+                .build();
+
+        node.onMsg(ctx, msg);
+
+        ArgumentCaptor<TbMsg> msgCaptor = ArgumentCaptor.forClass(TbMsg.class);
+        verify(ctx, timeout(TIMEOUT)).tellSuccess(msgCaptor.capture());
+        TbMsg outMsg = msgCaptor.getValue();
+        assertThat(outMsg).isNotNull();
+        assertThat(outMsg.getData()).isNotNull();
+        var resultJson = JacksonUtil.toJsonNode(outMsg.getData());
+        assertThat(resultJson.has("result")).isTrue();
+        assertThat(resultJson.get("result").asDouble()).isEqualTo(new BigDecimal(result).setScale(2, RoundingMode.HALF_UP).doubleValue());
+    }
+
+    private static Stream<Arguments> testCustomFunctions() {
+        return Stream.of(
+                Arguments.of("ln(a)", Math.log(2)),
+                Arguments.of("lg(a)", Math.log10(2)),
+                Arguments.of("logab(a, b)", Math.log(5) / Math.log(2))
+        );
     }
 
     static class RuleDispatcherExecutor extends AbstractListeningExecutor {

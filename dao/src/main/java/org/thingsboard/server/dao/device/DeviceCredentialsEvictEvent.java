@@ -1,5 +1,5 @@
 /**
- * Copyright © 2016-2023 The Thingsboard Authors
+ * Copyright © 2016-2025 The Thingsboard Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,9 +18,9 @@ package org.thingsboard.server.dao.device;
 import lombok.Data;
 
 @Data
-class DeviceCredentialsEvictEvent {
+public class DeviceCredentialsEvictEvent {
 
-    private final String newCedentialsId;
+    private final String newCredentialsId;
     private final String oldCredentialsId;
 
 }

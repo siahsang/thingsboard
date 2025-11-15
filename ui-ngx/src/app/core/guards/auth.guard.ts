@@ -1,5 +1,5 @@
 ///
-/// Copyright © 2016-2023 The Thingsboard Authors
+/// Copyright © 2016-2025 The Thingsboard Authors
 ///
 /// Licensed under the Apache License, Version 2.0 (the "License");
 /// you may not use this file except in compliance with the License.
@@ -15,7 +15,7 @@
 ///
 
 import { Injectable, NgZone } from '@angular/core';
-import { ActivatedRouteSnapshot, CanActivate, CanActivateChild, Router, RouterStateSnapshot } from '@angular/router';
+import { ActivatedRouteSnapshot, Router, RouterStateSnapshot } from '@angular/router';
 import { AuthService } from '../auth/auth.service';
 import { select, Store } from '@ngrx/store';
 import { AppState } from '../core.state';
@@ -34,7 +34,7 @@ import { MobileService } from '@core/services/mobile.service';
 @Injectable({
   providedIn: 'root'
 })
-export class AuthGuard implements CanActivate, CanActivateChild {
+export class AuthGuard  {
 
   constructor(private store: Store<AppState>,
               private router: Router,
@@ -104,6 +104,16 @@ export class AuthGuard implements CanActivate, CanActivateChild {
               }
               this.authService.logout();
               return of(this.authService.defaultUrl(false));
+            } else if (path === 'login.force-mfa') {
+              if (authState.authUser?.authority === Authority.MFA_CONFIGURATION_TOKEN) {
+                return this.authService.getAvailableTwoFaProviders().pipe(
+                  map(() => {
+                    return true;
+                  })
+                );
+              }
+              this.authService.logout();
+              return of(this.authService.defaultUrl(false));
             } else {
               return of(true);
             }
@@ -121,7 +131,7 @@ export class AuthGuard implements CanActivate, CanActivateChild {
             }
           }
           if (this.mobileService.isMobileApp() && !path.startsWith('dashboard.')) {
-            this.mobileService.handleMobileNavigation(path, params);
+            this.mobileService.handleMobileNavigation(path, params, lastChild.queryParams);
             return of(false);
           }
           if (authState.authUser.authority === Authority.PRE_VERIFICATION_TOKEN) {

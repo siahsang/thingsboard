@@ -1,5 +1,5 @@
 /**
- * Copyright © 2016-2023 The Thingsboard Authors
+ * Copyright © 2016-2025 The Thingsboard Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -30,6 +30,7 @@ import org.thingsboard.server.common.data.device.data.PowerSavingConfiguration;
 @JsonIgnoreProperties(ignoreUnknown = true)
 public class OtherConfiguration extends PowerSavingConfiguration {
 
+    private Boolean useObject19ForOtaInfo;
     private Integer fwUpdateStrategy;
     private Integer swUpdateStrategy;
     private Integer clientOnlyObserveAfterConnect;
@@ -39,4 +40,5 @@ public class OtherConfiguration extends PowerSavingConfiguration {
     private Long pagingTransmissionWindow;
     private String fwUpdateResource;
     private String swUpdateResource;
+    private String defaultObjectIDVer;
 }

@@ -1,5 +1,5 @@
 /**
- * Copyright © 2016-2023 The Thingsboard Authors
+ * Copyright © 2016-2025 The Thingsboard Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,6 +17,7 @@ package org.thingsboard.server.actors.tenant;
 
 import lombok.extern.slf4j.Slf4j;
 import org.thingsboard.server.actors.ActorSystemContext;
+import org.thingsboard.server.actors.ProcessFailureStrategy;
 import org.thingsboard.server.actors.TbActor;
 import org.thingsboard.server.actors.TbActorCtx;
 import org.thingsboard.server.actors.TbActorException;
@@ -25,6 +26,9 @@ import org.thingsboard.server.actors.TbActorNotRegisteredException;
 import org.thingsboard.server.actors.TbActorRef;
 import org.thingsboard.server.actors.TbEntityActorId;
 import org.thingsboard.server.actors.TbEntityTypeActorIdPredicate;
+import org.thingsboard.server.actors.TbStringActorId;
+import org.thingsboard.server.actors.calculatedField.CalculatedFieldManagerActorCreator;
+import org.thingsboard.server.actors.calculatedField.CalculatedFieldStateRestoreMsg;
 import org.thingsboard.server.actors.device.DeviceActorCreator;
 import org.thingsboard.server.actors.ruleChain.RuleChainManagerActor;
 import org.thingsboard.server.actors.service.ContextBasedCreator;
@@ -32,9 +36,7 @@ import org.thingsboard.server.actors.service.DefaultActorService;
 import org.thingsboard.server.common.data.ApiUsageState;
 import org.thingsboard.server.common.data.EntityType;
 import org.thingsboard.server.common.data.Tenant;
-import org.thingsboard.server.common.data.edge.Edge;
 import org.thingsboard.server.common.data.id.DeviceId;
-import org.thingsboard.server.common.data.id.EdgeId;
 import org.thingsboard.server.common.data.id.EntityId;
 import org.thingsboard.server.common.data.id.RuleChainId;
 import org.thingsboard.server.common.data.id.TenantId;
@@ -45,18 +47,23 @@ import org.thingsboard.server.common.msg.MsgType;
 import org.thingsboard.server.common.msg.TbActorMsg;
 import org.thingsboard.server.common.msg.TbActorStopReason;
 import org.thingsboard.server.common.msg.TbMsg;
+import org.thingsboard.server.common.msg.ToCalculatedFieldSystemMsg;
 import org.thingsboard.server.common.msg.aware.DeviceAwareMsg;
 import org.thingsboard.server.common.msg.aware.RuleChainAwareMsg;
-import org.thingsboard.server.common.msg.edge.EdgeSessionMsg;
+import org.thingsboard.server.common.msg.aware.TenantAwareMsg;
+import org.thingsboard.server.common.msg.cf.CalculatedFieldCacheInitMsg;
+import org.thingsboard.server.common.msg.cf.CalculatedFieldEntityLifecycleMsg;
 import org.thingsboard.server.common.msg.plugin.ComponentLifecycleMsg;
 import org.thingsboard.server.common.msg.queue.PartitionChangeMsg;
 import org.thingsboard.server.common.msg.queue.QueueToRuleEngineMsg;
 import org.thingsboard.server.common.msg.queue.RuleEngineException;
 import org.thingsboard.server.common.msg.queue.ServiceType;
-import org.thingsboard.server.service.edge.rpc.EdgeRpcService;
+import org.thingsboard.server.common.msg.rule.engine.DeviceDeleteMsg;
 import org.thingsboard.server.service.transport.msg.TransportToDeviceActorMsgWrapper;
 
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 @Slf4j
 public class TenantActor extends RuleChainManagerActor {
@@ -64,9 +71,12 @@ public class TenantActor extends RuleChainManagerActor {
     private boolean isRuleEngine;
     private boolean isCore;
     private ApiUsageState apiUsageState;
+    private Set<DeviceId> deletedDevices;
+    private TbActorRef cfActor;
 
     private TenantActor(ActorSystemContext systemContext, TenantId tenantId) {
         super(systemContext, tenantId);
+        this.deletedDevices = new HashSet<>();
     }
 
     boolean cantFindTenant = false;
@@ -86,6 +96,16 @@ public class TenantActor extends RuleChainManagerActor {
                 if (isRuleEngine) {
                     if (systemContext.getPartitionService().isManagedByCurrentService(tenantId)) {
                         try {
+                            //TODO: IM - extend API usage to have CF Exec Enabled? Not in 4.0;
+                            cfActor = ctx.getOrCreateChildActor(new TbStringActorId("CFM|" + tenantId),
+                                    () -> DefaultActorService.CF_MANAGER_DISPATCHER_NAME,
+                                    () -> new CalculatedFieldManagerActorCreator(systemContext, tenantId),
+                                    () -> true);
+                            cfActor.tellWithHighPriority(new CalculatedFieldCacheInitMsg(tenantId));
+                        } catch (Exception e) {
+                            log.info("[{}] Failed to init CF Actor.", tenantId, e);
+                        }
+                        try {
                             if (getApiUsageState().isReExecEnabled()) {
                                 log.debug("[{}] Going to init rule chains", tenantId);
                                 initRuleChains();
@@ -96,6 +116,8 @@ public class TenantActor extends RuleChainManagerActor {
                             log.info("Failed to check ApiUsage \"ReExecEnabled\"!!!", e);
                             cantFindTenant = true;
                         }
+                    } else {
+                        log.info("Tenant {} is not managed by current service, skipping rule chains and cf actor init", tenantId);
                     }
                 }
                 log.debug("[{}] Tenant actor started.", tenantId);
@@ -108,6 +130,10 @@ public class TenantActor extends RuleChainManagerActor {
     @Override
     public void destroy(TbActorStopReason stopReason, Throwable cause) {
         log.info("[{}] Stopping tenant actor.", tenantId);
+        if (cfActor != null) {
+            ctx.stop(cfActor.getActorId());
+            cfActor = null;
+        }
     }
 
     @Override
@@ -125,23 +151,13 @@ public class TenantActor extends RuleChainManagerActor {
         }
         switch (msg.getMsgType()) {
             case PARTITION_CHANGE_MSG:
-                PartitionChangeMsg partitionChangeMsg = (PartitionChangeMsg) msg;
-                ServiceType serviceType = partitionChangeMsg.getServiceType();
-                if (ServiceType.TB_RULE_ENGINE.equals(serviceType)) {
-                    //To Rule Chain Actors
-                    broadcast(msg);
-                } else if (ServiceType.TB_CORE.equals(serviceType)) {
-                    List<TbActorId> deviceActorIds = ctx.filterChildren(new TbEntityTypeActorIdPredicate(EntityType.DEVICE) {
-                        @Override
-                        protected boolean testEntityId(EntityId entityId) {
-                            return super.testEntityId(entityId) && !isMyPartition(entityId);
-                        }
-                    });
-                    deviceActorIds.forEach(id -> ctx.stop(id));
-                }
+                onPartitionChangeMsg((PartitionChangeMsg) msg);
                 break;
             case COMPONENT_LIFE_CYCLE_MSG:
                 onComponentLifecycleMsg((ComponentLifecycleMsg) msg);
+                break;
+            case CF_ENTITY_ACTION_EVENT_MSG:
+                forwardToCfActor((TenantAwareMsg) msg, true);
                 break;
             case QUEUE_TO_RULE_ENGINE_MSG:
                 onQueueToRuleEngineMsg((QueueToRuleEngineMsg) msg);
@@ -167,15 +183,37 @@ public class TenantActor extends RuleChainManagerActor {
             case RULE_CHAIN_TO_RULE_CHAIN_MSG:
                 onRuleChainMsg((RuleChainAwareMsg) msg);
                 break;
-            case EDGE_EVENT_UPDATE_TO_EDGE_SESSION_MSG:
-            case EDGE_SYNC_REQUEST_TO_EDGE_SESSION_MSG:
-            case EDGE_SYNC_RESPONSE_FROM_EDGE_SESSION_MSG:
-                onToEdgeSessionMsg((EdgeSessionMsg) msg);
+            case CF_CACHE_INIT_MSG:
+            case CF_STATE_RESTORE_MSG:
+            case CF_PARTITIONS_CHANGE_MSG:
+            case CF_STATE_PARTITION_RESTORE_MSG:
+                forwardToCfActor((ToCalculatedFieldSystemMsg) msg, true);
+                break;
+            case CF_TELEMETRY_MSG:
+            case CF_LINKED_TELEMETRY_MSG:
+                forwardToCfActor((ToCalculatedFieldSystemMsg) msg, false);
                 break;
             default:
                 return false;
         }
         return true;
+    }
+
+    private void forwardToCfActor(TenantAwareMsg msg, boolean priority) {
+        if (cfActor == null) {
+            if (msg instanceof CalculatedFieldStateRestoreMsg) {
+                log.warn("[{}] CF Actor is not initialized. ToCalculatedFieldSystemMsg: [{}]", tenantId, msg);
+            } else {
+                log.debug("[{}] CF Actor is not initialized. ToCalculatedFieldSystemMsg: [{}]", tenantId, msg);
+            }
+            msg.getCallback().onSuccess();
+            return;
+        }
+        if (priority) {
+            cfActor.tellWithHighPriority(msg);
+        } else {
+            cfActor.tell(msg);
+        }
     }
 
     private boolean isMyPartition(EntityId entityId) {
@@ -221,11 +259,60 @@ public class TenantActor extends RuleChainManagerActor {
         if (!isCore) {
             log.warn("RECEIVED INVALID MESSAGE: {}", msg);
         }
+        if (deletedDevices.contains(msg.getDeviceId())) {
+            log.debug("RECEIVED MESSAGE FOR DELETED DEVICE: {}", msg);
+            return;
+        }
         TbActorRef deviceActor = getOrCreateDeviceActor(msg.getDeviceId());
         if (priority) {
             deviceActor.tellWithHighPriority(msg);
         } else {
             deviceActor.tell(msg);
+        }
+    }
+
+    private void onPartitionChangeMsg(PartitionChangeMsg msg) {
+        ServiceType serviceType = msg.getServiceType();
+        if (ServiceType.TB_RULE_ENGINE.equals(serviceType)) {
+            if (systemContext.getPartitionService().isManagedByCurrentService(tenantId)) {
+                if (cfActor == null) {
+                    try {
+                        //TODO: IM - extend API usage to have CF Exec Enabled? Not in 4.0;
+                        cfActor = ctx.getOrCreateChildActor(new TbStringActorId("CFM|" + tenantId),
+                                () -> DefaultActorService.CF_MANAGER_DISPATCHER_NAME,
+                                () -> new CalculatedFieldManagerActorCreator(systemContext, tenantId),
+                                () -> true);
+                        cfActor.tellWithHighPriority(new CalculatedFieldCacheInitMsg(tenantId));
+                    } catch (Exception e) {
+                        log.info("[{}] Failed to init CF Actor.", tenantId, e);
+                    }
+                }
+                if (!ruleChainsInitialized) {
+                    log.info("Tenant {} is now managed by this service, initializing rule chains", tenantId);
+                    initRuleChains();
+                }
+            } else {
+                if (cfActor != null) {
+                    ctx.stop(cfActor.getActorId());
+                    cfActor = null;
+                }
+                if (ruleChainsInitialized) {
+                    log.info("Tenant {} is no longer managed by this service, stopping rule chains", tenantId);
+                    destroyRuleChains();
+                }
+                return;
+            }
+
+            //To Rule Chain Actors
+            broadcast(msg);
+        } else if (ServiceType.TB_CORE.equals(serviceType)) {
+            List<TbActorId> deviceActorIds = ctx.filterChildren(new TbEntityTypeActorIdPredicate(EntityType.DEVICE) {
+                @Override
+                protected boolean testEntityId(EntityId entityId) {
+                    return super.testEntityId(entityId) && !isMyPartition(entityId);
+                }
+            });
+            deviceActorIds.forEach(id -> ctx.stop(id));
         }
     }
 
@@ -240,28 +327,32 @@ public class TenantActor extends RuleChainManagerActor {
                 log.info("[{}] Received API state update. Going to ENABLE Rule Engine execution.", tenantId);
                 initRuleChains();
             }
-        } else if (msg.getEntityId().getEntityType() == EntityType.EDGE) {
-            EdgeId edgeId = new EdgeId(msg.getEntityId().getId());
-            EdgeRpcService edgeRpcService = systemContext.getEdgeRpcService();
-            if (msg.getEvent() == ComponentLifecycleEvent.DELETED) {
-                edgeRpcService.deleteEdge(tenantId, edgeId);
-            } else if (msg.getEvent() == ComponentLifecycleEvent.UPDATED) {
-                Edge edge = systemContext.getEdgeService().findEdgeById(tenantId, edgeId);
-                edgeRpcService.updateEdge(tenantId, edge);
-            }
-        } else if (isRuleEngine) {
-            TbActorRef target = getEntityActorRef(msg.getEntityId());
-            if (target != null) {
-                if (msg.getEntityId().getEntityType() == EntityType.RULE_CHAIN) {
-                    RuleChain ruleChain = systemContext.getRuleChainService().
-                            findRuleChainById(tenantId, new RuleChainId(msg.getEntityId().getId()));
-                    if (ruleChain != null && RuleChainType.CORE.equals(ruleChain.getType())) {
-                        visit(ruleChain, target);
+        }
+        if (msg.getEntityId().getEntityType() == EntityType.DEVICE && ComponentLifecycleEvent.DELETED == msg.getEvent() && isMyPartition(msg.getEntityId())) {
+            DeviceId deviceId = (DeviceId) msg.getEntityId();
+            onToDeviceActorMsg(new DeviceDeleteMsg(tenantId, deviceId), true);
+            deletedDevices.add(deviceId);
+        }
+        if (isRuleEngine) {
+            if (ruleChainsInitialized) {
+                TbActorRef target = getEntityActorRef(msg.getEntityId());
+                if (target != null) {
+                    if (msg.getEntityId().getEntityType() == EntityType.RULE_CHAIN) {
+                        RuleChain ruleChain = systemContext.getRuleChainService().
+                                findRuleChainById(tenantId, new RuleChainId(msg.getEntityId().getId()));
+                        if (ruleChain != null && RuleChainType.CORE.equals(ruleChain.getType())) {
+                            visit(ruleChain, target);
+                        }
                     }
+                    target.tellWithHighPriority(msg);
+                } else {
+                    log.debug("[{}] Invalid component lifecycle msg: {}", tenantId, msg);
                 }
-                target.tellWithHighPriority(msg);
-            } else {
-                log.debug("[{}] Invalid component lifecycle msg: {}", tenantId, msg);
+            }
+            if (cfActor != null) {
+                if (msg.getEntityId().getEntityType().isOneOf(EntityType.CALCULATED_FIELD, EntityType.DEVICE, EntityType.ASSET, EntityType.CUSTOMER)) {
+                    cfActor.tellWithHighPriority(new CalculatedFieldEntityLifecycleMsg(tenantId, msg));
+                }
             }
         }
     }
@@ -273,15 +364,17 @@ public class TenantActor extends RuleChainManagerActor {
                 () -> true);
     }
 
-    private void onToEdgeSessionMsg(EdgeSessionMsg msg) {
-        systemContext.getEdgeRpcService().onToEdgeSessionMsg(tenantId, msg);
-    }
-
     private ApiUsageState getApiUsageState() {
         if (apiUsageState == null) {
             apiUsageState = new ApiUsageState(systemContext.getApiUsageStateService().getApiUsageState(tenantId));
         }
         return apiUsageState;
+    }
+
+    @Override
+    public ProcessFailureStrategy onProcessFailure(TbActorMsg msg, Throwable t) {
+        log.error("[{}] Failed to process msg: {}", tenantId, msg, t);
+        return doProcessFailure(t);
     }
 
     public static class ActorCreator extends ContextBasedCreator {
@@ -302,6 +395,7 @@ public class TenantActor extends RuleChainManagerActor {
         public TbActor createActor() {
             return new TenantActor(context, tenantId);
         }
+
     }
 
 }

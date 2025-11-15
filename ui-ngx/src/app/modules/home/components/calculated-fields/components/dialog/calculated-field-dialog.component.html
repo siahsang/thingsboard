@@ -1,0 +1,119 @@
+<!--
+
+    Copyright © 2016-2025 The Thingsboard Authors
+
+    Licensed under the Apache License, Version 2.0 (the "License");
+    you may not use this file except in compliance with the License.
+    You may obtain a copy of the License at
+
+        http://www.apache.org/licenses/LICENSE-2.0
+
+    Unless required by applicable law or agreed to in writing, software
+    distributed under the License is distributed on an "AS IS" BASIS,
+    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+    See the License for the specific language governing permissions and
+    limitations under the License.
+
+-->
+<div [formGroup]="fieldFormGroup" class="calculated-field-dialog-container flex size-full max-w-4xl flex-col">
+  <mat-toolbar color="primary">
+    <h2>{{ 'entity.type-calculated-field' | translate}}</h2>
+    <span class="flex-1"></span>
+    <div tb-help="calculatedField"></div>
+    <button mat-icon-button
+            (click)="cancel()"
+            type="button">
+      <mat-icon class="material-icons">close</mat-icon>
+    </button>
+  </mat-toolbar>
+  <div mat-dialog-content class="flex-1">
+    <div class="tb-form-panel no-border no-padding">
+      <div class="tb-form-panel">
+        <div class="tb-form-panel-title">{{ 'common.general' | translate }}</div>
+        <div class="flex items-center gap-2">
+          <mat-form-field class="flex-1" appearance="outline" subscriptSizing="dynamic">
+            <mat-label>{{ 'entity-field.title' | translate }}</mat-label>
+            <input matInput maxlength="255" formControlName="name" required>
+            @if (fieldFormGroup.get('name').errors && fieldFormGroup.get('name').touched) {
+              <mat-error>
+                @if (fieldFormGroup.get('name').hasError('required')) {
+                  {{ 'common.hint.title-required' | translate }}
+                } @else if (fieldFormGroup.get('name').hasError('pattern')) {
+                  {{ 'common.hint.title-pattern' | translate }}
+                } @else if (fieldFormGroup.get('name').hasError('maxlength')) {
+                  {{ 'common.hint.title-max-length' | translate }}
+                }
+              </mat-error>
+            }
+          </mat-form-field>
+          <tb-entity-debug-settings-button
+            formControlName="debugSettings"
+            [class.mb-5]="fieldFormGroup.get('name').errors && fieldFormGroup.get('name').touched"
+            [entityType]="EntityType.CALCULATED_FIELD"
+            [additionalActionConfig]="additionalDebugActionConfig"
+          />
+        </div>
+        <mat-form-field appearance="outline" subscriptSizing="dynamic">
+          <mat-label>{{ 'common.type' | translate }}</mat-label>
+          <mat-select formControlName="type">
+            @for (type of fieldTypes; track type) {
+              <mat-option [value]="type">{{ CalculatedFieldTypeTranslations.get(type).name | translate}}</mat-option>
+            }
+          </mat-select>
+          @if (CalculatedFieldTypeTranslations.get(fieldFormGroup.get('type').value).hint) {
+            <mat-hint>{{ CalculatedFieldTypeTranslations.get(fieldFormGroup.get('type').value).hint | translate }}</mat-hint>
+          }
+        </mat-form-field>
+      </div>
+      @switch (fieldFormGroup.get('type').value) {
+        @case (CalculatedFieldType.GEOFENCING) {
+          <tb-geofencing-configuration formControlName="configuration"
+                                       [entityId]="data.entityId"
+                                       [entityName]="data.entityName"
+                                       [ownerId]="data.ownerId"
+                                       [tenantId]="data.tenantId"
+          ></tb-geofencing-configuration>
+        }
+        @case (CalculatedFieldType.PROPAGATION) {
+          <tb-propagation-configuration formControlName="configuration"
+                                        [entityId]="data.entityId"
+                                        [entityName]="data.entityName"
+                                        [tenantId]="data.tenantId"
+                                        [ownerId]="data.ownerId"
+                                        [testScript]="onTestScript.bind(this)"
+          ></tb-propagation-configuration>
+        }
+        @case (CalculatedFieldType.RELATED_ENTITIES_AGGREGATION) {
+          <tb-related-entities-aggregation-component formControlName="configuration"
+                                                     [entityId]="data.entityId"
+                                                     [entityName]="data.entityName"
+                                                     [tenantId]="data.tenantId"
+          ></tb-related-entities-aggregation-component>
+        }
+        @default {
+          <tb-simple-configuration formControlName="configuration"
+                                   [entityId]="data.entityId"
+                                   [entityName]="data.entityName"
+                                   [ownerId]="data.ownerId"
+                                   [tenantId]="data.tenantId"
+                                   [isScript]="fieldFormGroup.get('type').value === CalculatedFieldType.SCRIPT"
+                                   [testScript]="onTestScript.bind(this)"
+          ></tb-simple-configuration>
+        }
+      }
+    </div>
+  </div>
+  <div mat-dialog-actions class="justify-end">
+    <button mat-button color="primary"
+            type="button"
+            cdkFocusInitial
+            (click)="cancel()">
+      {{ 'action.cancel' | translate }}
+    </button>
+    <button mat-raised-button color="primary"
+            (click)="add()"
+            [disabled]="(isLoading$ | async) || fieldFormGroup.invalid || !fieldFormGroup.dirty">
+      {{ data.buttonTitle | translate }}
+    </button>
+  </div>
+</div>

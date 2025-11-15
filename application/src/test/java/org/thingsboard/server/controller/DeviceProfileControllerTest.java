@@ -1,5 +1,5 @@
 /**
- * Copyright © 2016-2023 The Thingsboard Authors
+ * Copyright © 2016-2025 The Thingsboard Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -27,6 +27,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Primary;
 import org.springframework.test.context.ContextConfiguration;
+import org.thingsboard.common.util.JacksonUtil;
 import org.thingsboard.server.common.data.Customer;
 import org.thingsboard.server.common.data.Dashboard;
 import org.thingsboard.server.common.data.Device;
@@ -35,6 +36,7 @@ import org.thingsboard.server.common.data.DeviceProfileInfo;
 import org.thingsboard.server.common.data.DeviceProfileProvisionType;
 import org.thingsboard.server.common.data.DeviceProfileType;
 import org.thingsboard.server.common.data.DeviceTransportType;
+import org.thingsboard.server.common.data.EntityInfo;
 import org.thingsboard.server.common.data.OtaPackageInfo;
 import org.thingsboard.server.common.data.SaveOtaPackageInfoRequest;
 import org.thingsboard.server.common.data.StringUtils;
@@ -55,11 +57,14 @@ import org.thingsboard.server.dao.service.DaoSqlTest;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.List;
 import java.util.stream.Collectors;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.containsString;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+import static org.thingsboard.server.common.data.DataConstants.DEFAULT_DEVICE_TYPE;
 import static org.thingsboard.server.common.data.ota.OtaPackageType.FIRMWARE;
 import static org.thingsboard.server.common.data.ota.OtaPackageType.SOFTWARE;
 
@@ -76,6 +81,8 @@ public class DeviceProfileControllerTest extends AbstractControllerTest {
     @Autowired
     private DeviceProfileDao deviceProfileDao;
 
+    static final String LWM2M_PROFILE_JSON = "{\"name\":\"lwm2m profile\",\"type\":\"DEFAULT\",\"image\":null,\"defaultQueueName\":null,\"transportType\":\"LWM2M\",\"provisionType\":\"DISABLED\",\"description\":\"\",\"profileData\":{\"configuration\":{\"type\":\"DEFAULT\"},\"transportConfiguration\":{\"observeAttr\":{\"observe\":[],\"attribute\":[],\"telemetry\":[\"/11_1.1/0/0\"],\"keyName\":{\"/11_1.1/0/0\":\"profileName\"},\"attributeLwm2m\":{}},\"bootstrap\":[{\"shortServerId\":123,\"bootstrapServerIs\":false,\"host\":\"0.0.0.0\",\"port\":5685,\"clientHoldOffTime\":1,\"serverPublicKey\":\"\",\"serverCertificate\":\"\",\"bootstrapServerAccountTimeout\":0,\"lifetime\":300,\"defaultMinPeriod\":1,\"notifIfDisabled\":true,\"binding\":\"U\",\"securityMode\":\"NO_SEC\"}],\"clientLwM2mSettings\":{\"clientOnlyObserveAfterConnect\":1,\"fwUpdateStrategy\":1,\"swUpdateStrategy\":1,\"powerMode\":\"DRX\",\"edrxCycle\":81000,\"psmActivityTimer\":10000,\"pagingTransmissionWindow\":10000,\"defaultObjectIDVer\":\"1.0\"},\"bootstrapServerUpdateEnable\":false,\"type\":\"LWM2M\"},\"alarms\":null,\"provisionConfiguration\":{\"type\":\"DISABLED\"}}}";
+
     static class Config {
         @Bean
         @Primary
@@ -90,7 +97,7 @@ public class DeviceProfileControllerTest extends AbstractControllerTest {
 
         Tenant tenant = new Tenant();
         tenant.setTitle("My tenant");
-        savedTenant = doPost("/api/tenant", tenant, Tenant.class);
+        savedTenant = saveTenant(tenant);
         Assert.assertNotNull(savedTenant);
 
         tenantAdmin = new User();
@@ -107,8 +114,7 @@ public class DeviceProfileControllerTest extends AbstractControllerTest {
     public void afterTest() throws Exception {
         loginSysAdmin();
 
-        doDelete("/api/tenant/" + savedTenant.getId().getId().toString())
-                .andExpect(status().isOk());
+        deleteTenant(savedTenant.getId());
     }
 
     @Test
@@ -117,7 +123,7 @@ public class DeviceProfileControllerTest extends AbstractControllerTest {
 
         Mockito.reset(tbClusterService, auditLogService);
 
-        DeviceProfile savedDeviceProfile = doPost("/api/deviceProfile", deviceProfile, DeviceProfile.class);
+        DeviceProfile savedDeviceProfile = saveDeviceProfile(deviceProfile);
         Assert.assertNotNull(savedDeviceProfile);
         Assert.assertNotNull(savedDeviceProfile.getId());
         Assert.assertTrue(savedDeviceProfile.getCreatedTime() > 0);
@@ -133,7 +139,7 @@ public class DeviceProfileControllerTest extends AbstractControllerTest {
                 ActionType.ADDED);
 
         savedDeviceProfile.setName("New device profile");
-        doPost("/api/deviceProfile", savedDeviceProfile, DeviceProfile.class);
+        saveDeviceProfile(savedDeviceProfile);
         DeviceProfile foundDeviceProfile = doGet("/api/deviceProfile/" + savedDeviceProfile.getId().getId().toString(), DeviceProfile.class);
         Assert.assertEquals(savedDeviceProfile.getName(), foundDeviceProfile.getName());
 
@@ -160,7 +166,7 @@ public class DeviceProfileControllerTest extends AbstractControllerTest {
     @Test
     public void testFindDeviceProfileById() throws Exception {
         DeviceProfile deviceProfile = this.createDeviceProfile("Device Profile");
-        DeviceProfile savedDeviceProfile = doPost("/api/deviceProfile", deviceProfile, DeviceProfile.class);
+        DeviceProfile savedDeviceProfile = saveDeviceProfile(deviceProfile);
         DeviceProfile foundDeviceProfile = doGet("/api/deviceProfile/" + savedDeviceProfile.getId().getId().toString(), DeviceProfile.class);
         Assert.assertNotNull(foundDeviceProfile);
         Assert.assertEquals(savedDeviceProfile, foundDeviceProfile);
@@ -169,7 +175,7 @@ public class DeviceProfileControllerTest extends AbstractControllerTest {
     @Test
     public void whenGetDeviceProfileById_thenPermissionsAreChecked() throws Exception {
         DeviceProfile deviceProfile = createDeviceProfile("Device profile 1", null);
-        deviceProfile = doPost("/api/deviceProfile", deviceProfile, DeviceProfile.class);
+        deviceProfile = saveDeviceProfile(deviceProfile);
 
         loginDifferentTenant();
 
@@ -181,7 +187,7 @@ public class DeviceProfileControllerTest extends AbstractControllerTest {
     @Test
     public void testFindDeviceProfileInfoById() throws Exception {
         DeviceProfile deviceProfile = this.createDeviceProfile("Device Profile");
-        DeviceProfile savedDeviceProfile = doPost("/api/deviceProfile", deviceProfile, DeviceProfile.class);
+        DeviceProfile savedDeviceProfile = saveDeviceProfile(deviceProfile);
         DeviceProfileInfo foundDeviceProfileInfo = doGet("/api/deviceProfileInfo/" + savedDeviceProfile.getId().getId().toString(), DeviceProfileInfo.class);
         Assert.assertNotNull(foundDeviceProfileInfo);
         Assert.assertEquals(savedDeviceProfile.getId(), foundDeviceProfileInfo.getId());
@@ -211,7 +217,7 @@ public class DeviceProfileControllerTest extends AbstractControllerTest {
     @Test
     public void whenGetDeviceProfileInfoById_thenPermissionsAreChecked() throws Exception {
         DeviceProfile deviceProfile = createDeviceProfile("Device profile 1", null);
-        deviceProfile = doPost("/api/deviceProfile", deviceProfile, DeviceProfile.class);
+        deviceProfile = saveDeviceProfile(deviceProfile);
 
         loginDifferentTenant();
         doGet("/api/deviceProfileInfo/" + deviceProfile.getId())
@@ -233,7 +239,7 @@ public class DeviceProfileControllerTest extends AbstractControllerTest {
     @Test
     public void testSetDefaultDeviceProfile() throws Exception {
         DeviceProfile deviceProfile = this.createDeviceProfile("Device Profile 1");
-        DeviceProfile savedDeviceProfile = doPost("/api/deviceProfile", deviceProfile, DeviceProfile.class);
+        DeviceProfile savedDeviceProfile = saveDeviceProfile(deviceProfile);
 
         Mockito.reset(tbClusterService, auditLogService);
 
@@ -326,7 +332,7 @@ public class DeviceProfileControllerTest extends AbstractControllerTest {
     @Test
     public void testChangeDeviceProfileTypeNull() throws Exception {
         DeviceProfile deviceProfile = this.createDeviceProfile("Device Profile");
-        DeviceProfile savedDeviceProfile = doPost("/api/deviceProfile", deviceProfile, DeviceProfile.class);
+        DeviceProfile savedDeviceProfile = saveDeviceProfile(deviceProfile);
 
         Mockito.reset(tbClusterService, auditLogService);
 
@@ -343,7 +349,7 @@ public class DeviceProfileControllerTest extends AbstractControllerTest {
     @Test
     public void testChangeDeviceProfileTransportTypeWithExistingDevices() throws Exception {
         DeviceProfile deviceProfile = this.createDeviceProfile("Device Profile");
-        DeviceProfile savedDeviceProfile = doPost("/api/deviceProfile", deviceProfile, DeviceProfile.class);
+        DeviceProfile savedDeviceProfile = saveDeviceProfile(deviceProfile);
         Device device = new Device();
         device.setName("Test device");
         device.setType("default");
@@ -365,7 +371,7 @@ public class DeviceProfileControllerTest extends AbstractControllerTest {
     @Test
     public void testDeleteDeviceProfileWithExistingDevice() throws Exception {
         DeviceProfile deviceProfile = this.createDeviceProfile("Device Profile");
-        DeviceProfile savedDeviceProfile = doPost("/api/deviceProfile", deviceProfile, DeviceProfile.class);
+        DeviceProfile savedDeviceProfile = saveDeviceProfile(deviceProfile);
 
         Device device = new Device();
         device.setName("Test device");
@@ -417,7 +423,7 @@ public class DeviceProfileControllerTest extends AbstractControllerTest {
     public void testSaveDeviceProfileWithFirmwareFromDifferentTenant() throws Exception {
         loginDifferentTenant();
         DeviceProfile differentProfile = createDeviceProfile("Different profile");
-        differentProfile = doPost("/api/deviceProfile", differentProfile, DeviceProfile.class);
+        differentProfile = saveDeviceProfile(differentProfile);
         SaveOtaPackageInfoRequest firmwareInfo = new SaveOtaPackageInfoRequest();
         firmwareInfo.setDeviceProfileId(differentProfile.getId());
         firmwareInfo.setType(FIRMWARE);
@@ -439,7 +445,7 @@ public class DeviceProfileControllerTest extends AbstractControllerTest {
     public void testSaveDeviceProfileWithSoftwareFromDifferentTenant() throws Exception {
         loginDifferentTenant();
         DeviceProfile differentProfile = createDeviceProfile("Different profile");
-        differentProfile = doPost("/api/deviceProfile", differentProfile, DeviceProfile.class);
+        differentProfile = saveDeviceProfile(differentProfile);
         SaveOtaPackageInfoRequest softwareInfo = new SaveOtaPackageInfoRequest();
         softwareInfo.setDeviceProfileId(differentProfile.getId());
         softwareInfo.setType(SOFTWARE);
@@ -460,7 +466,7 @@ public class DeviceProfileControllerTest extends AbstractControllerTest {
     @Test
     public void testDeleteDeviceProfile() throws Exception {
         DeviceProfile deviceProfile = this.createDeviceProfile("Device Profile");
-        DeviceProfile savedDeviceProfile = doPost("/api/deviceProfile", deviceProfile, DeviceProfile.class);
+        DeviceProfile savedDeviceProfile = saveDeviceProfile(deviceProfile);
 
         Mockito.reset(tbClusterService, auditLogService);
 
@@ -493,7 +499,7 @@ public class DeviceProfileControllerTest extends AbstractControllerTest {
         int cntEntity = 28;
         for (int i = 0; i < cntEntity; i++) {
             DeviceProfile deviceProfile = this.createDeviceProfile("Device Profile" + i);
-            deviceProfiles.add(doPost("/api/deviceProfile", deviceProfile, DeviceProfile.class));
+            deviceProfiles.add(saveDeviceProfile(deviceProfile));
         }
 
         testNotifyManyEntityManyTimeMsgToEdgeServiceEntityEqAny(new DeviceProfile(), new DeviceProfile(),
@@ -550,7 +556,7 @@ public class DeviceProfileControllerTest extends AbstractControllerTest {
 
         for (int i = 0; i < 28; i++) {
             DeviceProfile deviceProfile = this.createDeviceProfile("Device Profile" + i);
-            deviceProfiles.add(doPost("/api/deviceProfile", deviceProfile, DeviceProfile.class));
+            deviceProfiles.add(saveDeviceProfile(deviceProfile));
         }
 
         List<DeviceProfileInfo> loadedDeviceProfileInfos = new ArrayList<>();
@@ -959,7 +965,7 @@ public class DeviceProfileControllerTest extends AbstractControllerTest {
         JsonTransportPayloadConfiguration jsonTransportPayloadConfiguration = new JsonTransportPayloadConfiguration();
         MqttDeviceProfileTransportConfiguration mqttDeviceProfileTransportConfiguration = this.createMqttDeviceProfileTransportConfiguration(jsonTransportPayloadConfiguration, true);
         DeviceProfile deviceProfile = this.createDeviceProfile("Device Profile", mqttDeviceProfileTransportConfiguration);
-        DeviceProfile savedDeviceProfile = doPost("/api/deviceProfile", deviceProfile, DeviceProfile.class);
+        DeviceProfile savedDeviceProfile = saveDeviceProfile(deviceProfile);
         Assert.assertNotNull(savedDeviceProfile);
         Assert.assertEquals(savedDeviceProfile.getTransportType(), DeviceTransportType.MQTT);
         Assert.assertTrue(savedDeviceProfile.getProfileData().getTransportConfiguration() instanceof MqttDeviceProfileTransportConfiguration);
@@ -977,7 +983,7 @@ public class DeviceProfileControllerTest extends AbstractControllerTest {
                         "v1/devices/me/telemetry", "v1/devices/me/attributes", "v1/devices/me/subscribeattributes");
         DeviceProfile deviceProfile = this.createDeviceProfile("Device Profile",
                 mqttDeviceProfileTransportConfiguration);
-        DeviceProfile savedDeviceProfile = doPost("/api/deviceProfile", deviceProfile, DeviceProfile.class);
+        DeviceProfile savedDeviceProfile = saveDeviceProfile(deviceProfile);
         Assert.assertNotNull(savedDeviceProfile);
         Assert.assertEquals(savedDeviceProfile.getTransportType(), DeviceTransportType.MQTT);
         Assert.assertTrue(savedDeviceProfile.getProfileData().getTransportConfiguration() instanceof MqttDeviceProfileTransportConfiguration);
@@ -995,7 +1001,7 @@ public class DeviceProfileControllerTest extends AbstractControllerTest {
         ProtoTransportPayloadConfiguration protoTransportPayloadConfiguration = this.createProtoTransportPayloadConfiguration(schema, schema, null, null);
         MqttDeviceProfileTransportConfiguration mqttDeviceProfileTransportConfiguration = this.createMqttDeviceProfileTransportConfiguration(protoTransportPayloadConfiguration, false);
         DeviceProfile deviceProfile = this.createDeviceProfile("Device Profile", mqttDeviceProfileTransportConfiguration);
-        DeviceProfile savedDeviceProfile = doPost("/api/deviceProfile", deviceProfile, DeviceProfile.class);
+        DeviceProfile savedDeviceProfile = saveDeviceProfile(deviceProfile);
         Assert.assertNotNull(savedDeviceProfile);
         DeviceProfile foundDeviceProfile = doGet("/api/deviceProfile/" + savedDeviceProfile.getId().getId().toString(), DeviceProfile.class);
         Assert.assertEquals(savedDeviceProfile, foundDeviceProfile);
@@ -1034,19 +1040,103 @@ public class DeviceProfileControllerTest extends AbstractControllerTest {
 
     @Test
     public void testDeleteDeviceProfileWithDeleteRelationsOk() throws Exception {
-        DeviceProfileId deviceProfileId = savedDeviceProfile("DeviceProfile for Test WithRelationsOk").getId();
+        DeviceProfileId deviceProfileId = saveDeviceProfile("DeviceProfile for Test WithRelationsOk").getId();
         testEntityDaoWithRelationsOk(savedTenant.getId(), deviceProfileId, "/api/deviceProfile/" + deviceProfileId);
     }
 
     @Ignore
     @Test
     public void testDeleteDeviceProfileExceptionWithRelationsTransactional() throws Exception {
-        DeviceProfileId deviceProfileId = savedDeviceProfile("DeviceProfile for Test WithRelations Transactional Exception").getId();
+        DeviceProfileId deviceProfileId = saveDeviceProfile("DeviceProfile for Test WithRelations Transactional Exception").getId();
         testEntityDaoWithRelationsTransactionalException(deviceProfileDao, savedTenant.getId(), deviceProfileId, "/api/deviceProfile/" + deviceProfileId);
     }
 
-    private DeviceProfile savedDeviceProfile(String name) {
+    @Test
+    public void testGetDeviceProfileNames() throws Exception {
+        var pageLink = new PageLink(Integer.MAX_VALUE);
+        var deviceProfileInfos = doGetTypedWithPageLink("/api/deviceProfileInfos?",
+                new TypeReference<PageData<DeviceProfileInfo>>() {
+                }, pageLink);
+        Assert.assertNotNull("Device Profile Infos page data is null!", deviceProfileInfos);
+        Assert.assertEquals("Device Profile Infos Page data is empty! Expected to have default profile created!", 1, deviceProfileInfos.getTotalElements());
+        List<EntityInfo> expectedDeviceProfileNames = deviceProfileInfos.getData().stream()
+                .map(info -> new EntityInfo(info.getId(), info.getName()))
+                .sorted(Comparator.comparing(EntityInfo::getName))
+                .collect(Collectors.toList());
+        var deviceProfileNames = doGetTyped("/api/deviceProfile/names", new TypeReference<List<EntityInfo>>() {
+        });
+        Assert.assertNotNull("Device Profile Names list is null!", deviceProfileNames);
+        Assert.assertFalse("Device Profile Names list is empty!", deviceProfileNames.isEmpty());
+        Assert.assertEquals(expectedDeviceProfileNames, deviceProfileNames);
+        Assert.assertEquals(1, deviceProfileNames.size());
+        Assert.assertEquals(DEFAULT_DEVICE_TYPE, deviceProfileNames.get(0).getName());
+
+        int count = 3;
+        for (int i = 0; i < count; i++) {
+            Device device = new Device();
+            device.setName("DeviceName" + i);
+            device.setType("DeviceProfileName" + i);
+            Device savedDevice = doPost("/api/device", device, Device.class);
+            Assert.assertNotNull(savedDevice);
+        }
+        deviceProfileInfos = doGetTypedWithPageLink("/api/deviceProfileInfos?",
+                new TypeReference<>() {
+                }, pageLink);
+        Assert.assertNotNull("Device Profile Infos page data is null!", deviceProfileInfos);
+        Assert.assertEquals("Device Profile Infos Page data is empty! Expected to have default profile created + count value!", 1 + count, deviceProfileInfos.getTotalElements());
+        expectedDeviceProfileNames = deviceProfileInfos.getData().stream()
+                .map(info -> new EntityInfo(info.getId(), info.getName()))
+                .sorted(Comparator.comparing(EntityInfo::getName))
+                .collect(Collectors.toList());
+
+        deviceProfileNames = doGetTyped("/api/deviceProfile/names", new TypeReference<>() {
+        });
+        Assert.assertNotNull("Device Profile Names list is null!", deviceProfileNames);
+        Assert.assertFalse("Device Profile Names list is empty!", deviceProfileNames.isEmpty());
+        Assert.assertEquals(expectedDeviceProfileNames, deviceProfileNames);
+        Assert.assertEquals(1 + count, deviceProfileNames.size());
+
+        deviceProfileNames = doGetTyped("/api/deviceProfile/names?activeOnly=true", new TypeReference<>() {
+        });
+        Assert.assertNotNull("Device Profile Names list is null!", deviceProfileNames);
+        Assert.assertFalse("Device Profile Names list is empty!", deviceProfileNames.isEmpty());
+        var expectedDeviceProfileNamesWithoutDefault = expectedDeviceProfileNames.stream()
+                .filter(entityInfo -> !entityInfo.getName().equals(DEFAULT_DEVICE_TYPE))
+                .collect(Collectors.toList());
+        Assert.assertEquals(expectedDeviceProfileNamesWithoutDefault, deviceProfileNames);
+        Assert.assertEquals(count, deviceProfileNames.size());
+    }
+
+    @Test
+    public void testSaveDeviceProfileWithOutdatedVersion() throws Exception {
+        DeviceProfile deviceProfile = JacksonUtil.fromString(LWM2M_PROFILE_JSON, DeviceProfile.class);
+        deviceProfile.setName("Device profile v1.0");
+        deviceProfile = saveDeviceProfile(deviceProfile);
+        assertThat(deviceProfile.getVersion()).isOne();
+
+        deviceProfile.setName("Device profile v2.0");
+        deviceProfile = saveDeviceProfile(deviceProfile);
+        assertThat(deviceProfile.getVersion()).isEqualTo(2);
+
+        deviceProfile.setName("Device profile v1.1");
+        deviceProfile.setVersion(1L);
+        String response = doPost("/api/deviceProfile", deviceProfile).andExpect(status().isConflict())
+                .andReturn().getResponse().getContentAsString();
+        assertThat(JacksonUtil.toJsonNode(response).get("message").asText())
+                .containsIgnoringCase("already changed by someone else");
+
+        deviceProfile.setVersion(null); // overriding entity
+        deviceProfile = saveDeviceProfile(deviceProfile);
+        assertThat(deviceProfile.getName()).isEqualTo("Device profile v1.1");
+        assertThat(deviceProfile.getVersion()).isEqualTo(3);
+    }
+
+    private DeviceProfile saveDeviceProfile(String name) {
         DeviceProfile deviceProfile = createDeviceProfile(name);
+        return saveDeviceProfile(deviceProfile);
+    }
+
+    private DeviceProfile saveDeviceProfile(DeviceProfile deviceProfile) {
         return doPost("/api/deviceProfile", deviceProfile, DeviceProfile.class);
     }
 

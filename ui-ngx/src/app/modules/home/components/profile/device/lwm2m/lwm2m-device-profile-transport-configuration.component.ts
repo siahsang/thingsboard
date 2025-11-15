@@ -1,5 +1,5 @@
 ///
-/// Copyright © 2016-2023 The Thingsboard Authors
+/// Copyright © 2016-2025 The Thingsboard Authors
 ///
 /// Licensed under the Apache License, Version 2.0 (the "License");
 /// you may not use this file except in compliance with the License.
@@ -25,7 +25,6 @@ import {
   Validator,
   Validators
 } from '@angular/forms';
-import { coerceBooleanProperty } from '@angular/cdk/coercion';
 import {
   ATTRIBUTE,
   DEFAULT_EDRX_CYCLE,
@@ -40,12 +39,16 @@ import {
   ObjectLwM2M,
   OBSERVE,
   PowerMode,
+  ObjectIDVer,
   RESOURCES,
   ServerSecurityConfig,
-  TELEMETRY
+  TELEMETRY,
+  ObjectIDVerTranslationMap,
+  ObserveStrategy,
+  ObserveStrategyMap
 } from './lwm2m-profile-config.models';
 import { DeviceProfileService } from '@core/http/device-profile.service';
-import { deepClone, isDefinedAndNotNull, isEmpty, isUndefined } from '@core/utils';
+import { deepClone, isDefinedAndNotNull, isEmpty } from '@core/utils';
 import { Direction } from '@shared/models/page/sort-order';
 import _ from 'lodash';
 import { Subject } from 'rxjs';
@@ -75,21 +78,18 @@ export class Lwm2mDeviceProfileTransportConfigurationComponent implements Contro
   public disabled = false;
   public isTransportWasRunWithBootstrap = true;
   public isBootstrapServerUpdateEnable: boolean;
-  private requiredValue: boolean;
   private destroy$ = new Subject<void>();
 
   lwm2mDeviceProfileFormGroup: UntypedFormGroup;
   configurationValue: Lwm2mProfileConfigModels;
+
+  objectIDVers = Object.values(ObjectIDVer) as ObjectIDVer[];
+  objectIDVerTranslationMap = ObjectIDVerTranslationMap;
+
+  observeStrategyList = Object.values(ObserveStrategy) as ObserveStrategy[];
+  observeStrategyMap = ObserveStrategyMap;
+
   sortFunction: (key: string, value: object) => object;
-
-  get required(): boolean {
-    return this.requiredValue;
-  }
-
-  @Input()
-  set required(value: boolean) {
-    this.requiredValue = coerceBooleanProperty(value);
-  }
 
   @Input()
   isAdd: boolean;
@@ -107,8 +107,11 @@ export class Lwm2mDeviceProfileTransportConfigurationComponent implements Contro
       observeAttrTelemetry: [null],
       bootstrapServerUpdateEnable: [false],
       bootstrap: [[]],
+      observeStrategy: [null, []],
+      initAttrTelAsObsStrategy: [false],
       clientLwM2mSettings: this.fb.group({
         clientOnlyObserveAfterConnect: [1, []],
+        useObject19ForOtaInfo: [false],
         fwUpdateStrategy: [1, []],
         swUpdateStrategy: [1, []],
         fwUpdateResource: [{value: '', disabled: true}, []],
@@ -117,7 +120,7 @@ export class Lwm2mDeviceProfileTransportConfigurationComponent implements Contro
         edrxCycle: [{disabled: true, value: 0}, Validators.required],
         psmActivityTimer: [{disabled: true, value: 0}, Validators.required],
         pagingTransmissionWindow: [{disabled: true, value: 0}, Validators.required],
-        compositeOperationsSupport: [false]
+        defaultObjectIDVer: [ObjectIDVer.V1_0, Validators.required]
       })
     });
 
@@ -176,6 +179,11 @@ export class Lwm2mDeviceProfileTransportConfigurationComponent implements Contro
         this.isBootstrapServerUpdateEnable = value;
       }
     });
+
+    this.lwm2mDeviceProfileFormGroup.get('objectIds').valueChanges.pipe(
+      takeUntil(this.destroy$)
+    ).subscribe(value => this.updateObserveStrategy(value));
+
 
     this.lwm2mDeviceProfileFormGroup.valueChanges.pipe(
       takeUntil(this.destroy$)
@@ -265,8 +273,11 @@ export class Lwm2mDeviceProfileTransportConfigurationComponent implements Contro
         observeAttrTelemetry: this.getObserveAttrTelemetryObjects(value),
         bootstrap: this.configurationValue.bootstrap,
         bootstrapServerUpdateEnable: this.configurationValue.bootstrapServerUpdateEnable || false,
+        observeStrategy: this.configurationValue.observeAttr.observeStrategy || ObserveStrategy.SINGLE,
+        initAttrTelAsObsStrategy: this.configurationValue.observeAttr.initAttrTelAsObsStrategy ?? false,
         clientLwM2mSettings: {
           clientOnlyObserveAfterConnect: this.configurationValue.clientLwM2mSettings.clientOnlyObserveAfterConnect,
+          useObject19ForOtaInfo: this.configurationValue.clientLwM2mSettings.useObject19ForOtaInfo ?? false,
           fwUpdateStrategy: this.configurationValue.clientLwM2mSettings.fwUpdateStrategy || 1,
           swUpdateStrategy: this.configurationValue.clientLwM2mSettings.swUpdateStrategy || 1,
           fwUpdateResource: this.configurationValue.clientLwM2mSettings.fwUpdateResource || '',
@@ -276,7 +287,7 @@ export class Lwm2mDeviceProfileTransportConfigurationComponent implements Contro
           pagingTransmissionWindow:
             this.configurationValue.clientLwM2mSettings.pagingTransmissionWindow || DEFAULT_PAGING_TRANSMISSION_WINDOW,
           psmActivityTimer: this.configurationValue.clientLwM2mSettings.psmActivityTimer || DEFAULT_PSM_ACTIVITY_TIMER,
-          compositeOperationsSupport: this.configurationValue.clientLwM2mSettings.compositeOperationsSupport || false
+          defaultObjectIDVer: this.configurationValue.clientLwM2mSettings.defaultObjectIDVer || ObjectIDVer.V1_0
         }
       },
       {emitEvent: false});
@@ -286,15 +297,12 @@ export class Lwm2mDeviceProfileTransportConfigurationComponent implements Contro
       this.lwm2mDeviceProfileFormGroup.get('clientLwM2mSettings.fwUpdateStrategy').updateValueAndValidity({onlySelf: true});
       this.lwm2mDeviceProfileFormGroup.get('clientLwM2mSettings.swUpdateStrategy').updateValueAndValidity({onlySelf: true});
     }
+    this.updateObserveStrategy(value);
     this.cd.markForCheck();
   }
 
   private updateModel = (): void => {
-    let configuration: Lwm2mProfileConfigModels = null;
-    if (this.lwm2mDeviceProfileFormGroup.valid) {
-      configuration = this.configurationValue;
-    }
-    this.propagateChange(configuration);
+    this.propagateChange(this.configurationValue);
   }
 
   private updateObserveAttrTelemetryObjectFormGroup = (objectsList: ObjectLwM2M[]): void => {
@@ -434,6 +442,8 @@ export class Lwm2mDeviceProfileTransportConfigurationComponent implements Contro
     const telemetryArray: Array<string> = [];
     const attributes: any = {};
     const keyNameNew = {};
+    const observeStrategyValue = this.lwm2mDeviceProfileFormGroup.get('observeStrategy').value;
+    const initAttrTelAsObsStrategyValue = this.lwm2mDeviceProfileFormGroup.get('initAttrTelAsObsStrategy').value;
     const observeJson: ObjectLwM2M[] = JSON.parse(JSON.stringify(val));
     observeJson.forEach(obj => {
       if (isDefinedAndNotNull(obj.attributes) && !isEmpty(obj.attributes)) {
@@ -474,7 +484,9 @@ export class Lwm2mDeviceProfileTransportConfigurationComponent implements Contro
       attribute: attributeArray,
       telemetry: telemetryArray,
       keyName: this.sortObjectKeyPathJson(KEY_NAME, keyNameNew),
-      attributeLwm2m: attributes
+      attributeLwm2m: attributes,
+      initAttrTelAsObsStrategy: initAttrTelAsObsStrategyValue,
+      observeStrategy: observeStrategyValue
     };
   }
 
@@ -539,8 +551,10 @@ export class Lwm2mDeviceProfileTransportConfigurationComponent implements Contro
     this.removeObserveAttrTelemetryFromJson(ATTRIBUTE, value.keyId);
     this.removeKeyNameFromJson(value.keyId);
     this.removeAttributesFromJson(value.keyId);
-    this.updateObserveAttrTelemetryObjectFormGroup(objectsOld);
-  }
+    this.lwm2mDeviceProfileFormGroup.patchValue({
+      observeAttrTelemetry: deepClone(objectsOld)
+    }, {emitEvent: false});
+  };
 
   private removeObserveAttrTelemetryFromJson = (observeAttrTel: string, keyId: string): void => {
     const isIdIndex = (element) => element.startsWith(`/${keyId}`);
@@ -571,6 +585,14 @@ export class Lwm2mDeviceProfileTransportConfigurationComponent implements Contro
 
   get clientSettingsFormGroup(): UntypedFormGroup {
     return this.lwm2mDeviceProfileFormGroup.get('clientLwM2mSettings') as UntypedFormGroup;
+  }
+
+  private updateObserveStrategy(value: ObjectLwM2M[]) {
+    if (value.length && !this.disabled) {
+      this.lwm2mDeviceProfileFormGroup.get('observeStrategy').enable({onlySelf: true});
+    } else {
+      this.lwm2mDeviceProfileFormGroup.get('observeStrategy').disable({onlySelf: true});
+    }
   }
 
 }

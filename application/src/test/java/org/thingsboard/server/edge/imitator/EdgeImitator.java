@@ -1,5 +1,5 @@
 /**
- * Copyright © 2016-2023 The Thingsboard Authors
+ * Copyright © 2016-2025 The Thingsboard Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -24,12 +24,17 @@ import lombok.Getter;
 import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
 import org.checkerframework.checker.nullness.qual.Nullable;
+import org.junit.Assert;
 import org.thingsboard.edge.rpc.EdgeGrpcClient;
 import org.thingsboard.edge.rpc.EdgeRpcClient;
+import org.thingsboard.server.controller.AbstractWebTest;
 import org.thingsboard.server.gen.edge.v1.AdminSettingsUpdateMsg;
+import org.thingsboard.server.gen.edge.v1.AiModelUpdateMsg;
+import org.thingsboard.server.gen.edge.v1.AlarmCommentUpdateMsg;
 import org.thingsboard.server.gen.edge.v1.AlarmUpdateMsg;
 import org.thingsboard.server.gen.edge.v1.AssetProfileUpdateMsg;
 import org.thingsboard.server.gen.edge.v1.AssetUpdateMsg;
+import org.thingsboard.server.gen.edge.v1.CalculatedFieldUpdateMsg;
 import org.thingsboard.server.gen.edge.v1.CustomerUpdateMsg;
 import org.thingsboard.server.gen.edge.v1.DashboardUpdateMsg;
 import org.thingsboard.server.gen.edge.v1.DeviceCredentialsRequestMsg;
@@ -42,6 +47,11 @@ import org.thingsboard.server.gen.edge.v1.DownlinkResponseMsg;
 import org.thingsboard.server.gen.edge.v1.EdgeConfiguration;
 import org.thingsboard.server.gen.edge.v1.EntityDataProto;
 import org.thingsboard.server.gen.edge.v1.EntityViewUpdateMsg;
+import org.thingsboard.server.gen.edge.v1.NotificationRuleUpdateMsg;
+import org.thingsboard.server.gen.edge.v1.NotificationTargetUpdateMsg;
+import org.thingsboard.server.gen.edge.v1.NotificationTemplateUpdateMsg;
+import org.thingsboard.server.gen.edge.v1.OAuth2ClientUpdateMsg;
+import org.thingsboard.server.gen.edge.v1.OAuth2DomainUpdateMsg;
 import org.thingsboard.server.gen.edge.v1.OtaPackageUpdateMsg;
 import org.thingsboard.server.gen.edge.v1.QueueUpdateMsg;
 import org.thingsboard.server.gen.edge.v1.RelationUpdateMsg;
@@ -59,7 +69,9 @@ import org.thingsboard.server.gen.edge.v1.WidgetsBundleUpdateMsg;
 
 import java.lang.reflect.Field;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ThreadLocalRandom;
@@ -71,28 +83,28 @@ import java.util.stream.Collectors;
 @Slf4j
 public class EdgeImitator {
 
-    public static final int TIMEOUT_IN_SECONDS = 30;
+    private static final int MAX_DOWNLINK_FAILS = 2;
+    private final String routingKey;
+    private final String routingSecret;
 
-    private String routingKey;
-    private String routingSecret;
-
-    private EdgeRpcClient edgeRpcClient;
+    private final EdgeRpcClient edgeRpcClient;
 
     private final Lock lock = new ReentrantLock();
 
     private CountDownLatch messagesLatch;
     private CountDownLatch responsesLatch;
-    private List<Class<? extends AbstractMessage>> ignoredTypes;
+    private final List<Class<? extends AbstractMessage>> ignoredTypes;
 
     @Setter
     private boolean randomFailuresOnTimeseriesDownlink = false;
     @Setter
     private double failureProbability = 0.0;
+    private final Map<Integer, Integer> downlinkFailureCountMap = new HashMap<>();
 
     @Getter
     private EdgeConfiguration configuration;
     @Getter
-    private List<AbstractMessage> downlinkMsgs;
+    private final List<AbstractMessage> downlinkMsgs;
 
     @Getter
     private UplinkResponseMsg latestResponseMsg;
@@ -231,11 +243,19 @@ public class EdgeImitator {
                 result.add(saveDownlinkMsg(alarmUpdateMsg));
             }
         }
+        if (downlinkMsg.getAlarmCommentUpdateMsgCount() > 0) {
+            for (AlarmCommentUpdateMsg alarmCommentUpdateMsg : downlinkMsg.getAlarmCommentUpdateMsgList()) {
+                result.add(saveDownlinkMsg(alarmCommentUpdateMsg));
+            }
+        }
         if (downlinkMsg.getEntityDataCount() > 0) {
             for (EntityDataProto entityData : downlinkMsg.getEntityDataList()) {
                 if (randomFailuresOnTimeseriesDownlink) {
-                    if (getRandomBoolean()) {
+                    int downlinkMsgId = downlinkMsg.getDownlinkMsgId();
+
+                    if (getRandomBoolean() && checkFailureThreshold(downlinkMsgId)) {
                         result.add(Futures.immediateFailedFuture(new RuntimeException("Random failure. This is expected error for edge test")));
+                        downlinkFailureCountMap.put(downlinkMsgId, downlinkFailureCountMap.getOrDefault(downlinkMsgId, 0) + 1);
                     } else {
                         result.add(saveDownlinkMsg(entityData));
                     }
@@ -309,6 +329,41 @@ public class EdgeImitator {
                 result.add(saveDownlinkMsg(resourceUpdateMsg));
             }
         }
+        if (downlinkMsg.getOAuth2ClientUpdateMsgCount() > 0) {
+            for (OAuth2ClientUpdateMsg oAuth2ClientUpdateMsg : downlinkMsg.getOAuth2ClientUpdateMsgList()) {
+                result.add(saveDownlinkMsg(oAuth2ClientUpdateMsg));
+            }
+        }
+        if (downlinkMsg.getOAuth2DomainUpdateMsgCount() > 0) {
+            for (OAuth2DomainUpdateMsg oAuth2DomainUpdateMsg : downlinkMsg.getOAuth2DomainUpdateMsgList()) {
+                result.add(saveDownlinkMsg(oAuth2DomainUpdateMsg));
+            }
+        }
+        if (downlinkMsg.getNotificationTemplateUpdateMsgCount() > 0) {
+            for (NotificationTemplateUpdateMsg notificationTemplateUpdateMsg : downlinkMsg.getNotificationTemplateUpdateMsgList()) {
+                result.add(saveDownlinkMsg(notificationTemplateUpdateMsg));
+            }
+        }
+        if (downlinkMsg.getNotificationRuleUpdateMsgCount() > 0) {
+            for (NotificationRuleUpdateMsg notificationRuleUpdateMsg : downlinkMsg.getNotificationRuleUpdateMsgList()) {
+                result.add(saveDownlinkMsg(notificationRuleUpdateMsg));
+            }
+        }
+        if (downlinkMsg.getNotificationTargetUpdateMsgCount() > 0) {
+            for (NotificationTargetUpdateMsg notificationTargetUpdateMsg : downlinkMsg.getNotificationTargetUpdateMsgList()) {
+                result.add(saveDownlinkMsg(notificationTargetUpdateMsg));
+            }
+        }
+        if (downlinkMsg.getCalculatedFieldUpdateMsgCount() > 0) {
+            for (CalculatedFieldUpdateMsg calculatedFieldUpdateMsg : downlinkMsg.getCalculatedFieldUpdateMsgList()) {
+                result.add(saveDownlinkMsg(calculatedFieldUpdateMsg));
+            }
+        }
+        if (downlinkMsg.getAiModelUpdateMsgCount() > 0) {
+            for (AiModelUpdateMsg aiModelUpdateMsg : downlinkMsg.getAiModelUpdateMsgList()) {
+                result.add(saveDownlinkMsg(aiModelUpdateMsg));
+            }
+        }
         if (downlinkMsg.hasEdgeConfiguration()) {
             result.add(saveDownlinkMsg(downlinkMsg.getEdgeConfiguration()));
         }
@@ -317,6 +372,12 @@ public class EdgeImitator {
         }
 
         return Futures.allAsList(result);
+    }
+
+    private boolean checkFailureThreshold(int downlinkMsgId) {
+        return failureProbability == 100 ||
+                downlinkFailureCountMap.get(downlinkMsgId) == null ||
+                downlinkFailureCountMap.get(downlinkMsgId) < MAX_DOWNLINK_FAILS;
     }
 
     private boolean getRandomBoolean() {
@@ -338,7 +399,19 @@ public class EdgeImitator {
     }
 
     public boolean waitForMessages() throws InterruptedException {
-        return waitForMessages(TIMEOUT_IN_SECONDS);
+        boolean success = waitForMessages(AbstractWebTest.TIMEOUT);
+
+        if (!success) {
+            List<AbstractMessage> downlinkMsgs = getDownlinkMsgs();
+            for (AbstractMessage downlinkMsg : downlinkMsgs) {
+                log.error("{}\n{}", downlinkMsg.getClass(), downlinkMsg);
+            }
+
+            log.error("message count: {}", downlinkMsgs.size());
+            Assert.fail("Await for messages was not successful!");
+        }
+
+        return true;
     }
 
     public boolean waitForMessages(int timeoutInSeconds) throws InterruptedException {
@@ -353,7 +426,7 @@ public class EdgeImitator {
     }
 
     public boolean waitForResponses() throws InterruptedException {
-        return responsesLatch.await(TIMEOUT_IN_SECONDS, TimeUnit.SECONDS);
+        return responsesLatch.await(AbstractWebTest.TIMEOUT, TimeUnit.SECONDS);
     }
 
     public void expectResponsesAmount(int messageAmount) {

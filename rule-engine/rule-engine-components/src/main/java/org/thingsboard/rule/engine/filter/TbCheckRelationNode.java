@@ -1,5 +1,5 @@
 /**
- * Copyright © 2016-2023 The Thingsboard Authors
+ * Copyright © 2016-2025 The Thingsboard Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,7 +19,6 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.google.common.util.concurrent.Futures;
 import com.google.common.util.concurrent.ListenableFuture;
-import lombok.extern.slf4j.Slf4j;
 import org.thingsboard.rule.engine.api.RuleNode;
 import org.thingsboard.rule.engine.api.TbContext;
 import org.thingsboard.rule.engine.api.TbNode;
@@ -41,10 +40,6 @@ import java.util.List;
 
 import static org.thingsboard.common.util.DonAsynchron.withCallback;
 
-/**
- * Created by ashvayka on 19.01.18.
- */
-@Slf4j
 @RuleNode(
         type = ComponentType.FILTER,
         name = "check relation presence",
@@ -56,11 +51,10 @@ import static org.thingsboard.common.util.DonAsynchron.withCallback;
                 "Otherwise, the rule node checks the presence of a relation to any entity. " +
                 "In both cases, relation lookup is based on configured direction and type.<br><br>" +
                 "Output connections: <code>True</code>, <code>False</code>, <code>Failure</code>",
-        uiResources = {"static/rulenode/rulenode-core-config.js"},
-        configDirective = "tbFilterNodeCheckRelationConfig")
+        configDirective = "tbFilterNodeCheckRelationConfig",
+        docUrl = "https://thingsboard.io/docs/user-guide/rule-engine-2-0/nodes/filter/check-relation-presence/"
+)
 public class TbCheckRelationNode implements TbNode {
-
-    private static final String DIRECTION_PROPERTY_NAME = "direction";
 
     private TbCheckRelationNodeConfiguration config;
     private EntityId singleEntityId;
@@ -114,19 +108,20 @@ public class TbCheckRelationNode implements TbNode {
     public TbPair<Boolean, JsonNode> upgrade(int fromVersion, JsonNode oldConfiguration) throws TbNodeException {
         if (fromVersion == 0) {
             var newConfigObjectNode = (ObjectNode) oldConfiguration;
-            if (!newConfigObjectNode.has(DIRECTION_PROPERTY_NAME)) {
-                throw new TbNodeException("property to update: '" + DIRECTION_PROPERTY_NAME + "' doesn't exists in configuration!");
+            var directionPropertyName = "direction";
+            if (!newConfigObjectNode.has(directionPropertyName)) {
+                throw new TbNodeException("property to update: '" + directionPropertyName + "' doesn't exists in configuration!");
             }
-            String direction = newConfigObjectNode.get(DIRECTION_PROPERTY_NAME).asText();
+            String direction = newConfigObjectNode.get(directionPropertyName).asText();
             if (EntitySearchDirection.TO.name().equals(direction)) {
-                newConfigObjectNode.put(DIRECTION_PROPERTY_NAME, EntitySearchDirection.FROM.name());
+                newConfigObjectNode.put(directionPropertyName, EntitySearchDirection.FROM.name());
                 return new TbPair<>(true, newConfigObjectNode);
             }
             if (EntitySearchDirection.FROM.name().equals(direction)) {
-                newConfigObjectNode.put(DIRECTION_PROPERTY_NAME, EntitySearchDirection.TO.name());
+                newConfigObjectNode.put(directionPropertyName, EntitySearchDirection.TO.name());
                 return new TbPair<>(true, newConfigObjectNode);
             }
-            throw new TbNodeException("property to update: '" + DIRECTION_PROPERTY_NAME + "' has invalid value!");
+            throw new TbNodeException("property to update: '" + directionPropertyName + "' has invalid value!");
         }
         return new TbPair<>(false, oldConfiguration);
     }

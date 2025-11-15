@@ -1,5 +1,5 @@
 /**
- * Copyright © 2016-2023 The Thingsboard Authors
+ * Copyright © 2016-2025 The Thingsboard Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,7 +15,6 @@
  */
 package org.thingsboard.server.transport.lwm2m.utils;
 
-import com.google.api.client.util.Base64;
 import lombok.extern.slf4j.Slf4j;
 import org.eclipse.leshan.core.model.ResourceModel.Type;
 import org.eclipse.leshan.core.node.LwM2mPath;
@@ -26,11 +25,15 @@ import org.eclipse.leshan.core.util.Hex;
 import org.thingsboard.server.common.data.StringUtils;
 
 import java.math.BigInteger;
+import java.nio.ByteBuffer;
 import java.text.DateFormat;
 import java.text.SimpleDateFormat;
+import java.util.Base64;
 import java.util.Date;
 
+import static org.eclipse.leshan.core.model.ResourceModel.Type.NONE;
 import static org.eclipse.leshan.core.model.ResourceModel.Type.OPAQUE;
+import static org.eclipse.leshan.core.model.ResourceModel.Type.TIME;
 
 @Slf4j
 public class LwM2mValueConverterImpl implements LwM2mValueConverter {
@@ -52,12 +55,13 @@ public class LwM2mValueConverterImpl implements LwM2mValueConverter {
             return value;
         }
 
-        if (currentType == expectedType) {
-            /** expected type */
-            return value;
-        }
         if (currentType == null) {
             currentType = OPAQUE;
+        }
+
+        if (currentType == expectedType || currentType == NONE || currentType == TIME) {
+            /** expected type */
+            return value;
         }
 
         switch (expectedType) {
@@ -132,7 +136,7 @@ public class LwM2mValueConverterImpl implements LwM2mValueConverter {
                              **/
                         } catch (IllegalArgumentException e) {
                             log.debug("Unable to convert string to date", e);
-                            throw new CodecException("Unable to convert string (%s) to date for resource %s", value,
+                            throw new CodecException("Unable to convert string (%s) to %s for resource %s", value, TIME.name(),
                                     resourcePath);
                         }
                     default:
@@ -146,7 +150,7 @@ public class LwM2mValueConverterImpl implements LwM2mValueConverter {
                     case FLOAT:
                         return String.valueOf(value);
                     case TIME:
-                        String DATE_FORMAT = "MMM d, yyyy HH:mm a";
+                        String DATE_FORMAT = "yyyy-MM-dd[[ ]['T']HH:mm[:ss[.SSS]][ ][XXX][Z][z][VV][O]]";
                         Long timeValue;
                         try {
                             timeValue = ((Date) value).getTime();
@@ -165,19 +169,33 @@ public class LwM2mValueConverterImpl implements LwM2mValueConverter {
                 }
                 break;
             case OPAQUE:
-                if (currentType == Type.STRING) {
+                if (currentType == Type.INTEGER) {
+                    if (value instanceof Integer) {
+                        return ByteBuffer.allocate(4).putInt((Integer) value).array();
+                    } else {
+                        return ByteBuffer.allocate(8).putLong((Long) value).array();
+                    }
+                } else if (currentType == Type.FLOAT) {
+                    if (value instanceof Float) {
+                        return ByteBuffer.allocate(4).putFloat((Float) value).array();
+                    } else {
+                        return ByteBuffer.allocate(8).putDouble((Double) value).array();
+                    }
+                } else if (currentType == Type.STRING) {
                     /** let's assume we received an hexadecimal string */
                     log.debug("Trying to convert hexadecimal/base64 string [{}] to byte array", value);
                     try {
                         return Hex.decodeHex(((String)value).toCharArray());
                     } catch (IllegalArgumentException e) {
                         try {
-                            return Base64.decodeBase64(((String) value).getBytes());
+                            return Base64.getDecoder().decode(((String) value).getBytes());
                         } catch (IllegalArgumentException ea) {
                             throw new CodecException("Unable to convert hexastring or base64 [%s] to byte array for resource %s",
                                     value, resourcePath);
                         }
                     }
+                } else if (currentType == Type.BOOLEAN) {
+                    return  new byte[] {(byte)((boolean)value ? 1 : 0)};
                 }
                 break;
             case OBJLNK:

@@ -1,5 +1,5 @@
 /**
- * Copyright © 2016-2023 The Thingsboard Authors
+ * Copyright © 2016-2025 The Thingsboard Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,8 +15,10 @@
  */
 package org.thingsboard.server.dao.notification;
 
+import com.google.common.util.concurrent.FluentFuture;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.thingsboard.server.common.data.EntityType;
 import org.thingsboard.server.common.data.id.EntityId;
@@ -31,10 +33,13 @@ import org.thingsboard.server.common.data.notification.NotificationRequestStatus
 import org.thingsboard.server.common.data.page.PageData;
 import org.thingsboard.server.common.data.page.PageLink;
 import org.thingsboard.server.dao.entity.EntityDaoService;
+import org.thingsboard.server.dao.eventsourcing.DeleteEntityEvent;
 import org.thingsboard.server.dao.service.DataValidator;
 
 import java.util.List;
 import java.util.Optional;
+
+import static com.google.common.util.concurrent.MoreExecutors.directExecutor;
 
 @Service
 @Slf4j
@@ -43,6 +48,8 @@ public class DefaultNotificationRequestService implements NotificationRequestSer
 
     private final NotificationRequestDao notificationRequestDao;
     private final NotificationDao notificationDao;
+
+    private final ApplicationEventPublisher eventPublisher;
 
     private final NotificationRequestValidator notificationRequestValidator = new NotificationRequestValidator();
 
@@ -78,14 +85,25 @@ public class DefaultNotificationRequestService implements NotificationRequestSer
     }
 
     @Override
-    public List<NotificationRequest> findNotificationRequestsByRuleIdAndOriginatorEntityId(TenantId tenantId, NotificationRuleId ruleId, EntityId originatorEntityId) {
-        return notificationRequestDao.findByRuleIdAndOriginatorEntityId(tenantId, ruleId, originatorEntityId);
+    public List<NotificationRequest> findNotificationRequestsByRuleIdAndOriginatorEntityIdAndStatus(TenantId tenantId, NotificationRuleId ruleId, EntityId originatorEntityId, NotificationRequestStatus status) {
+        return notificationRequestDao.findByRuleIdAndOriginatorEntityIdAndStatus(tenantId, ruleId, originatorEntityId, status);
     }
 
     @Override
-    public void deleteNotificationRequest(TenantId tenantId, NotificationRequestId requestId) {
-        notificationRequestDao.removeById(tenantId, requestId.getId());
-        notificationDao.deleteByRequestId(tenantId, requestId);
+    public void deleteNotificationRequest(TenantId tenantId, NotificationRequest request) {
+        notificationRequestDao.removeById(tenantId, request.getUuidId());
+        notificationDao.deleteByRequestId(tenantId, request.getId());
+        eventPublisher.publishEvent(DeleteEntityEvent.builder().tenantId(tenantId).entity(request).entityId(request.getId()).build());
+    }
+
+    @Override
+    public void deleteEntity(TenantId tenantId, EntityId id, boolean force) {
+        if (force) {
+            notificationRequestDao.removeById(tenantId, id.getId());
+        } else {
+            NotificationRequest notificationRequest = findNotificationRequestById(tenantId, (NotificationRequestId) id);
+            deleteNotificationRequest(tenantId, notificationRequest);
+        }
     }
 
     @Override
@@ -105,8 +123,19 @@ public class DefaultNotificationRequestService implements NotificationRequestSer
     }
 
     @Override
+    public void deleteByTenantId(TenantId tenantId) {
+        deleteNotificationRequestsByTenantId(tenantId);
+    }
+
+    @Override
     public Optional<HasId<?>> findEntity(TenantId tenantId, EntityId entityId) {
         return Optional.ofNullable(findNotificationRequestById(tenantId, new NotificationRequestId(entityId.getId())));
+    }
+
+    @Override
+    public FluentFuture<Optional<HasId<?>>> findEntityAsync(TenantId tenantId, EntityId entityId) {
+        return FluentFuture.from(notificationRequestDao.findByIdAsync(tenantId, entityId.getId()))
+                .transform(Optional::ofNullable, directExecutor());
     }
 
     @Override
@@ -114,9 +143,6 @@ public class DefaultNotificationRequestService implements NotificationRequestSer
         return EntityType.NOTIFICATION_REQUEST;
     }
 
-
-    private static class NotificationRequestValidator extends DataValidator<NotificationRequest> {
-
-    }
+    private static class NotificationRequestValidator extends DataValidator<NotificationRequest> {}
 
 }

@@ -1,5 +1,5 @@
 /**
- * Copyright © 2016-2023 The Thingsboard Authors
+ * Copyright © 2016-2025 The Thingsboard Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,28 +16,62 @@
 package org.thingsboard.server.dao.service;
 
 import com.datastax.oss.driver.api.core.uuid.Uuids;
+import com.google.common.util.concurrent.ListeningExecutorService;
+import com.google.common.util.concurrent.MoreExecutors;
+import org.junit.AfterClass;
 import org.junit.Assert;
+import org.junit.BeforeClass;
 import org.junit.Test;
 import org.junit.jupiter.api.Assertions;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionStatus;
+import org.springframework.transaction.support.DefaultTransactionDefinition;
+import org.testcontainers.shaded.org.apache.commons.lang3.RandomStringUtils;
+import org.testcontainers.shaded.org.awaitility.Awaitility;
+import org.thingsboard.common.util.ThingsBoardThreadFactory;
 import org.thingsboard.server.common.data.Customer;
 import org.thingsboard.server.common.data.EntitySubtype;
 import org.thingsboard.server.common.data.StringUtils;
 import org.thingsboard.server.common.data.Tenant;
+import org.thingsboard.server.common.data.TenantProfile;
 import org.thingsboard.server.common.data.asset.Asset;
 import org.thingsboard.server.common.data.asset.AssetInfo;
+import org.thingsboard.server.common.data.asset.AssetProfile;
+import org.thingsboard.server.common.data.cf.CalculatedField;
+import org.thingsboard.server.common.data.cf.CalculatedFieldType;
+import org.thingsboard.server.common.data.cf.configuration.Argument;
+import org.thingsboard.server.common.data.cf.configuration.ArgumentType;
+import org.thingsboard.server.common.data.cf.configuration.Output;
+import org.thingsboard.server.common.data.cf.configuration.OutputType;
+import org.thingsboard.server.common.data.cf.configuration.ReferencedEntityKey;
+import org.thingsboard.server.common.data.cf.configuration.SimpleCalculatedFieldConfiguration;
 import org.thingsboard.server.common.data.id.CustomerId;
 import org.thingsboard.server.common.data.id.TenantId;
 import org.thingsboard.server.common.data.page.PageData;
 import org.thingsboard.server.common.data.page.PageLink;
+import org.thingsboard.server.common.data.relation.EntityRelation;
+import org.thingsboard.server.common.data.relation.RelationTypeGroup;
+import org.thingsboard.server.common.data.tenant.profile.DefaultTenantProfileConfiguration;
+import org.thingsboard.server.common.data.tenant.profile.TenantProfileData;
+import org.thingsboard.server.dao.asset.AssetDao;
+import org.thingsboard.server.dao.asset.AssetProfileService;
 import org.thingsboard.server.dao.asset.AssetService;
+import org.thingsboard.server.dao.cf.CalculatedFieldService;
 import org.thingsboard.server.dao.customer.CustomerService;
 import org.thingsboard.server.dao.exception.DataValidationException;
+import org.thingsboard.server.dao.relation.RelationService;
+import org.thingsboard.server.dao.tenant.TenantProfileService;
 
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.thingsboard.server.dao.model.ModelConstants.NULL_UUID;
 
 @DaoSqlTest
@@ -46,9 +80,34 @@ public class AssetServiceTest extends AbstractServiceTest {
     @Autowired
     AssetService assetService;
     @Autowired
+    AssetDao assetDao;
+    @Autowired
     CustomerService customerService;
+    @Autowired
+    RelationService relationService;
+    @Autowired
+    TenantProfileService tenantProfileService;
+    @Autowired
+    private AssetProfileService assetProfileService;
+    @Autowired
+    private CalculatedFieldService calculatedFieldService;
+    @Autowired
+    private PlatformTransactionManager platformTransactionManager;
+
+    private static ListeningExecutorService executor;
 
     private IdComparator<Asset> idComparator = new IdComparator<>();
+    private TenantId anotherTenantId;
+
+    @BeforeClass
+    public static void before() {
+        executor = MoreExecutors.listeningDecorator(Executors.newFixedThreadPool(10, ThingsBoardThreadFactory.forName("AssetServiceTestScope")));
+    }
+
+    @AfterClass
+    public static void after() {
+        executor.shutdownNow();
+    }
 
     @Test
     public void testSaveAsset() {
@@ -73,6 +132,62 @@ public class AssetServiceTest extends AbstractServiceTest {
         Assert.assertEquals(foundAsset.getName(), savedAsset.getName());
 
         assetService.deleteAsset(tenantId, savedAsset.getId());
+    }
+
+    @Test
+    public void testAssetLimitOnTenantProfileLevel() throws InterruptedException {
+        TenantProfile tenantProfile = new TenantProfile();
+        tenantProfile.setName("Test profile");
+        tenantProfile.setDescription("Test");
+        TenantProfileData profileData = new TenantProfileData();
+        profileData.setConfiguration(DefaultTenantProfileConfiguration.builder().maxAssets(5l).build());
+        tenantProfile.setProfileData(profileData);
+        tenantProfile.setDefault(false);
+        tenantProfile.setIsolatedTbRuleEngine(false);
+
+        tenantProfile = tenantProfileService.saveTenantProfile(anotherTenantId, tenantProfile);
+        anotherTenantId = createTenant(tenantProfile.getId()).getId();
+
+        for (int i = 0; i < 20; i++) {
+            executor.submit(() -> {
+                Asset asset = new Asset();
+                asset.setTenantId(anotherTenantId);
+                asset.setName(RandomStringUtils.randomAlphabetic(10));
+                asset.setType("default");
+                assetService.saveAsset(asset);
+            });
+        }
+
+        Awaitility.await().atMost(10, TimeUnit.SECONDS).until(() -> {
+            long countByTenantId = assetService.countByTenantId(anotherTenantId);
+            return countByTenantId == 5;
+        });
+
+        Thread.sleep(2000);
+        assertThat(assetService.countByTenantId(anotherTenantId)).isEqualTo(5);
+    }
+
+    @Test
+    public void testShouldNotPutInCacheRolledbackAssetProfile() {
+        AssetProfile assetProfile = new AssetProfile();
+        assetProfile.setName(StringUtils.randomAlphabetic(10));
+        assetProfile.setTenantId(tenantId);
+
+        Asset asset = new Asset();
+        asset.setName("My asset" + StringUtils.randomAlphabetic(15));
+        asset.setType(assetProfile.getName());
+        asset.setTenantId(tenantId);
+
+        DefaultTransactionDefinition def = new DefaultTransactionDefinition();
+        TransactionStatus status = platformTransactionManager.getTransaction(def);
+        try {
+            assetProfileService.saveAssetProfile(assetProfile);
+            assetService.saveAsset(asset);
+        } finally {
+            platformTransactionManager.rollback(status);
+        }
+        AssetProfile assetProfileByName = assetProfileService.findAssetProfileByName(tenantId, assetProfile.getName());
+        Assert.assertNull(assetProfileByName);
     }
 
     @Test
@@ -174,24 +289,24 @@ public class AssetServiceTest extends AbstractServiceTest {
     public void testFindAssetTypesByTenantId() throws Exception {
         List<Asset> assets = new ArrayList<>();
         try {
-            for (int i=0;i<3;i++) {
+            for (int i = 0; i < 3; i++) {
                 Asset asset = new Asset();
                 asset.setTenantId(tenantId);
-                asset.setName("My asset B"+i);
+                asset.setName("My asset B" + i);
                 asset.setType("typeB");
                 assets.add(assetService.saveAsset(asset));
             }
-            for (int i=0;i<7;i++) {
+            for (int i = 0; i < 7; i++) {
                 Asset asset = new Asset();
                 asset.setTenantId(tenantId);
-                asset.setName("My asset C"+i);
+                asset.setName("My asset C" + i);
                 asset.setType("typeC");
                 assets.add(assetService.saveAsset(asset));
             }
-            for (int i=0;i<9;i++) {
+            for (int i = 0; i < 9; i++) {
                 Asset asset = new Asset();
                 asset.setTenantId(tenantId);
-                asset.setName("My asset A"+i);
+                asset.setName("My asset A" + i);
                 asset.setType("typeA");
                 assets.add(assetService.saveAsset(asset));
             }
@@ -202,7 +317,9 @@ public class AssetServiceTest extends AbstractServiceTest {
             Assert.assertEquals("typeB", assetTypes.get(1).getType());
             Assert.assertEquals("typeC", assetTypes.get(2).getType());
         } finally {
-            assets.forEach((asset) -> { assetService.deleteAsset(tenantId, asset.getId()); });
+            assets.forEach((asset) -> {
+                assetService.deleteAsset(tenantId, asset.getId());
+            });
         }
     }
 
@@ -213,20 +330,24 @@ public class AssetServiceTest extends AbstractServiceTest {
         asset.setName("My asset");
         asset.setType("default");
         Asset savedAsset = assetService.saveAsset(asset);
+        EntityRelation relation = new EntityRelation(tenantId, savedAsset.getId(), EntityRelation.CONTAINS_TYPE);
+        relationService.saveRelation(tenantId, relation);
+
         Asset foundAsset = assetService.findAssetById(tenantId, savedAsset.getId());
         Assert.assertNotNull(foundAsset);
         assetService.deleteAsset(tenantId, savedAsset.getId());
         foundAsset = assetService.findAssetById(tenantId, savedAsset.getId());
         Assert.assertNull(foundAsset);
+        Assert.assertTrue(relationService.findByTo(tenantId, savedAsset.getId(), RelationTypeGroup.COMMON).isEmpty());
     }
 
     @Test
     public void testFindAssetsByTenantId() {
         List<Asset> assets = new ArrayList<>();
-        for (int i=0;i<13;i++) {
+        for (int i = 0; i < 13; i++) {
             Asset asset = new Asset();
             asset.setTenantId(tenantId);
-            asset.setName("Asset"+i);
+            asset.setName("Asset" + i);
             asset.setType("default");
             assets.add(assetService.saveAsset(asset));
         }
@@ -259,11 +380,11 @@ public class AssetServiceTest extends AbstractServiceTest {
     public void testFindAssetsByTenantIdAndName() {
         String title1 = "Asset title 1";
         List<AssetInfo> assetsTitle1 = new ArrayList<>();
-        for (int i=0;i<13;i++) {
+        for (int i = 0; i < 13; i++) {
             Asset asset = new Asset();
             asset.setTenantId(tenantId);
             String suffix = StringUtils.randomAlphanumeric(15);
-            String name = title1+suffix;
+            String name = title1 + suffix;
             name = i % 2 == 0 ? name.toLowerCase() : name.toUpperCase();
             asset.setName(name);
             asset.setType("default");
@@ -271,11 +392,11 @@ public class AssetServiceTest extends AbstractServiceTest {
         }
         String title2 = "Asset title 2";
         List<AssetInfo> assetsTitle2 = new ArrayList<>();
-        for (int i=0;i<17;i++) {
+        for (int i = 0; i < 17; i++) {
             Asset asset = new Asset();
             asset.setTenantId(tenantId);
             String suffix = StringUtils.randomAlphanumeric(15);
-            String name = title2+suffix;
+            String name = title2 + suffix;
             name = i % 2 == 0 ? name.toLowerCase() : name.toUpperCase();
             asset.setName(name);
             asset.setType("default");
@@ -337,11 +458,11 @@ public class AssetServiceTest extends AbstractServiceTest {
         String title1 = "Asset title 1";
         String type1 = "typeA";
         List<Asset> assetsType1 = new ArrayList<>();
-        for (int i=0;i<13;i++) {
+        for (int i = 0; i < 13; i++) {
             Asset asset = new Asset();
             asset.setTenantId(tenantId);
             String suffix = StringUtils.randomAlphanumeric(15);
-            String name = title1+suffix;
+            String name = title1 + suffix;
             name = i % 2 == 0 ? name.toLowerCase() : name.toUpperCase();
             asset.setName(name);
             asset.setType(type1);
@@ -350,11 +471,11 @@ public class AssetServiceTest extends AbstractServiceTest {
         String title2 = "Asset title 2";
         String type2 = "typeB";
         List<Asset> assetsType2 = new ArrayList<>();
-        for (int i=0;i<17;i++) {
+        for (int i = 0; i < 17; i++) {
             Asset asset = new Asset();
             asset.setTenantId(tenantId);
             String suffix = StringUtils.randomAlphanumeric(15);
-            String name = title2+suffix;
+            String name = title2 + suffix;
             name = i % 2 == 0 ? name.toLowerCase() : name.toUpperCase();
             asset.setName(name);
             asset.setType(type2);
@@ -420,10 +541,10 @@ public class AssetServiceTest extends AbstractServiceTest {
         CustomerId customerId = customer.getId();
 
         List<AssetInfo> assets = new ArrayList<>();
-        for (int i=0;i<13;i++) {
+        for (int i = 0; i < 13; i++) {
             Asset asset = new Asset();
             asset.setTenantId(tenantId);
-            asset.setName("Asset"+i);
+            asset.setName("Asset" + i);
             asset.setType("default");
             asset = assetService.saveAsset(asset);
             assets.add(new AssetInfo(assetService.assignAssetToCustomer(tenantId, asset.getId(), customerId), customer.getTitle(), customer.isPublic(), "default"));
@@ -464,11 +585,11 @@ public class AssetServiceTest extends AbstractServiceTest {
 
         String title1 = "Asset title 1";
         List<Asset> assetsTitle1 = new ArrayList<>();
-        for (int i=0;i<17;i++) {
+        for (int i = 0; i < 17; i++) {
             Asset asset = new Asset();
             asset.setTenantId(tenantId);
             String suffix = StringUtils.randomAlphanumeric(15);
-            String name = title1+suffix;
+            String name = title1 + suffix;
             name = i % 2 == 0 ? name.toLowerCase() : name.toUpperCase();
             asset.setName(name);
             asset.setType("default");
@@ -477,11 +598,11 @@ public class AssetServiceTest extends AbstractServiceTest {
         }
         String title2 = "Asset title 2";
         List<Asset> assetsTitle2 = new ArrayList<>();
-        for (int i=0;i<13;i++) {
+        for (int i = 0; i < 13; i++) {
             Asset asset = new Asset();
             asset.setTenantId(tenantId);
             String suffix = StringUtils.randomAlphanumeric(15);
-            String name = title2+suffix;
+            String name = title2 + suffix;
             name = i % 2 == 0 ? name.toLowerCase() : name.toUpperCase();
             asset.setName(name);
             asset.setType("default");
@@ -552,11 +673,11 @@ public class AssetServiceTest extends AbstractServiceTest {
         String title1 = "Asset title 1";
         String type1 = "typeC";
         List<Asset> assetsType1 = new ArrayList<>();
-        for (int i=0;i<17;i++) {
+        for (int i = 0; i < 17; i++) {
             Asset asset = new Asset();
             asset.setTenantId(tenantId);
             String suffix = StringUtils.randomAlphanumeric(15);
-            String name = title1+suffix;
+            String name = title1 + suffix;
             name = i % 2 == 0 ? name.toLowerCase() : name.toUpperCase();
             asset.setName(name);
             asset.setType(type1);
@@ -566,11 +687,11 @@ public class AssetServiceTest extends AbstractServiceTest {
         String title2 = "Asset title 2";
         String type2 = "typeD";
         List<Asset> assetsType2 = new ArrayList<>();
-        for (int i=0;i<13;i++) {
+        for (int i = 0; i < 13; i++) {
             Asset asset = new Asset();
             asset.setTenantId(tenantId);
             String suffix = StringUtils.randomAlphanumeric(15);
-            String name = title2+suffix;
+            String name = title2 + suffix;
             name = i % 2 == 0 ? name.toLowerCase() : name.toUpperCase();
             asset.setName(name);
             asset.setType(type2);
@@ -802,6 +923,54 @@ public class AssetServiceTest extends AbstractServiceTest {
                                         && d.getCustomerTitle().equals(savedCustomer.getTitle())
                         )
         );
+    }
+
+    @Test
+    public void testDeleteAssetIfReferencedInCalculatedField() {
+        Asset asset = new Asset();
+        asset.setTenantId(tenantId);
+        asset.setName("My asset");
+        asset.setType("default");
+        Asset savedAsset = assetService.saveAsset(asset);
+
+        Asset assetWithCf = new Asset();
+        assetWithCf.setTenantId(tenantId);
+        assetWithCf.setName("Asset with CF");
+        assetWithCf.setType("default");
+        Asset savedAssetWithCf = assetService.saveAsset(assetWithCf);
+
+        CalculatedField calculatedField = new CalculatedField();
+        calculatedField.setTenantId(tenantId);
+        calculatedField.setName("Test CF");
+        calculatedField.setType(CalculatedFieldType.SIMPLE);
+        calculatedField.setEntityId(savedAssetWithCf.getId());
+
+        SimpleCalculatedFieldConfiguration config = new SimpleCalculatedFieldConfiguration();
+
+        Argument argument = new Argument();
+        argument.setRefEntityId(savedAsset.getId());
+        ReferencedEntityKey refEntityKey = new ReferencedEntityKey("temperature", ArgumentType.TS_LATEST, null);
+        argument.setRefEntityKey(refEntityKey);
+
+        config.setArguments(Map.of("T", argument));
+
+        config.setExpression("T - (100 - H) / 5");
+
+        Output output = new Output();
+        output.setName("output");
+        output.setType(OutputType.TIME_SERIES);
+
+        config.setOutput(output);
+
+        calculatedField.setConfiguration(config);
+
+        CalculatedField savedCalculatedField = calculatedFieldService.save(calculatedField);
+
+        assertThatThrownBy(() -> assetService.deleteAsset(tenantId, savedAsset.getId()))
+                .isInstanceOf(DataValidationException.class)
+                .hasMessage("Can't delete asset that has entity views or is referenced in calculated fields!");
+
+        calculatedFieldService.deleteCalculatedField(tenantId, savedCalculatedField.getId());
     }
 
 }

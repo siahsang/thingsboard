@@ -1,5 +1,5 @@
 ///
-/// Copyright © 2016-2023 The Thingsboard Authors
+/// Copyright © 2016-2025 The Thingsboard Authors
 ///
 /// Licensed under the Apache License, Version 2.0 (the "License");
 /// you may not use this file except in compliance with the License.
@@ -19,17 +19,17 @@ import {
   BackgroundType,
   ColorProcessor,
   ColorSettings,
-  ColorType,
   ComponentStyle,
   constantColor,
   DateFormatSettings,
   Font,
   lastUpdateAgoDateFormat,
-  textStyle
+  textStyle,
+  ValueFormatProcessor
 } from '@shared/models/widget-settings.models';
-import { ComparisonResultType, DataKey, DatasourceData } from '@shared/models/widget.models';
-import { DataKeyType } from '@shared/models/telemetry/telemetry.models';
-import { AggregationType } from '@shared/models/time/time.models';
+import { DataEntry, DataKey, DatasourceData } from '@shared/models/widget.models';
+import { Injector } from '@angular/core';
+import { UnitService } from '@core/services/unit.service';
 
 export interface AggregatedValueCardWidgetSettings {
   autoScale: boolean;
@@ -43,6 +43,7 @@ export interface AggregatedValueCardWidgetSettings {
   dateColor: string;
   showChart: boolean;
   background: BackgroundSettings;
+  padding: string;
 }
 
 export enum AggregatedValueCardKeyPosition {
@@ -80,10 +81,12 @@ export interface AggregatedValueCardValue {
   showArrow: boolean;
   upArrow: boolean;
   downArrow: boolean;
+  valueFormat: ValueFormatProcessor;
 }
 
 export const computeAggregatedCardValue =
-  (dataKeys: DataKey[], keyName: string, position: AggregatedValueCardKeyPosition): AggregatedValueCardValue => {
+  (dataKeys: DataKey[], keyName: string, position: AggregatedValueCardKeyPosition,
+   $injector: Injector, widgetDecimal: number): AggregatedValueCardValue => {
   const key = dataKeys.find(dataKey => ( dataKey.name === keyName && (dataKey.settings?.position === position ||
                                          (!dataKey.settings?.position && position === AggregatedValueCardKeyPosition.center)) ));
   if (key) {
@@ -91,18 +94,23 @@ export const computeAggregatedCardValue =
     return {
       key,
       value: '',
-      units: key.units,
+      units: $injector.get(UnitService).getTargetUnitSymbol(key.units),
       style: textStyle(settings.font),
       color: ColorProcessor.fromSettings(settings.color),
       center: position === AggregatedValueCardKeyPosition.center,
       showArrow: settings.showArrow,
       upArrow: false,
-      downArrow: false
+      downArrow: false,
+      valueFormat: ValueFormatProcessor.fromSettings($injector, {
+        units: key.units,
+        decimals: key.decimals || widgetDecimal,
+        ignoreUnitSymbol: true,
+      })
     };
   }
 };
 
-export const getTsValueByLatestDataKey = (latestData: Array<DatasourceData>, dataKey: DataKey): [number, any] => {
+export const getTsValueByLatestDataKey = (latestData: Array<DatasourceData>, dataKey: DataKey): DataEntry => {
   if (latestData?.length) {
     const dsData = latestData.find(data => data.dataKey === dataKey);
     if (dsData?.data?.length) {
@@ -145,7 +153,8 @@ export const aggregatedValueCardDefaultSettings: AggregatedValueCardWidgetSettin
       color: 'rgba(255,255,255,0.72)',
       blur: 3
     }
-  }
+  },
+  padding: '18px'
 };
 
 export const aggregatedValueCardDefaultKeySettings: AggregatedValueCardKeySettings = {

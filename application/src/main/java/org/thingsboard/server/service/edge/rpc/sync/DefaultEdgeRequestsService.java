@@ -1,5 +1,5 @@
 /**
- * Copyright © 2016-2023 The Thingsboard Authors
+ * Copyright © 2016-2025 The Thingsboard Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -27,7 +27,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
 import org.thingsboard.common.util.JacksonUtil;
-import org.thingsboard.server.cluster.TbClusterService;
+import org.thingsboard.server.common.data.AttributeScope;
 import org.thingsboard.server.common.data.EdgeUtils;
 import org.thingsboard.server.common.data.EntityType;
 import org.thingsboard.server.common.data.EntityView;
@@ -54,12 +54,14 @@ import org.thingsboard.server.common.data.relation.RelationsSearchParameters;
 import org.thingsboard.server.common.data.widget.WidgetType;
 import org.thingsboard.server.common.data.widget.WidgetsBundle;
 import org.thingsboard.server.dao.attributes.AttributesService;
+import org.thingsboard.server.dao.cf.CalculatedFieldService;
 import org.thingsboard.server.dao.edge.EdgeEventService;
 import org.thingsboard.server.dao.relation.RelationService;
 import org.thingsboard.server.dao.timeseries.TimeseriesService;
 import org.thingsboard.server.dao.widget.WidgetTypeService;
 import org.thingsboard.server.dao.widget.WidgetsBundleService;
 import org.thingsboard.server.gen.edge.v1.AttributesRequestMsg;
+import org.thingsboard.server.gen.edge.v1.CalculatedFieldRequestMsg;
 import org.thingsboard.server.gen.edge.v1.DeviceCredentialsRequestMsg;
 import org.thingsboard.server.gen.edge.v1.EntityViewsRequestMsg;
 import org.thingsboard.server.gen.edge.v1.RelationRequestMsg;
@@ -82,8 +84,6 @@ import java.util.UUID;
 @Slf4j
 public class DefaultEdgeRequestsService implements EdgeRequestsService {
 
-    private static final int DEFAULT_PAGE_SIZE = 1000;
-
     @Autowired
     private EdgeEventService edgeEventService;
 
@@ -92,7 +92,7 @@ public class DefaultEdgeRequestsService implements EdgeRequestsService {
 
     @Autowired
     private TimeseriesService timeseriesService;
-    
+
     @Autowired
     private RelationService relationService;
 
@@ -107,10 +107,10 @@ public class DefaultEdgeRequestsService implements EdgeRequestsService {
     private WidgetTypeService widgetTypeService;
 
     @Autowired
-    private DbCallbackExecutorService dbCallbackExecutorService;
+    private CalculatedFieldService calculatedFieldService;
 
     @Autowired
-    private TbClusterService tbClusterService;
+    private DbCallbackExecutorService dbCallbackExecutorService;
 
     @Override
     public ListenableFuture<Void> processRuleChainMetadataRequestMsg(TenantId tenantId, Edge edge, RuleChainMetadataRequestMsg ruleChainMetadataRequestMsg) {
@@ -118,10 +118,8 @@ public class DefaultEdgeRequestsService implements EdgeRequestsService {
         if (ruleChainMetadataRequestMsg.getRuleChainIdMSB() == 0 || ruleChainMetadataRequestMsg.getRuleChainIdLSB() == 0) {
             return Futures.immediateFuture(null);
         }
-        RuleChainId ruleChainId =
-                new RuleChainId(new UUID(ruleChainMetadataRequestMsg.getRuleChainIdMSB(), ruleChainMetadataRequestMsg.getRuleChainIdLSB()));
-        return saveEdgeEvent(tenantId, edge.getId(),
-                EdgeEventType.RULE_CHAIN_METADATA, EdgeEventActionType.ADDED, ruleChainId, null);
+        RuleChainId ruleChainId = new RuleChainId(new UUID(ruleChainMetadataRequestMsg.getRuleChainIdMSB(), ruleChainMetadataRequestMsg.getRuleChainIdLSB()));
+        return saveEdgeEvent(tenantId, edge.getId(), EdgeEventType.RULE_CHAIN_METADATA, EdgeEventActionType.ADDED, ruleChainId, null);
     }
 
     @Override
@@ -136,7 +134,7 @@ public class DefaultEdgeRequestsService implements EdgeRequestsService {
             return Futures.immediateFuture(null);
         }
         String scope = attributesRequestMsg.getScope();
-        ListenableFuture<List<AttributeKvEntry>> findAttrFuture = attributesService.findAll(tenantId, entityId, scope);
+        ListenableFuture<List<AttributeKvEntry>> findAttrFuture = attributesService.findAll(tenantId, entityId, AttributeScope.valueOf(scope));
         return Futures.transformAsync(findAttrFuture, ssAttributes
                         -> processEntityAttributesAndAddToEdgeQueue(tenantId, entityId, edge, entityType, scope, ssAttributes, attributesRequestMsg),
                 dbCallbackExecutorService);
@@ -145,8 +143,10 @@ public class DefaultEdgeRequestsService implements EdgeRequestsService {
     private ListenableFuture<Void> processEntityAttributesAndAddToEdgeQueue(TenantId tenantId, EntityId entityId, Edge edge,
                                                                             EdgeEventType entityType, String scope, List<AttributeKvEntry> ssAttributes,
                                                                             AttributesRequestMsg attributesRequestMsg) {
+        Map<String, Object> entityData = null;
+        ObjectNode attributes = null;
+        ListenableFuture<Void> future;
         try {
-            ListenableFuture<Void> future;
             if (ssAttributes == null || ssAttributes.isEmpty()) {
                 log.trace("[{}][{}] No attributes found for entity {} [{}]", tenantId,
                         edge.getName(),
@@ -154,11 +154,10 @@ public class DefaultEdgeRequestsService implements EdgeRequestsService {
                         entityId.getId());
                 future = Futures.immediateFuture(null);
             } else {
-                Map<String, Object> entityData = new HashMap<>();
-                ObjectNode attributes = JacksonUtil.newObjectNode();
+                entityData = new HashMap<>();
+                attributes = JacksonUtil.newObjectNode();
                 for (AttributeKvEntry attr : ssAttributes) {
-                    if (DefaultDeviceStateService.PERSISTENT_ATTRIBUTES.contains(attr.getKey())
-                            && !DefaultDeviceStateService.INACTIVITY_TIMEOUT.equals(attr.getKey())) {
+                    if (DefaultDeviceStateService.ACTIVITY_KEYS_WITHOUT_INACTIVITY_TIMEOUT.contains(attr.getKey())) {
                         continue;
                     }
                     if (attr.getDataType() == DataType.BOOLEAN && attr.getBooleanValue().isPresent()) {
@@ -173,7 +172,7 @@ public class DefaultEdgeRequestsService implements EdgeRequestsService {
                         attributes.put(attr.getKey(), attr.getValueAsString());
                     }
                 }
-                if (attributes.size() > 0) {
+                if (!attributes.isEmpty()) {
                     entityData.put("kv", attributes);
                     entityData.put("scope", scope);
                     JsonNode body = JacksonUtil.valueToTree(entityData);
@@ -185,12 +184,13 @@ public class DefaultEdgeRequestsService implements EdgeRequestsService {
             }
             return Futures.transformAsync(future, v -> processLatestTimeseriesAndAddToEdgeQueue(tenantId, entityId, edge, entityType), dbCallbackExecutorService);
         } catch (Exception e) {
-            String errMsg = String.format("[%s][%s] Failed to save attribute updates to the edge [%s]", tenantId, edge.getId(), attributesRequestMsg);
+            String errMsg = String.format("[%s][%s] Failed to save attribute updates to the edge [%s], scope = %s, entityData = %s, attributes = %s",
+                    tenantId, edge.getId(), attributesRequestMsg, scope, entityData, attributes);
             log.error(errMsg, e);
             return Futures.immediateFailedFuture(new RuntimeException(errMsg, e));
         }
     }
-    
+
     private ListenableFuture<Void> processLatestTimeseriesAndAddToEdgeQueue(TenantId tenantId, EntityId entityId, Edge edge,
                                                                             EdgeEventType entityType) {
         ListenableFuture<List<TsKvEntry>> getAllLatestFuture = timeseriesService.findAllLatest(tenantId, entityId);
@@ -204,7 +204,7 @@ public class DefaultEdgeRequestsService implements EdgeRequestsService {
             }
             Map<Long, Map<String, Object>> tsData = new HashMap<>();
             for (TsKvEntry tsKvEntry : tsKvEntries) {
-                if (DefaultDeviceStateService.PERSISTENT_ATTRIBUTES.contains(tsKvEntry.getKey())) {
+                if (DefaultDeviceStateService.ACTIVITY_KEYS_WITH_INACTIVITY_TIMEOUT.contains(tsKvEntry.getKey())) {
                     continue;
                 }
                 tsData.computeIfAbsent(tsKvEntry.getTs(), k -> new HashMap<>()).put(tsKvEntry.getKey(), tsKvEntry.getValue());
@@ -239,6 +239,9 @@ public class DefaultEdgeRequestsService implements EdgeRequestsService {
                     if (relationsList != null && !relationsList.isEmpty()) {
                         List<ListenableFuture<Void>> futures = new ArrayList<>();
                         for (List<EntityRelation> entityRelations : relationsList) {
+                            if (entityRelations.isEmpty()) {
+                                continue;
+                            }
                             log.trace("[{}][{}][{}][{}] relation(s) are going to be pushed to edge.", tenantId, edge.getId(), entityId, entityRelations.size());
                             for (EntityRelation relation : entityRelations) {
                                 try {
@@ -259,19 +262,23 @@ public class DefaultEdgeRequestsService implements EdgeRequestsService {
                                 }
                             }
                         }
-                        Futures.addCallback(Futures.allAsList(futures), new FutureCallback<>() {
-                            @Override
-                            public void onSuccess(@Nullable List<Void> voids) {
-                                futureToSet.set(null);
-                            }
+                        if (futures.isEmpty()) {
+                            futureToSet.set(null);
+                        } else {
+                            Futures.addCallback(Futures.allAsList(futures), new FutureCallback<>() {
+                                @Override
+                                public void onSuccess(@Nullable List<Void> voids) {
+                                    futureToSet.set(null);
+                                }
 
-                            @Override
-                            public void onFailure(Throwable throwable) {
-                                String errMsg = String.format("[%s][%s] Exception during saving edge events [%s]!", tenantId, edge.getId(), relationRequestMsg);
-                                log.error(errMsg, throwable);
-                                futureToSet.setException(new RuntimeException(errMsg, throwable));
-                            }
-                        }, dbCallbackExecutorService);
+                                @Override
+                                public void onFailure(Throwable throwable) {
+                                    String errMsg = String.format("[%s][%s] Exception during saving edge events [%s]!", tenantId, edge.getId(), relationRequestMsg);
+                                    log.error(errMsg, throwable);
+                                    futureToSet.setException(new RuntimeException(errMsg, throwable));
+                                }
+                            }, dbCallbackExecutorService);
+                        }
                     } else {
                         futureToSet.set(null);
                     }
@@ -291,10 +298,47 @@ public class DefaultEdgeRequestsService implements EdgeRequestsService {
         return futureToSet;
     }
 
-    private ListenableFuture<List<EntityRelation>> findRelationByQuery(TenantId tenantId, Edge edge,
-                                                                       EntityId entityId, EntitySearchDirection direction) {
+    @Override
+    public ListenableFuture<Void> processCalculatedFieldRequestMsg(TenantId tenantId, Edge edge, CalculatedFieldRequestMsg calculatedFieldRequestMsg) {
+        log.trace("[{}] processCalculatedFieldRequestMsg [{}][{}]", tenantId, edge.getName(), calculatedFieldRequestMsg);
+
+        EntityId entityId = EntityIdFactory.getByTypeAndUuid(
+                EntityType.valueOf(calculatedFieldRequestMsg.getEntityType()),
+                new UUID(calculatedFieldRequestMsg.getEntityIdMSB(), calculatedFieldRequestMsg.getEntityIdLSB()));
+
+        log.trace("[{}] processCalculatedField [{}][{}] for entity [{}][{}]", tenantId, edge.getName(), calculatedFieldRequestMsg, entityId.getEntityType(), entityId.getId());
+        return saveCalculatedFieldsToEdge(tenantId, edge.getId(), entityId);
+    }
+
+    private ListenableFuture<Void> saveCalculatedFieldsToEdge(TenantId tenantId, EdgeId edgeId, EntityId entityId) {
+        return Futures.transformAsync(
+                dbCallbackExecutorService.submit(() -> calculatedFieldService.findCalculatedFieldsByEntityId(tenantId, entityId)),
+                calculatedFields -> {
+                    log.trace("[{}][{}][{}][{}] calculatedField(s) are going to be pushed to edge.", tenantId, edgeId, entityId, calculatedFields.size());
+
+                    List<ListenableFuture<?>> futures = calculatedFields.stream().map(calculatedField -> {
+                        try {
+                            return saveEdgeEvent(tenantId, edgeId, EdgeEventType.CALCULATED_FIELD,
+                                    EdgeEventActionType.ADDED, calculatedField.getId(), JacksonUtil.valueToTree(calculatedField));
+                        } catch (Exception e) {
+                            log.error("[{}][{}] Exception during loading calculatedField [{}] to edge on sync!", tenantId, edgeId, calculatedField, e);
+                            return Futures.immediateFailedFuture(e);
+                        }
+                    }).toList();
+
+                    return Futures.transform(
+                            Futures.allAsList(futures),
+                            voids -> null,
+                            dbCallbackExecutorService
+                    );
+                },
+                dbCallbackExecutorService
+        );
+    }
+
+    private ListenableFuture<List<EntityRelation>> findRelationByQuery(TenantId tenantId, Edge edge, EntityId entityId, EntitySearchDirection direction) {
         EntityRelationsQuery query = new EntityRelationsQuery();
-        query.setParameters(new RelationsSearchParameters(entityId, direction, -1, false));
+        query.setParameters(new RelationsSearchParameters(entityId, direction, 1, false));
         return relationService.findByQuery(tenantId, query);
     }
 
@@ -399,11 +443,7 @@ public class DefaultEdgeRequestsService implements EdgeRequestsService {
                 tenantId, edgeId, type, action, entityId, body);
 
         EdgeEvent edgeEvent = EdgeUtils.constructEdgeEvent(tenantId, edgeId, type, action, entityId, body);
-
-        return Futures.transform(edgeEventService.saveAsync(edgeEvent), unused -> {
-            tbClusterService.onEdgeEventUpdate(tenantId, edgeId);
-            return null;
-        }, dbCallbackExecutorService);
+        return edgeEventService.saveAsync(edgeEvent);
     }
 
 }
